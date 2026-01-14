@@ -137,6 +137,60 @@ class Style extends Model
     }
 
     /**
+     * Accessor for images - ensures all URLs are absolute with API domain
+     */
+    public function getImagesAttribute($value)
+    {
+        $images = json_decode($value, true);
+
+        if (!is_array($images)) {
+            return [];
+        }
+
+        return array_map(function($imageUrl) {
+            // If it's already an absolute URL, return as-is
+            if (str_starts_with($imageUrl, 'http://') || str_starts_with($imageUrl, 'https://')) {
+                return $imageUrl;
+            }
+
+            // If it starts with /storage/, convert to absolute URL
+            if (str_starts_with($imageUrl, '/storage/')) {
+                return url($imageUrl);
+            }
+
+            // If it's just a path like 'styles/images/...', convert to absolute URL
+            return url('/storage/' . $imageUrl);
+        }, $images);
+    }
+
+    /**
+     * Accessor for technical_file_paths - ensures all URLs are absolute with API domain
+     */
+    public function getTechnicalFilePathsAttribute($value)
+    {
+        $paths = json_decode($value, true);
+
+        if (!is_array($paths)) {
+            return [];
+        }
+
+        return array_map(function($fileUrl) {
+            // If it's already an absolute URL, return as-is
+            if (str_starts_with($fileUrl, 'http://') || str_starts_with($fileUrl, 'https://')) {
+                return $fileUrl;
+            }
+
+            // If it starts with /storage/, convert to absolute URL
+            if (str_starts_with($fileUrl, '/storage/')) {
+                return url($fileUrl);
+            }
+
+            // If it's just a path like 'styles/technical/...', convert to absolute URL
+            return url('/storage/' . $fileUrl);
+        }, $paths);
+    }
+
+    /**
      * Get all purchase orders that use this style (Many-to-Many)
      */
     public function purchaseOrders()
