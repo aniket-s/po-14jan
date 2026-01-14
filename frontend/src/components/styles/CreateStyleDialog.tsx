@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { createStandaloneStyle, type CreateStyleData } from '@/services/styles';
 import { Loader2, Package, Plus, X, Upload, FileText, Image as ImageIcon } from 'lucide-react';
 import { MultiSelect, type MultiSelectOption } from '@/components/ui/multi-select';
+import { FileDropzone } from '@/components/ui/file-dropzone';
 
 const styleSchema = z.object({
   style_number: z.string().min(1, 'Style number is required'),
@@ -278,8 +279,7 @@ export function CreateStyleDialog({
     onOpenChange(false);
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const handleImageUpload = async (files: FileList) => {
     if (!files || files.length === 0) return;
 
     setIsUploadingImage(true);
@@ -307,13 +307,10 @@ export function CreateStyleDialog({
       toast.error('Failed to upload images');
     } finally {
       setIsUploadingImage(false);
-      // Reset input
-      e.target.value = '';
     }
   };
 
-  const handleTechPackUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const handleTechPackUpload = async (files: FileList) => {
     if (!files || files.length === 0) return;
 
     setIsUploadingTechPack(true);
@@ -338,8 +335,6 @@ export function CreateStyleDialog({
       toast.error('Failed to upload tech pack');
     } finally {
       setIsUploadingTechPack(false);
-      // Reset input
-      e.target.value = '';
     }
   };
 
@@ -838,84 +833,37 @@ export function CreateStyleDialog({
               {/* Image Upload */}
               <div className="space-y-2">
                 <Label>Style Images</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImageUpload}
-                    disabled={isUploadingImage}
-                    className="flex-1"
-                  />
-                  {isUploadingImage && <Loader2 className="h-4 w-4 animate-spin" />}
-                </div>
-
-                {uploadedImages.length > 0 && (
-                  <div className="grid grid-cols-4 gap-2 mt-2">
-                    {uploadedImages.map((img, index) => (
-                      <div key={index} className="relative group">
-                        <img
-                          src={img.url}
-                          alt={`Style ${index + 1}`}
-                          className="w-full h-24 object-cover rounded border"
-                        />
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon"
-                          className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => removeImage(index)}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Upload product images (PNG, JPG, etc.)
-                </p>
+                <FileDropzone
+                  accept="image/*"
+                  multiple
+                  onUpload={handleImageUpload}
+                  isUploading={isUploadingImage}
+                  uploadedFiles={uploadedImages}
+                  onRemove={removeImage}
+                  type="image"
+                  maxSizeMB={10}
+                  helpText="Upload product images (PNG, JPG, etc.)"
+                />
               </div>
 
               {/* Tech Pack Upload */}
               <div className="space-y-2">
                 <Label>Technical Pack / Spec Sheet</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="file"
-                    accept=".ai,.pdf,.jpg,.jpeg,.png"
-                    multiple
-                    onChange={handleTechPackUpload}
-                    disabled={isUploadingTechPack}
-                    className="flex-1"
-                  />
-                  {isUploadingTechPack && <Loader2 className="h-4 w-4 animate-spin" />}
-                </div>
-
-                {uploadedTechPacks.length > 0 && (
-                  <div className="space-y-2">
-                    {uploadedTechPacks.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 border rounded bg-muted">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          <span className="text-sm">Tech pack file {index + 1}</span>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeTechPack(index)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Upload technical documents (.ai, .pdf, .jpeg, .png) - Multiple files supported
-                </p>
+                <FileDropzone
+                  accept=".ai,.pdf,.jpg,.jpeg,.png"
+                  multiple
+                  onUpload={handleTechPackUpload}
+                  isUploading={isUploadingTechPack}
+                  uploadedFiles={uploadedTechPacks.map((path, idx) => ({
+                    url: path,
+                    path: path,
+                    name: `Tech pack file ${idx + 1}`,
+                  }))}
+                  onRemove={removeTechPack}
+                  type="document"
+                  maxSizeMB={20}
+                  helpText="Upload technical documents (.ai, .pdf, .jpeg, .png)"
+                />
               </div>
             </div>
 

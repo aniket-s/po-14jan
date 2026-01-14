@@ -27,33 +27,39 @@ import {
 } from '@/components/ui/form';
 import { toast } from 'sonner';
 import { updateStandaloneStyle, type Style } from '@/services/styles';
-import { Loader2, Edit, Plus, X, Upload, FileText, Image as ImageIcon } from 'lucide-react';
+import { Loader2, Edit, Plus, X, Upload, FileText, Image as ImageIcon, Info } from 'lucide-react';
 import { MultiSelect, type MultiSelectOption } from '@/components/ui/multi-select';
-import { PrepackSelector } from './PrepackSelector';
+import { FileDropzone } from '@/components/ui/file-dropzone';
 
 const styleSchema = z.object({
   style_number: z.string().min(1, 'Style number is required'),
   description: z.string().optional(),
   fabric_type_name: z.string().optional(), // Combined fabric type and name
-  color: z.string().optional(),
-  color_code: z.string().optional(), // Pantone number
+  fabric_weight: z.string().optional(), // NEW: Fabric weight
+  color: z.string().optional(), // Kept for backward compatibility
+  color_code: z.string().optional(), // Pantone number (optional)
+  color_id: z.coerce.number().optional(), // NEW: Foreign key to colors table
+  size: z.string().optional(),
   fit: z.string().optional(),
   images: z.string().optional(), // Comma-separated URLs
   technical_file_paths: z.array(z.string()).optional(), // Changed to array for multiple files
   // Master data
   brand_id: z.coerce.number().optional(),
+  buyer_id: z.coerce.number().optional(), // NEW: Buyer
+  category_id: z.coerce.number().optional(), // NEW: Category
+  season_id: z.coerce.number().optional(), // NEW: Season
   gender_id: z.coerce.number().min(1, 'Gender is required'), // REQUIRED: Gender for size management
-  // REMOVED from styles (PO-level fields):
-  // - season_id
-  // - agent_id
-  // - vendor_id
-  // REMOVED buyer/trim detail fields:
-  // - price_ticket_spec
-  // - labels_hangtags
-  // - price_ticket_info
+  // Pricing fields
+  msrp: z.coerce.number().optional(), // NEW: MSRP
+  price_1: z.coerce.number().optional(), // NEW: Price tier 1
+  price_2: z.coerce.number().optional(), // NEW: Price tier 2
+  price_3: z.coerce.number().optional(), // NEW: Price tier 3
+  price_4: z.coerce.number().optional(), // NEW: Price tier 4
+  price_5: z.coerce.number().optional(), // NEW: Price tier 5
+  // Status
+  is_active: z.boolean().optional(), // NEW: Active/Inactive
   // Trims (array of trim IDs)
   trims: z.array(z.number()).optional(),
-  // Note: quantity, unit_price, size_breakdown removed - added at PO level
 });
 
 type StyleFormData = z.infer<typeof styleSchema>;
@@ -72,19 +78,21 @@ export function EditStyleDialog({
   onSuccess,
 }: EditStyleDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<Array<{ path: string; url: string }>>([]);
   const [uploadedTechPacks, setUploadedTechPacks] = useState<string[]>([]); // Changed to array for multiple files
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isUploadingTechPack, setIsUploadingTechPack] = useState(false);
   const [selectedTrims, setSelectedTrims] = useState<number[]>([]);
   const [trims, setTrims] = useState<any[]>([]);
   const [genders, setGenders] = useState<any[]>([]);
+  const [brands, setBrands] = useState<any[]>([]); // NEW: Brands list
+  const [buyers, setBuyers] = useState<any[]>([]); // NEW: Buyers list
+  const [categories, setCategories] = useState<any[]>([]); // NEW: Categories list
+  const [seasons, setSeasons] = useState<any[]>([]); // NEW: Seasons list
+  const [colors, setColors] = useState<any[]>([]); // NEW: Colors list
   const [trimOptions, setTrimOptions] = useState<MultiSelectOption[]>([]);
-  const [selectedPrepacks, setSelectedPrepacks] = useState<Array<{
-    prepack_code_id: number;
-    quantity: number;
-    notes?: string;
-  }>>([]);
+  const [sizes, setSizes] = useState<any[]>([]); // Sizes based on selected gender
+  const [selectedGender, setSelectedGender] = useState<number | undefined>();
 
   const form = useForm<StyleFormData>({
     resolver: zodResolver(styleSchema),
@@ -92,12 +100,26 @@ export function EditStyleDialog({
       style_number: '',
       description: '',
       fabric_type_name: '',
+      fabric_weight: '',
       color: '',
       color_code: '',
+      color_id: undefined,
+      size: '',
       fit: '',
       images: '',
       technical_file_paths: [],
+      brand_id: undefined,
+      buyer_id: undefined,
+      category_id: undefined,
+      season_id: undefined,
       gender_id: undefined,
+      msrp: undefined,
+      price_1: undefined,
+      price_2: undefined,
+      price_3: undefined,
+      price_4: undefined,
+      price_5: undefined,
+      is_active: true,
       trims: [],
     },
   });
@@ -107,13 +129,31 @@ export function EditStyleDialog({
     const fetchMasterData = async () => {
       try {
         const api = (await import('@/lib/api')).default;
-        const [trimsResponse, gendersResponse] = await Promise.all([
+        const [
+          trimsResponse,
+          gendersResponse,
+          brandsResponse,
+          buyersResponse,
+          categoriesResponse,
+          seasonsResponse,
+          colorsResponse,
+        ] = await Promise.all([
           api.get('/master-data/trims?all=true'),
           api.get('/master-data/genders?active_only=true&all=true'),
+          api.get('/master-data/brands?all=true'),
+          api.get('/master-data/buyers?all=true'),
+          api.get('/master-data/categories?all=true'),
+          api.get('/master-data/seasons?all=true'),
+          api.get('/master-data/colors?all=true'),
         ]);
         const fetchedTrims = trimsResponse.data || [];
         setTrims(fetchedTrims);
         setGenders(gendersResponse.data || []);
+        setBrands(brandsResponse.data || []);
+        setBuyers(buyersResponse.data || []);
+        setCategories(categoriesResponse.data || []);
+        setSeasons(seasonsResponse.data || []);
+        setColors(colorsResponse.data || []);
 
         // Transform trims to multi-select options
         const options: MultiSelectOption[] = fetchedTrims.map((trim: any) => ({
@@ -131,24 +171,70 @@ export function EditStyleDialog({
     }
   }, [open]);
 
+  // Fetch sizes when gender changes
+  useEffect(() => {
+    const fetchSizes = async () => {
+      if (!selectedGender) {
+        setSizes([]);
+        return;
+      }
+
+      try {
+        const api = (await import('@/lib/api')).default;
+        const response = await api.get(`/master-data/sizes?gender_id=${selectedGender}&active_only=true&all=true`);
+        setSizes(response.data || []);
+      } catch (error) {
+        console.error('Failed to fetch sizes:', error);
+        setSizes([]);
+      }
+    };
+
+    fetchSizes();
+  }, [selectedGender]);
+
   // Populate form when style changes
   useEffect(() => {
     if (style && open) {
+      const genderId = (style as any).gender_id || undefined;
+      setSelectedGender(genderId);
+
       form.reset({
         style_number: style.style_number || '',
         description: style.description || '',
         fabric_type_name: style.fabric_type_name || '',
+        fabric_weight: (style as any).fabric_weight || '',
         color: style.color || '',
         color_code: style.color_code || '',
+        color_id: (style as any).color_id || undefined,
+        size: (style as any).size || '',
         fit: style.fit || '',
         images: style.images ? style.images.join(', ') : '',
         technical_file_paths: (style as any).technical_file_paths || [],
-        gender_id: (style as any).gender_id || undefined,
+        brand_id: (style as any).brand_id || undefined,
+        buyer_id: (style as any).buyer_id || undefined,
+        category_id: (style as any).category_id || undefined,
+        season_id: (style as any).season_id || undefined,
+        gender_id: genderId,
+        msrp: (style as any).msrp || undefined,
+        price_1: (style as any).price_1 || undefined,
+        price_2: (style as any).price_2 || undefined,
+        price_3: (style as any).price_3 || undefined,
+        price_4: (style as any).price_4 || undefined,
+        price_5: (style as any).price_5 || undefined,
+        is_active: (style as any).is_active !== undefined ? (style as any).is_active : true,
         trims: [],
       });
 
       // Populate uploaded files
-      setUploadedImages(style.images || []);
+      if (style.images && Array.isArray(style.images)) {
+        const imageData = style.images.map((img: string) => ({
+          path: img,
+          url: img.startsWith('http') ? img : `/storage/${img}`,
+        }));
+        setUploadedImages(imageData);
+      } else {
+        setUploadedImages([]);
+      }
       setUploadedTechPacks((style as any).technical_file_paths || []);
 
       // Populate trims if style has associated trims
@@ -157,13 +243,6 @@ export function EditStyleDialog({
         setSelectedTrims(trimIds);
       } else {
         setSelectedTrims([]);
-      }
-
-      // Populate prepacks if style has associated prepacks
-      if ((style as any).prepacks && Array.isArray((style as any).prepacks)) {
-        setSelectedPrepacks((style as any).prepacks);
-      } else {
-        setSelectedPrepacks([]);
       }
     }
   }, [style, open, form]);
@@ -177,28 +256,51 @@ export function EditStyleDialog({
     try {
       setIsSubmitting(true);
 
-      // Use uploaded images
+      // Use uploaded images - extract paths for API submission
       let parsedImages = undefined;
       if (uploadedImages.length > 0) {
-        parsedImages = uploadedImages;
+        parsedImages = uploadedImages.map(img => img.path);
       }
 
-      // Prepare data for API (removed: quantity, unit_price, size_breakdown - added at PO level)
+      // Transform trims to correct format: array of objects with trim_id
+      let transformedTrims = undefined;
+      if (selectedTrims.length > 0) {
+        transformedTrims = selectedTrims.map(trimId => ({
+          trim_id: trimId,
+          quantity: null,
+          notes: null,
+        }));
+      }
+
+      // Prepare data for API
       const styleData: any = {
         style_number: data.style_number,
         description: data.description || undefined,
         fabric_type_name: data.fabric_type_name || undefined,
+        fabric_weight: data.fabric_weight || undefined,
         color: data.color || undefined,
         color_code: data.color_code || undefined,
+        color_id: data.color_id || undefined,
         fit: data.fit || undefined,
         images: parsedImages,
         technical_file_paths: uploadedTechPacks.length > 0 ? uploadedTechPacks : undefined,
+        // Master data
         brand_id: data.brand_id || undefined,
+        buyer_id: data.buyer_id || undefined,
+        category_id: data.category_id || undefined,
+        season_id: data.season_id || undefined,
         gender_id: data.gender_id || undefined,
-        // REMOVED from styles (PO-level fields): season_id, agent_id, vendor_id
-        // REMOVED buyer details fields
-        trims: selectedTrims.length > 0 ? selectedTrims : undefined,
-        prepacks: selectedPrepacks.length > 0 ? selectedPrepacks : undefined,
+        // Pricing
+        msrp: data.msrp || undefined,
+        price_1: data.price_1 || undefined,
+        price_2: data.price_2 || undefined,
+        price_3: data.price_3 || undefined,
+        price_4: data.price_4 || undefined,
+        price_5: data.price_5 || undefined,
+        // Status
+        is_active: data.is_active !== undefined ? data.is_active : true,
+        // Trims
+        trims: transformedTrims,
       };
 
       const updatedStyle = await updateStandaloneStyle(style.id, styleData);
@@ -232,8 +334,7 @@ export function EditStyleDialog({
     onOpenChange(false);
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const handleImageUpload = async (files: FileList) => {
     if (!files || files.length === 0) return;
 
     setIsUploadingImage(true);
@@ -248,9 +349,12 @@ export function EditStyleDialog({
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      // Extract paths from uploaded images
-      const imagePaths = response.data.images.map((img: any) => img.path);
-      setUploadedImages([...uploadedImages, ...imagePaths]);
+      // Extract both path (for API) and url (for preview) from uploaded images
+      const imageData = response.data.images.map((img: any) => ({
+        path: img.path,
+        url: img.url,
+      }));
+      setUploadedImages([...uploadedImages, ...imageData]);
 
       toast.success(`${files.length} image(s) uploaded`);
     } catch (error) {
@@ -258,12 +362,10 @@ export function EditStyleDialog({
       toast.error('Failed to upload images');
     } finally {
       setIsUploadingImage(false);
-      e.target.value = '';
     }
   };
 
-  const handleTechPackUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const handleTechPackUpload = async (files: FileList) => {
     if (!files || files.length === 0) return;
 
     setIsUploadingTechPack(true);
@@ -288,7 +390,6 @@ export function EditStyleDialog({
       toast.error('Failed to upload tech pack');
     } finally {
       setIsUploadingTechPack(false);
-      e.target.value = '';
     }
   };
 
@@ -372,30 +473,64 @@ export function EditStyleDialog({
             {/* Fabric & Color Details */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold border-b pb-2">Fabric & Color Details</h3>
-              <FormField
-                control={form.control}
-                name="fabric_type_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fabric Type Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., 100% Cotton Jersey, Polyester Blend" {...field} />
-                    </FormControl>
-                    <FormDescription>Combined fabric type and name</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
-                  name="color"
+                  name="fabric_type_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fabric Type Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., 60/40 CVC 200GSM, Premium Cotton Twill"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Combined fabric type and name
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="fabric_weight"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fabric Weight</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., 200 GSM, 5.5 oz/yd²" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="color_id"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Color</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Navy Blue, Red" {...field} />
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select color...</option>
+                          {colors.map((color: any) => (
+                            <option key={color.id} value={color.id}>
+                              {color.name} {color.code ? `(${color.code})` : ''}
+                            </option>
+                          ))}
+                        </select>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -407,9 +542,95 @@ export function EditStyleDialog({
                   name="color_code"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Color Code (Pantone)</FormLabel>
+                      <FormLabel>Color Code (Pantone) - Optional</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., PMS 2965C, 19-4052 TPX" {...field} />
+                        <Input placeholder="e.g., PMS 2965C, Pantone 19-4052" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            {/* Pricing */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold border-b pb-2">Pricing</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={form.control}
+                  name="msrp"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>MSRP</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormDescription>Manufacturer Suggested Retail Price</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_1"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 1</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_2"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 2</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_3"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 3</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_4"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 4</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_5"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 5</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -424,15 +645,131 @@ export function EditStyleDialog({
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
-                  name="gender_id"
+                  name="brand_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Gender</FormLabel>
+                      <FormLabel>Brand</FormLabel>
                       <FormControl>
                         <select
                           {...field}
                           value={field.value || ''}
-                          onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select brand...</option>
+                          {brands.map((brand: any) => (
+                            <option key={brand.id} value={brand.id}>
+                              {brand.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="buyer_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Buyer</FormLabel>
+                      <FormControl>
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select buyer...</option>
+                          {buyers.map((buyer: any) => (
+                            <option key={buyer.id} value={buyer.id}>
+                              {buyer.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="category_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Category</FormLabel>
+                      <FormControl>
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select category...</option>
+                          {categories.map((category: any) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="season_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Season</FormLabel>
+                      <FormControl>
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select season...</option>
+                          {seasons.map((season: any) => (
+                            <option key={season.id} value={season.id}>
+                              {season.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="gender_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Gender *</FormLabel>
+                      <FormControl>
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                            setSelectedGender(value);
+                          }}
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <option value="">Select gender...</option>
@@ -444,12 +781,77 @@ export function EditStyleDialog({
                         </select>
                       </FormControl>
                       <FormDescription>
-                        Select gender for size management
+                        Select gender to load size options
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={form.control}
+                  name="is_active"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Active</FormLabel>
+                        <FormDescription>
+                          Is this style currently active?
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <input
+                          type="checkbox"
+                          checked={field.value}
+                          onChange={field.onChange}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                {selectedGender && (
+                  <div className="space-y-2">
+                    <Label>Available Sizes</Label>
+                    {sizes.length > 0 ? (
+                      <>
+                        <div className="flex flex-wrap gap-2 p-3 border rounded-md bg-muted/50">
+                          {sizes.map((size: any) => (
+                            <span key={size.id} className="px-2 py-1 text-xs bg-primary/10 text-primary rounded">
+                              {size.size_code}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {sizes.length} size{sizes.length !== 1 ? 's' : ''} available for this gender
+                        </p>
+                      </>
+                    ) : (
+                      <div className="p-4 border rounded-md bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                              No sizes available for this gender
+                            </p>
+                            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                              Please add sizes for {genders.find((g: any) => g.id === selectedGender)?.name} before creating a style.
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              window.open(`/master-data/sizes?gender=${selectedGender}`, '_blank');
+                            }}
+                            className="shrink-0"
+                          >
+                            Add Sizes
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -463,7 +865,7 @@ export function EditStyleDialog({
                   selected={selectedTrims}
                   onChange={(selected) => setSelectedTrims(selected as number[])}
                   placeholder={trimOptions.length === 0 ? 'No trims available' : 'Select trims...'}
-                  emptyMessage="No trims found. Please add trims in the master data section."
+                  emptyMessage="No trims found."
                   disabled={trimOptions.length === 0}
                 />
                 {selectedTrims.length > 0 && (
@@ -471,16 +873,39 @@ export function EditStyleDialog({
                     <strong>{selectedTrims.length}</strong> trim{selectedTrims.length !== 1 ? 's' : ''} selected
                   </p>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  To add new trims, visit the Master Data → Trims page
+                </p>
               </div>
             </div>
 
-            {/* Prepacks */}
-            <div className="space-y-4">
-              <PrepackSelector
-                prepacks={selectedPrepacks}
-                onChange={setSelectedPrepacks}
-              />
-            </div>
+            {/* Audit Information */}
+            {style && (style as any).creator && (
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold border-b pb-2 flex items-center gap-2">
+                  <Info className="h-4 w-4" />
+                  Audit Information
+                </h3>
+                <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Created By</p>
+                    <p className="text-sm font-medium">{(style as any).creator?.name || 'Unknown'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date((style as any).created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  {(style as any).updated_by && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">Last Updated By</p>
+                      <p className="text-sm font-medium">{(style as any).updatedBy?.name || 'Unknown'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date((style as any).updated_at).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Files & Documents */}
             <div className="space-y-4">
@@ -489,84 +914,37 @@ export function EditStyleDialog({
               {/* Image Upload */}
               <div className="space-y-2">
                 <Label>Style Images</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImageUpload}
-                    disabled={isUploadingImage}
-                    className="flex-1"
-                  />
-                  {isUploadingImage && <Loader2 className="h-4 w-4 animate-spin" />}
-                </div>
-
-                {uploadedImages.length > 0 && (
-                  <div className="grid grid-cols-4 gap-2 mt-2">
-                    {uploadedImages.map((img, index) => (
-                      <div key={index} className="relative group">
-                        <img
-                          src={img}
-                          alt={`Style ${index + 1}`}
-                          className="w-full h-24 object-cover rounded border"
-                        />
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon"
-                          className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => removeImage(index)}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Upload product images (PNG, JPG, etc.)
-                </p>
+                <FileDropzone
+                  accept="image/*"
+                  multiple
+                  onUpload={handleImageUpload}
+                  isUploading={isUploadingImage}
+                  uploadedFiles={uploadedImages}
+                  onRemove={removeImage}
+                  type="image"
+                  maxSizeMB={10}
+                  helpText="Upload product images (PNG, JPG, etc.)"
+                />
               </div>
 
               {/* Tech Pack Upload */}
               <div className="space-y-2">
                 <Label>Technical Pack / Spec Sheet</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="file"
-                    accept=".ai,.pdf,.jpg,.jpeg,.png"
-                    multiple
-                    onChange={handleTechPackUpload}
-                    disabled={isUploadingTechPack}
-                    className="flex-1"
-                  />
-                  {isUploadingTechPack && <Loader2 className="h-4 w-4 animate-spin" />}
-                </div>
-
-                {uploadedTechPacks.length > 0 && (
-                  <div className="space-y-2">
-                    {uploadedTechPacks.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 border rounded bg-muted">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          <span className="text-sm">Tech pack file {index + 1}</span>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeTechPack(index)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Upload technical documents (.ai, .pdf, .jpeg, .png) - Multiple files supported
-                </p>
+                <FileDropzone
+                  accept=".ai,.pdf,.jpg,.jpeg,.png"
+                  multiple
+                  onUpload={handleTechPackUpload}
+                  isUploading={isUploadingTechPack}
+                  uploadedFiles={uploadedTechPacks.map((path, idx) => ({
+                    url: path,
+                    path: path,
+                    name: `Tech pack file ${idx + 1}`,
+                  }))}
+                  onRemove={removeTechPack}
+                  type="document"
+                  maxSizeMB={20}
+                  helpText="Upload technical documents (.ai, .pdf, .jpeg, .png)"
+                />
               </div>
             </div>
 
