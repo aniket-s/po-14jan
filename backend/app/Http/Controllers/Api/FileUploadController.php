@@ -41,14 +41,17 @@ class FileUploadController extends Controller
                 . '.' . $extension;
 
             // Store file in public disk
-            $path = $file->storeAs(
+            $storedPath = $file->storeAs(
                 "{$folder}/{$type}",
                 $filename,
                 'public'
             );
 
-            // Get public URL - use the API domain instead of APP_URL
-            $url = url('/storage/' . $path);
+            // Remove 'public/' prefix if present (Laravel sometimes adds this)
+            $path = str_replace('public/', '', $storedPath);
+
+            // Build absolute URL with request scheme and host
+            $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
             return response()->json([
                 'message' => 'File uploaded successfully',
@@ -103,14 +106,17 @@ class FileUploadController extends Controller
                     . '.' . $extension;
 
                 // Store file in public disk
-                $path = $file->storeAs(
+                $storedPath = $file->storeAs(
                     "{$folder}/{$type}",
                     $filename,
                     'public'
                 );
 
-                // Get public URL - use the API domain instead of APP_URL
-                $url = url('/storage/' . $path);
+                // Remove 'public/' prefix if present (Laravel sometimes adds this)
+                $path = str_replace('public/', '', $storedPath);
+
+                // Build absolute URL with request scheme and host
+                $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
                 $uploadedFiles[] = [
                     'path' => $path,
@@ -165,14 +171,17 @@ class FileUploadController extends Controller
                     . '.' . $extension;
 
                 // Store in styles/images directory on public disk
-                $path = $image->storeAs(
+                $storedPath = $image->storeAs(
                     'styles/images',
                     $filename,
                     'public'
                 );
 
-                // Get public URL - use the API domain instead of APP_URL
-                $url = url('/storage/' . $path);
+                // Remove 'public/' prefix if present (Laravel sometimes adds this)
+                $path = str_replace('public/', '', $storedPath);
+
+                // Build absolute URL with request scheme and host
+                $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
                 $uploadedImages[] = [
                     'path' => $path,
@@ -227,14 +236,17 @@ class FileUploadController extends Controller
                     . '.' . $extension;
 
                 // Store in styles/technical directory on public disk
-                $path = $file->storeAs(
+                $storedPath = $file->storeAs(
                     'styles/technical',
                     $filename,
                     'public'
                 );
 
-                // Get public URL - use the API domain instead of APP_URL
-                $url = url('/storage/' . $path);
+                // Remove 'public/' prefix if present (Laravel sometimes adds this)
+                $path = str_replace('public/', '', $storedPath);
+
+                // Build absolute URL with request scheme and host
+                $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
                 $uploadedFiles[] = [
                     'path' => $path,
