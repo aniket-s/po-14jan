@@ -40,14 +40,15 @@ class FileUploadController extends Controller
                 . '-' . time()
                 . '.' . $extension;
 
-            // Determine storage path based on type
+            // Store file in public disk
             $path = $file->storeAs(
-                "public/{$folder}/{$type}",
-                $filename
+                "{$folder}/{$type}",
+                $filename,
+                'public'
             );
 
-            // Get public URL
-            $url = Storage::url($path);
+            // Get public URL - use the API domain instead of APP_URL
+            $url = url('/storage/' . $path);
 
             return response()->json([
                 'message' => 'File uploaded successfully',
@@ -101,14 +102,15 @@ class FileUploadController extends Controller
                     . '-' . time() . '-' . Str::random(6)
                     . '.' . $extension;
 
-                // Store file
+                // Store file in public disk
                 $path = $file->storeAs(
-                    "public/{$folder}/{$type}",
-                    $filename
+                    "{$folder}/{$type}",
+                    $filename,
+                    'public'
                 );
 
-                // Get public URL
-                $url = Storage::url($path);
+                // Get public URL - use the API domain instead of APP_URL
+                $url = url('/storage/' . $path);
 
                 $uploadedFiles[] = [
                     'path' => $path,
@@ -162,14 +164,15 @@ class FileUploadController extends Controller
                     . '-' . time() . '-' . Str::random(6)
                     . '.' . $extension;
 
-                // Store in styles/images directory
+                // Store in styles/images directory on public disk
                 $path = $image->storeAs(
-                    'public/styles/images',
-                    $filename
+                    'styles/images',
+                    $filename,
+                    'public'
                 );
 
-                // Get public URL
-                $url = Storage::url($path);
+                // Get public URL - use the API domain instead of APP_URL
+                $url = url('/storage/' . $path);
 
                 $uploadedImages[] = [
                     'path' => $path,
@@ -223,14 +226,15 @@ class FileUploadController extends Controller
                     . '-' . time() . '-' . Str::random(6)
                     . '.' . $extension;
 
-                // Store in styles/technical directory
+                // Store in styles/technical directory on public disk
                 $path = $file->storeAs(
-                    'public/styles/technical',
-                    $filename
+                    'styles/technical',
+                    $filename,
+                    'public'
                 );
 
-                // Get public URL
-                $url = Storage::url($path);
+                // Get public URL - use the API domain instead of APP_URL
+                $url = url('/storage/' . $path);
 
                 $uploadedFiles[] = [
                     'path' => $path,

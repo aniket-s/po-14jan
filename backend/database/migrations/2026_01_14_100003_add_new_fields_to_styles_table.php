@@ -15,7 +15,7 @@ return new class extends Migration
             // New master data relationships
             $table->foreignId('buyer_id')->nullable()->after('brand_id')->constrained('buyers')->nullOnDelete();
             $table->foreignId('category_id')->nullable()->after('buyer_id')->constrained('categories')->nullOnDelete();
-            $table->foreignId('season_id')->nullable()->after('category_id')->constrained('seasons')->nullOnDelete();
+            // Note: season_id already exists from 2025_11_23_090911_add_master_data_fields_to_styles_table.php
             $table->foreignId('color_id')->nullable()->after('color')->constrained('colors')->nullOnDelete();
 
             // Pricing fields
@@ -33,7 +33,7 @@ return new class extends Migration
             // Indexes
             $table->index('buyer_id');
             $table->index('category_id');
-            $table->index('season_id');
+            // Note: season_id index already exists from previous migration
             $table->index('color_id');
             $table->index('is_active');
             $table->index('updated_by');
@@ -49,14 +49,14 @@ return new class extends Migration
             // Drop foreign keys first
             $table->dropForeign(['buyer_id']);
             $table->dropForeign(['category_id']);
-            $table->dropForeign(['season_id']);
+            // Note: season_id not dropped as it wasn't added by this migration
             $table->dropForeign(['color_id']);
             $table->dropForeign(['updated_by']);
 
             // Drop indexes
             $table->dropIndex(['buyer_id']);
             $table->dropIndex(['category_id']);
-            $table->dropIndex(['season_id']);
+            // Note: season_id index not dropped as it wasn't added by this migration
             $table->dropIndex(['color_id']);
             $table->dropIndex(['is_active']);
             $table->dropIndex(['updated_by']);
@@ -65,7 +65,7 @@ return new class extends Migration
             $table->dropColumn([
                 'buyer_id',
                 'category_id',
-                'season_id',
+                // Note: season_id not dropped as it wasn't added by this migration
                 'color_id',
                 'msrp',
                 'price_1',
