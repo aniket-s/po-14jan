@@ -1,0 +1,1463 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Plus, Search, Eye, Edit, Trash2, FileDown, FileUp, Loader2 } from 'lucide-react';
+import api from '@/lib/api';
+import { PurchaseOrder, PaginatedResponse } from '@/types';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { ExcelImportDialog } from '@/components/purchase-orders/ExcelImportDialog';
+import { CreateRetailerDialog } from '@/components/master-data/CreateRetailerDialog';
+import { CreateSeasonDialog } from '@/components/master-data/CreateSeasonDialog';
+import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseDialog';
+import { CreateAgentDialog } from '@/components/master-data/CreateAgentDialog';
+import { CreateVendorDialog } from '@/components/master-data/CreateVendorDialog';
+import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialog';
+import { useAuth } from '@/contexts/AuthContext';
+import { RatioInput } from '@/components/purchase-orders/RatioInput';
+
+const poSchema = z.object({
+  auto_generate_po_number: z.boolean().optional(),
+  po_number: z.string().min(1, 'PO number is required'),
+  headline: z.string().optional(), // NEW: PO headline/title
+  retailer_id: z.string().min(1, 'Retailer is required'),
+  po_date: z.string().min(1, 'PO date is required'),
+  delivery_date: z.string().min(1, 'Delivery date is required'),
+  status: z.string().min(1, 'Status is required'),
+  currency: z.string().min(1, 'Currency is required'),
+  shipping_method: z.string().optional(),
+  notes: z.string().optional(),
+  // Master data foreign keys (division_id, customer_id, and brand_id removed - brand already in Style)
+  season_id: z.string().optional(),
+  agent_id: z.string().optional(),
+  vendor_id: z.string().optional(),
+  warehouse_id: z.string().optional(),
+  // NEW: Country of origin for shipping calculations
+  country_id: z.string().optional(),
+  // NEW: Shipping term (FOB or DDP) - determines shipping date fields visibility
+  shipping_term: z.enum(['FOB', 'DDP']).optional(),
+  // Payment terms (structured)
+  payment_terms_structured: z.object({
+    term: z.string(),
+    percentage: z.number().min(0, 'Percentage must be at least 0').max(100, 'Percentage cannot exceed 100').optional(),
+  }).optional(),
+  // Additional fields (removed: loading_port)
+  packing_method: z.string().optional(),
+  other_terms: z.string().optional(),
+  // Enhanced PO fields (ship_from and manufacturer removed)
+  revision_date: z.string().optional(),
+  etd_date: z.string().min(1, 'ETD date is required'), // NOW REQUIRED
+  eta_date: z.string().optional(),
+  in_warehouse_date: z.string().optional(),
+  ship_to: z.string().optional(),
+  ship_to_address: z.string().optional(),
+  // Sample schedule (will be auto-generated)
+  sample_schedule: z.object({
+    lab_dip_submission: z.string().optional(),
+    fit_sample_submission: z.string().optional(),
+    trim_approvals: z.string().optional(),
+    first_proto_submission: z.string().optional(),
+    bulk_fabric_inhouse: z.string().optional(),
+    pp_sample_submission: z.string().optional(),
+    production_start: z.string().optional(),
+    top_approval: z.string().optional(),
+  }).optional(),
+  // REMOVED: buyer_details fields - buyer/trim details removed per requirements
+  packing_guidelines: z.string().optional(),
+});
+
+type POFormData = z.infer<typeof poSchema>;
+
+export default function PurchaseOrdersPage() {
+  const { can } = useAuth();
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSelectPODialogOpen, setIsSelectPODialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [selectedPOForImport, setSelectedPOForImport] = useState<number | null>(null);
+  const [isCreateRetailerDialogOpen, setIsCreateRetailerDialogOpen] = useState(false);
+  const [isCreateSeasonDialogOpen, setIsCreateSeasonDialogOpen] = useState(false);
+  const [isCreateWarehouseDialogOpen, setIsCreateWarehouseDialogOpen] = useState(false);
+  const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
+  const [isCreateVendorDialogOpen, setIsCreateVendorDialogOpen] = useState(false);
+  const [isCreateCountryDialogOpen, setIsCreateCountryDialogOpen] = useState(false);
+
+  // Master data state (brands removed - brand is in Style)
+  const [seasons, setSeasons] = useState<any[]>([]);
+  const [retailers, setRetailers] = useState<any[]>([]);
+  const [countries, setCountries] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [vendors, setVendors] = useState<any[]>([]);
+  const [styles, setStyles] = useState<any[]>([]);
+
+  // Auto-generation states
+  const [autoGeneratePO, setAutoGeneratePO] = useState(true);
+  const [isGeneratingPO, setIsGeneratingPO] = useState(false);
+  const [isCalculatingDates, setIsCalculatingDates] = useState(false);
+
+  // Payment terms state
+  const [paymentTerm, setPaymentTerm] = useState<string>('');
+  const [paymentPercentage, setPaymentPercentage] = useState<string>('');
+
+  // Shipping term state (FOB/DDP)
+  const [shippingTerm, setShippingTerm] = useState<'FOB' | 'DDP'>('FOB');
+
+  // Selected styles with quantity, ratio, and price
+  const [selectedStyles, setSelectedStyles] = useState<Array<{
+    style_id: number;
+    quantity: number;
+    ratio: any;
+    unit_price_in_po?: number | null;
+  }>>([]);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    reset,
+    setValue,
+  } = useForm<POFormData>({
+    resolver: zodResolver(poSchema),
+    defaultValues: {
+      status: 'draft',
+      currency: 'USD',
+    },
+  });
+
+  useEffect(() => {
+    fetchPurchaseOrders();
+  }, [currentPage, searchTerm, statusFilter]);
+
+  // Fetch master data on mount
+  useEffect(() => {
+    fetchMasterData();
+  }, []);
+
+  // Set default PO date to today when create dialog opens
+  useEffect(() => {
+    if (isCreateDialogOpen) {
+      const today = new Date().toISOString().split('T')[0];
+      setValue('po_date', today);
+      // Reset payment terms state
+      setPaymentTerm('');
+      setPaymentPercentage('');
+      // Auto-generate PO number if auto-generate is enabled
+      if (autoGeneratePO) {
+        generatePONumber();
+      }
+    }
+  }, [isCreateDialogOpen, setValue]);
+
+  const fetchMasterData = async () => {
+    try {
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, stylesRes] = await Promise.all([
+        api.get('/master-data/seasons?all=true'),
+        api.get('/master-data/retailers?all=true'),
+        api.get('/master-data/countries?all=true'),
+        api.get('/master-data/warehouses?all=true'),
+        api.get('/master-data/agents?all=true'),
+        api.get('/master-data/vendors?all=true'),
+        api.get('/styles?all=true'),
+      ]);
+
+      setSeasons(seasonsRes.data || []);
+      setRetailers(retailersRes.data || []);
+      setCountries(countriesRes.data || []);
+      setWarehouses(warehousesRes.data || []);
+      setAgents(agentsRes.data || []);
+      setVendors(vendorsRes.data || []);
+      // Handle paginated response from /styles endpoint
+      setStyles(stylesRes.data?.data || stylesRes.data || []);
+    } catch (error) {
+      console.error('Failed to fetch master data:', error);
+    }
+  };
+
+  const fetchPurchaseOrders = async () => {
+    try {
+      setLoading(true);
+      const params: {
+        page: number;
+        per_page: number;
+        search?: string;
+        status?: string;
+      } = {
+        page: currentPage,
+        per_page: 10,
+      };
+
+      if (searchTerm) {
+        params.search = searchTerm;
+      }
+
+      if (statusFilter !== 'all') {
+        params.status = statusFilter;
+      }
+
+      const response = await api.get<PaginatedResponse<PurchaseOrder>>('/purchase-orders', {
+        params,
+      });
+
+      setPurchaseOrders(response.data.data || []);
+      setTotalPages(response.data.last_page || 1);
+    } catch (error) {
+      console.error('Failed to fetch purchase orders:', error);
+      setPurchaseOrders([]);
+      setTotalPages(1);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-generate PO number
+  const generatePONumber = async () => {
+    if (!autoGeneratePO) return;
+
+    setIsGeneratingPO(true);
+    try {
+      const response = await api.get('/purchase-orders/generate-po-number');
+      if (response.data?.po_number) {
+        setValue('po_number', response.data.po_number);
+      }
+    } catch (error) {
+      console.error('Failed to generate PO number:', error);
+    } finally {
+      setIsGeneratingPO(false);
+    }
+  };
+
+  // Auto-calculate dates based on ETD and country
+  const calculateDates = async (etdDate: string, countryId: string) => {
+    if (!etdDate || !countryId) return;
+
+    setIsCalculatingDates(true);
+    try {
+      const response = await api.post('/purchase-orders/calculate-dates', {
+        etd_date: etdDate,
+        country_id: parseInt(countryId),
+      });
+
+      if (response.data?.eta) {
+        setValue('eta_date', response.data.eta);
+      }
+      if (response.data?.in_warehouse) {
+        setValue('in_warehouse_date', response.data.in_warehouse);
+      }
+    } catch (error) {
+      console.error('Failed to calculate dates:', error);
+    } finally {
+      setIsCalculatingDates(false);
+    }
+  };
+
+  // Auto-generate sample schedule
+  const generateSampleSchedule = async (poDate: string, etdDate: string) => {
+    if (!poDate || !etdDate) {
+      alert('Please enter PO Date and ETD Date first');
+      return;
+    }
+
+    try {
+      const response = await api.post('/purchase-orders/sample-schedule', {
+        po_date: poDate,
+        etd_date: etdDate,
+      });
+
+      if (response.data?.schedule) {
+        const schedule = response.data.schedule;
+        // Helper to extract date in YYYY-MM-DD format
+        const formatDate = (dateString: string) => dateString ? dateString.split('T')[0] : '';
+
+        setValue('sample_schedule', {
+          lab_dip_submission: formatDate(schedule.lab_dip?.date || ''),
+          fit_sample_submission: formatDate(schedule.fit_samples?.date || ''),
+          trim_approvals: formatDate(schedule.trim_approvals?.date || ''),
+          first_proto_submission: formatDate(schedule.first_proto_samples?.date || ''),
+          bulk_fabric_inhouse: formatDate(schedule.bulk_fabric_inhouse?.date || ''),
+          pp_sample_submission: formatDate(schedule.pp_sample?.date || ''),
+          production_start: formatDate(schedule.production_start?.date || ''),
+          top_approval: formatDate(schedule.top_approval?.date || ''),
+        });
+      }
+    } catch (error) {
+      console.error('Failed to generate sample schedule:', error);
+      alert('Failed to generate sample schedule');
+    }
+  };
+
+  const onSubmit = async (data: POFormData) => {
+    setIsSubmitting(true);
+    try {
+      // REMOVED: buyer_details building logic - buyer/trim details removed per requirements
+
+      const requestData = {
+        po_number: data.po_number,
+        headline: data.headline || null, // NEW: PO headline
+        retailer_id: data.retailer_id ? parseInt(data.retailer_id) : null,
+        po_date: data.po_date,
+        delivery_date: data.delivery_date,
+        status: data.status,
+        currency: data.currency,
+        shipping_method: data.shipping_method,
+        notes: data.notes,
+        // Master data (division_id, customer_id, and brand_id removed - brand is in Style)
+        season_id: data.season_id ? parseInt(data.season_id) : null,
+        agent_id: data.agent_id ? parseInt(data.agent_id) : null,
+        vendor_id: data.vendor_id ? parseInt(data.vendor_id) : null,
+        warehouse_id: data.warehouse_id ? parseInt(data.warehouse_id) : null,
+        country_id: data.country_id ? parseInt(data.country_id) : null,
+        shipping_term: shippingTerm || null, // FOB or DDP
+        // Payment terms (structured)
+        payment_terms_structured: data.payment_terms_structured || null,
+        // Additional fields (removed: loading_port)
+        packing_method: data.packing_method || null,
+        other_terms: data.other_terms || null,
+        // Enhanced fields (ship_from and manufacturer removed)
+        revision_date: data.revision_date,
+        etd_date: data.etd_date,
+        eta_date: data.eta_date,
+        in_warehouse_date: data.in_warehouse_date,
+        ship_to: data.ship_to,
+        ship_to_address: data.ship_to_address,
+        // Sample schedule
+        sample_schedule: data.sample_schedule || undefined,
+        // REMOVED: buyer_details - buyer/trim details removed per requirements
+        packing_guidelines: data.packing_guidelines,
+        // Styles with quantity and ratio
+        styles: selectedStyles.length > 0 ? selectedStyles : undefined,
+      };
+
+      await api.post('/purchase-orders', requestData);
+      setIsCreateDialogOpen(false);
+      reset();
+      setAutoGeneratePO(true);
+      setSelectedStyles([]);
+      setPaymentTerm('');
+      setPaymentPercentage('');
+      fetchPurchaseOrders();
+    } catch (error) {
+      console.error('Failed to create purchase order:', error);
+      alert('Failed to create purchase order. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this purchase order?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/purchase-orders/${id}`);
+      fetchPurchaseOrders();
+    } catch (error) {
+      console.error('Failed to delete purchase order:', error);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      draft: 'secondary',
+      confirmed: 'default',
+      in_production: 'default',
+      completed: 'secondary',
+      cancelled: 'destructive',
+    };
+    return colors[status] || 'secondary';
+  };
+
+  const formatCurrency = (value: number, currency: string) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  return (
+    <DashboardLayout requiredPermissions={['po.view', 'po.view_all', 'po.create']} requireAll={false}>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Purchase Orders</h1>
+            <p className="text-muted-foreground">Manage and track all purchase orders</p>
+          </div>
+          <div className="flex gap-2">
+            {can('po.export') && (
+              <Button variant="outline" size="sm">
+                <FileDown className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            )}
+            {can('po.import') && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsSelectPODialogOpen(true)}
+              >
+                <FileUp className="mr-2 h-4 w-4" />
+                Import Styles
+              </Button>
+            )}
+            {can('po.create') && (
+              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="mr-2 h-4 w-4" />
+                    New PO
+                  </Button>
+                </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                <form onSubmit={handleSubmit(onSubmit)}>
+                  <DialogHeader>
+                    <DialogTitle>Create Purchase Order</DialogTitle>
+                    <DialogDescription>
+                      Create a new purchase order. Optionally add styles during creation.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-6 py-4">
+                    {/* Basic Information */}
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-semibold">Basic Information</h3>
+                      <div className="space-y-4">
+                        {/* PO Number with Auto-Generation */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="po_number">PO Number *</Label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id="auto_gen_po"
+                                checked={autoGeneratePO}
+                                onChange={(e) => {
+                                  setAutoGeneratePO(e.target.checked);
+                                  if (e.target.checked) {
+                                    generatePONumber();
+                                  }
+                                }}
+                                className="rounded"
+                              />
+                              <Label htmlFor="auto_gen_po" className="text-xs cursor-pointer">
+                                Auto-generate
+                              </Label>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Input
+                              id="po_number"
+                              placeholder="PO-2025-001"
+                              {...register('po_number')}
+                              disabled={autoGeneratePO}
+                            />
+                            {autoGeneratePO && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={generatePONumber}
+                                disabled={isGeneratingPO}
+                              >
+                                {isGeneratingPO ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generate'}
+                              </Button>
+                            )}
+                          </div>
+                          {errors.po_number && (
+                            <p className="text-sm text-destructive">{errors.po_number.message}</p>
+                          )}
+                        </div>
+
+                        {/* Headline */}
+                        <div className="space-y-2">
+                          <Label htmlFor="headline">PO Headline</Label>
+                          <Input
+                            id="headline"
+                            placeholder="e.g., Spring 2025 Collection"
+                            {...register('headline')}
+                          />
+                          {errors.headline && (
+                            <p className="text-sm text-destructive">{errors.headline.message}</p>
+                          )}
+                        </div>
+
+                        {/* Retailer Dropdown with Create Button */}
+                        <div className="space-y-2">
+                          <Label htmlFor="retailer_id">Retailer *</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => setValue('retailer_id', value)}>
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select retailer" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {retailers.map((retailer) => (
+                                  <SelectItem key={retailer.id} value={retailer.id.toString()}>
+                                    {retailer.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsCreateRetailerDialogOpen(true)}
+                              title="Create new retailer"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          {errors.retailer_id && (
+                            <p className="text-sm text-destructive">{errors.retailer_id.message}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="status">Status *</Label>
+                          <Select
+                            defaultValue="draft"
+                            onValueChange={(value) => setValue('status', value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="draft">Draft</SelectItem>
+                              <SelectItem value="confirmed">Confirmed</SelectItem>
+                              <SelectItem value="in_production">In Production</SelectItem>
+                              <SelectItem value="completed">Completed</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {errors.status && (
+                            <p className="text-sm text-destructive">{errors.status.message}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="currency">Currency *</Label>
+                          <Select
+                            defaultValue="USD"
+                            onValueChange={(value) => setValue('currency', value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select currency" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="USD">USD</SelectItem>
+                              <SelectItem value="EUR">EUR</SelectItem>
+                              <SelectItem value="GBP">GBP</SelectItem>
+                              <SelectItem value="BDT">BDT</SelectItem>
+                              <SelectItem value="CNY">CNY</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {errors.currency && (
+                            <p className="text-sm text-destructive">{errors.currency.message}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Master Data */}
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-semibold">Master Data</h3>
+                      <div className="grid grid-cols-3 gap-4">
+                        {/* REMOVED: brand_id - Brand is already in Style */}
+                        <div className="space-y-2">
+                          <Label htmlFor="season_id">Season</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => setValue('season_id', value)}>
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select season" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {seasons.map((season) => (
+                                  <SelectItem key={season.id} value={season.id.toString()}>
+                                    {season.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsCreateSeasonDialogOpen(true)}
+                              title="Create new season"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="warehouse_id">Ship To Warehouse</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => setValue('warehouse_id', value)}>
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select warehouse" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {warehouses.map((warehouse) => (
+                                  <SelectItem key={warehouse.id} value={warehouse.id.toString()}>
+                                    {warehouse.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsCreateWarehouseDialogOpen(true)}
+                              title="Create new warehouse"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="agent_id">Agent</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => setValue('agent_id', value)}>
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select agent" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {agents.map((agent) => (
+                                  <SelectItem key={agent.id} value={agent.id.toString()}>
+                                    {agent.company_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsCreateAgentDialogOpen(true)}
+                              title="Create new agent"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="vendor_id">Vendor/Factory</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => setValue('vendor_id', value)}>
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select vendor" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {vendors.map((vendor) => (
+                                  <SelectItem key={vendor.id} value={vendor.id.toString()}>
+                                    {vendor.company_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsCreateVendorDialogOpen(true)}
+                              title="Create new vendor/factory"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="country_id">Country of Origin *</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => {
+                              setValue('country_id', value);
+                              // Auto-calculate dates when country changes
+                              const etdDate = document.getElementById('etd_date') as HTMLInputElement;
+                              if (etdDate?.value) {
+                                calculateDates(etdDate.value, value);
+                              }
+                            }}>
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select country" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {countries.map((country) => (
+                                  <SelectItem key={country.id} value={country.id.toString()}>
+                                    {country.name} ({country.sailing_time_days} days)
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsCreateCountryDialogOpen(true)}
+                              title="Create new country"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Payment Terms (Structured) */}
+                      <div className="space-y-2">
+                        <Label>Payment Terms</Label>
+                        <div className="grid grid-cols-2 gap-4">
+                          <Select
+                            value={paymentTerm}
+                            onValueChange={(value) => {
+                              setPaymentTerm(value);
+                              const percentage = paymentPercentage ? parseFloat(paymentPercentage) : undefined;
+                              setValue('payment_terms_structured', {
+                                term: value,
+                                percentage
+                              });
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select term" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="NET30">NET 30</SelectItem>
+                              <SelectItem value="NET60">NET 60</SelectItem>
+                              <SelectItem value="NET90">NET 90</SelectItem>
+                              <SelectItem value="DP_SIGHT">DP SIGHT</SelectItem>
+                              <SelectItem value="LC">LC (Letter of Credit)</SelectItem>
+                              <SelectItem value="ADVANCE">ADVANCE</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {/* Percentage field - only show when ADVANCE is selected */}
+                          {paymentTerm === 'ADVANCE' && (
+                            <div className="space-y-1">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.01"
+                                placeholder="Percentage (0-100)"
+                                value={paymentPercentage}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setPaymentPercentage(value);
+                                  const percentage = value ? parseFloat(value) : undefined;
+                                  if (paymentTerm) {
+                                    setValue('payment_terms_structured', {
+                                      term: paymentTerm,
+                                      percentage
+                                    });
+                                  }
+                                }}
+                              />
+                              {errors.payment_terms_structured?.percentage && (
+                                <p className="text-xs text-red-500">{errors.payment_terms_structured.percentage.message}</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Shipping Term (FOB/DDP) */}
+                      <div className="space-y-2">
+                        <Label>Shipping Term *</Label>
+                        <Select
+                          value={shippingTerm}
+                          onValueChange={(value: 'FOB' | 'DDP') => {
+                            setShippingTerm(value);
+                            setValue('shipping_term', value);
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select shipping term" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="FOB">FOB (Free On Board) - Show only ETD</SelectItem>
+                            <SelectItem value="DDP">DDP (Delivered Duty Paid) - Show ETD, ETA, In-warehouse</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Dates */}
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-semibold">Important Dates</h3>
+                      <div className="space-y-2">
+                        <Label htmlFor="po_date">PO Date *</Label>
+                        <Input
+                          id="po_date"
+                          type="date"
+                          {...register('po_date')}
+                        />
+                        {errors.po_date && (
+                          <p className="text-sm text-destructive">{errors.po_date.message}</p>
+                        )}
+                      </div>
+                      <div className={`grid gap-4 ${shippingTerm === 'DDP' ? 'grid-cols-4' : 'grid-cols-2'}`}>
+                        <div className="space-y-2">
+                          <Label htmlFor="etd_date">ETD Date *</Label>
+                          <Input
+                            id="etd_date"
+                            type="date"
+                            {...register('etd_date')}
+                            onChange={(e) => {
+                              const countrySelect = document.querySelector('[name="country_id"]') as HTMLInputElement;
+                              if (countrySelect?.value && shippingTerm === 'DDP') {
+                                calculateDates(e.target.value, countrySelect.value);
+                              }
+                            }}
+                          />
+                        </div>
+                        {shippingTerm === 'DDP' && (
+                          <>
+                            <div className="space-y-2">
+                              <Label htmlFor="eta_date">ETA Date (Auto)</Label>
+                              <Input
+                                id="eta_date"
+                                type="date"
+                                {...register('eta_date')}
+                                disabled
+                                className="bg-muted"
+                              />
+                              {isCalculatingDates && <p className="text-xs text-muted-foreground">Calculating...</p>}
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="in_warehouse_date">In-Warehouse (Auto)</Label>
+                              <Input
+                                id="in_warehouse_date"
+                                type="date"
+                                {...register('in_warehouse_date')}
+                                disabled
+                                className="bg-muted"
+                              />
+                            </div>
+                          </>
+                        )}
+                        <div className="space-y-2">
+                          <Label htmlFor="delivery_date">Delivery Date *</Label>
+                          <Input
+                            id="delivery_date"
+                            type="date"
+                            {...register('delivery_date')}
+                          />
+                          {errors.delivery_date && (
+                            <p className="text-sm text-destructive">{errors.delivery_date.message}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sample Schedule - 8 Milestones */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold">Sample Schedule (8 Milestones)</h3>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const poDate = (document.getElementById('po_date') as HTMLInputElement)?.value;
+                            const etdDate = (document.getElementById('etd_date') as HTMLInputElement)?.value;
+                            if (poDate && etdDate) {
+                              generateSampleSchedule(poDate, etdDate);
+                            } else {
+                              alert('Please enter PO Date and ETD Date first');
+                            }
+                          }}
+                        >
+                          Auto-Generate Schedule
+                        </Button>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Based on PO Date and ETD Date
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="lab_dip_submission">Lab Dip Submission (Auto)</Label>
+                          <Input
+                            id="lab_dip_submission"
+                            type="date"
+                            {...register('sample_schedule.lab_dip_submission')}
+                            disabled
+                            className="bg-muted"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="fit_sample_submission">Fit Sample Submission (Auto)</Label>
+                          <Input
+                            id="fit_sample_submission"
+                            type="date"
+                            {...register('sample_schedule.fit_sample_submission')}
+                            disabled
+                            className="bg-muted"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="trim_approvals">Trim Approvals (Auto)</Label>
+                          <Input
+                            id="trim_approvals"
+                            type="date"
+                            {...register('sample_schedule.trim_approvals')}
+                            disabled
+                            className="bg-muted"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="first_proto_submission">1st Proto Submission (Auto)</Label>
+                          <Input
+                            id="first_proto_submission"
+                            type="date"
+                            {...register('sample_schedule.first_proto_submission')}
+                            disabled
+                            className="bg-muted"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="bulk_fabric_inhouse">Bulk Fabric Inhouse (Auto)</Label>
+                          <Input
+                            id="bulk_fabric_inhouse"
+                            type="date"
+                            {...register('sample_schedule.bulk_fabric_inhouse')}
+                            disabled
+                            className="bg-muted"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="pp_sample_submission">PP Sample Submission (Auto)</Label>
+                          <Input
+                            id="pp_sample_submission"
+                            type="date"
+                            {...register('sample_schedule.pp_sample_submission')}
+                            disabled
+                            className="bg-muted"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="production_start">Production Start (Auto)</Label>
+                          <Input
+                            id="production_start"
+                            type="date"
+                            {...register('sample_schedule.production_start')}
+                            disabled
+                            className="bg-muted"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="top_approval">TOP Approval (Auto)</Label>
+                          <Input
+                            id="top_approval"
+                            type="date"
+                            {...register('sample_schedule.top_approval')}
+                            disabled
+                            className="bg-muted"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* REMOVED: Buyer/Trim Details section - buyer/trim details removed per requirements */}
+
+                    {/* Styles Selection */}
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-semibold">Styles (Optional)</h3>
+                      <div className="text-xs text-muted-foreground">
+                        Add styles to this PO with quantity and ratio
+                      </div>
+                      <div className="space-y-4">
+                        {/* Style Selection Dropdown */}
+                        <div className="space-y-2">
+                          <Label>Select Styles</Label>
+                          <Select
+                            onValueChange={(value) => {
+                              const styleId = parseInt(value);
+                              if (!selectedStyles.find(s => s.style_id === styleId)) {
+                                const style = styles.find(s => s.id === styleId);
+                                setSelectedStyles([...selectedStyles, {
+                                  style_id: styleId,
+                                  quantity: 100,
+                                  ratio: null,
+                                  unit_price_in_po: style?.unit_price || null,
+                                }]);
+                              }
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a style to add" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {styles
+                                .filter(style => !selectedStyles.find(s => s.style_id === style.id))
+                                .map((style) => (
+                                  <SelectItem key={style.id} value={style.id.toString()}>
+                                    {style.style_number}{style.description ? ` - ${style.description}` : ''}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Selected Styles with Quantity and Ratio */}
+                        {selectedStyles.length > 0 && (
+                          <div className="space-y-3">
+                            <Label>Selected Styles</Label>
+                            {selectedStyles.map((selectedStyle, index) => {
+                              const style = styles.find(s => s.id === selectedStyle.style_id);
+                              if (!style) return null;
+
+                              return (
+                                <Card key={selectedStyle.style_id} className="p-4">
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <div className="font-medium">
+                                        {style.style_number}{style.description ? ` - ${style.description}` : ''}
+                                      </div>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => {
+                                          setSelectedStyles(selectedStyles.filter((_, i) => i !== index));
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                    <div className="space-y-3">
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                          <Label htmlFor={`style-quantity-${index}`} className="text-xs">
+                                            Quantity *
+                                          </Label>
+                                          <Input
+                                            id={`style-quantity-${index}`}
+                                            type="number"
+                                            min="1"
+                                            value={selectedStyle.quantity}
+                                            onChange={(e) => {
+                                              const newStyles = [...selectedStyles];
+                                              newStyles[index].quantity = parseInt(e.target.value) || 0;
+                                              setSelectedStyles(newStyles);
+                                            }}
+                                          />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <Label htmlFor={`style-price-${index}`} className="text-xs">
+                                            Unit Price (Optional)
+                                          </Label>
+                                          <Input
+                                            id={`style-price-${index}`}
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            placeholder={style.unit_price ? `Default: ${style.unit_price}` : 'Enter price'}
+                                            value={selectedStyle.unit_price_in_po || ''}
+                                            onChange={(e) => {
+                                              const newStyles = [...selectedStyles];
+                                              newStyles[index].unit_price_in_po = e.target.value ? parseFloat(e.target.value) : null;
+                                              setSelectedStyles(newStyles);
+                                            }}
+                                          />
+                                          {style.unit_price && (
+                                            <p className="text-xs text-muted-foreground">
+                                              Style default: ${style.unit_price}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <RatioInput
+                                        value={selectedStyle.ratio}
+                                        onChange={(ratio) => {
+                                          const newStyles = [...selectedStyles];
+                                          newStyles[index].ratio = ratio;
+                                          setSelectedStyles(newStyles);
+                                        }}
+                                        styleGenderId={style.gender_id}
+                                      />
+                                    </div>
+                                  </div>
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Additional Information */}
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-semibold">Additional Information</h3>
+                      <div className="space-y-2">
+                        <Label htmlFor="packing_method">Packing Method</Label>
+                        <textarea
+                          id="packing_method"
+                          className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          placeholder="e.g., Each piece folded and poly-bagged individually, 12 pieces per carton..."
+                          {...register('packing_method')}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="packing_guidelines">Packing Guidelines</Label>
+                        <textarea
+                          id="packing_guidelines"
+                          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          placeholder="Packing guidelines and instructions..."
+                          {...register('packing_guidelines')}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="other_terms">Other Terms & Conditions</Label>
+                        <textarea
+                          id="other_terms"
+                          className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          placeholder="e.g., Partial shipping is not allowed..."
+                          {...register('other_terms')}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="notes">General Notes</Label>
+                        <textarea
+                          id="notes"
+                          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          placeholder="Additional notes..."
+                          {...register('notes')}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsCreateDialogOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={isSubmitting}>
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        'Create PO'
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+            )}
+          </div>
+        </div>
+
+        {/* Filters */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Filters</CardTitle>
+            <CardDescription>Search and filter purchase orders</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by PO number, style..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                  <SelectItem value="in_production">In Production</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Table */}
+        <Card>
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="flex h-96 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>PO Number</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Delivery Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                    <TableHead className="text-right">Value</TableHead>
+                    <TableHead>Styles</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {purchaseOrders.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                        No purchase orders found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    purchaseOrders.map((po) => (
+                      <TableRow key={po.id}>
+                        <TableCell className="font-medium">
+                          <div className="flex flex-col">
+                            <span>{po.po_number}</span>
+                            {po.headline && (
+                              <span className="text-sm text-muted-foreground font-normal">
+                                {po.headline}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{formatDate(po.po_date)}</TableCell>
+                        <TableCell>{formatDate(po.delivery_date)}</TableCell>
+                        <TableCell>
+                          <Badge variant={getStatusColor(po.status) as any}>
+                            {po.status.replace('_', ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {po.total_quantity.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(po.total_value, po.currency)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{po.styles_count || 0} styles</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Link href={`/purchase-orders/${po.id}`}>
+                              <Button variant="ghost" size="icon">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            {can('po.edit') && (
+                              <Link href={`/purchase-orders/${po.id}`}>
+                                <Button variant="ghost" size="icon">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                            )}
+                            {can('po.delete') && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(po.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        )}
+
+        {/* Select PO for Import Dialog */}
+        <Dialog open={isSelectPODialogOpen} onOpenChange={setIsSelectPODialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Select Purchase Order for Import</DialogTitle>
+              <DialogDescription>
+                Choose a purchase order to import styles into from Excel
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[400px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>PO Number</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Delivery Date</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {purchaseOrders.map((po) => (
+                    <TableRow key={po.id}>
+                      <TableCell className="font-medium">{po.po_number}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{po.status}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {new Date(po.delivery_date).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setSelectedPOForImport(po.id);
+                            setIsSelectPODialogOpen(false);
+                            setIsImportDialogOpen(true);
+                          }}
+                        >
+                          <FileUp className="mr-2 h-4 w-4" />
+                          Import
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsSelectPODialogOpen(false)}
+              >
+                Cancel
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Excel Import Dialog */}
+        {selectedPOForImport && (
+          <ExcelImportDialog
+            isOpen={isImportDialogOpen}
+            onClose={() => {
+              setIsImportDialogOpen(false);
+              setSelectedPOForImport(null);
+            }}
+            purchaseOrderId={selectedPOForImport}
+            onImportComplete={() => {
+              fetchPurchaseOrders();
+              setIsImportDialogOpen(false);
+              setSelectedPOForImport(null);
+            }}
+          />
+        )}
+
+        {/* Create Dialogs */}
+        <CreateRetailerDialog
+          open={isCreateRetailerDialogOpen}
+          onOpenChange={setIsCreateRetailerDialogOpen}
+          onSuccess={fetchMasterData}
+        />
+        <CreateSeasonDialog
+          open={isCreateSeasonDialogOpen}
+          onOpenChange={setIsCreateSeasonDialogOpen}
+          onSuccess={fetchMasterData}
+        />
+        <CreateWarehouseDialog
+          open={isCreateWarehouseDialogOpen}
+          onOpenChange={setIsCreateWarehouseDialogOpen}
+          onSuccess={fetchMasterData}
+        />
+        <CreateAgentDialog
+          open={isCreateAgentDialogOpen}
+          onOpenChange={setIsCreateAgentDialogOpen}
+          onSuccess={fetchMasterData}
+        />
+        <CreateVendorDialog
+          open={isCreateVendorDialogOpen}
+          onOpenChange={setIsCreateVendorDialogOpen}
+          onSuccess={fetchMasterData}
+        />
+        <CreateCountryDialog
+          open={isCreateCountryDialogOpen}
+          onOpenChange={setIsCreateCountryDialogOpen}
+          onSuccess={fetchMasterData}
+        />
+      </div>
+    </DashboardLayout>
+  );
+}

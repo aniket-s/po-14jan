@@ -1,0 +1,120 @@
+<?php
+
+namespace App\Notifications;
+
+use App\Models\PurchaseOrder;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\Notification;
+
+class PurchaseOrderNotification extends Notification implements ShouldQueue
+{
+    use Queueable;
+
+    /**
+     * Create a new notification instance.
+     */
+    public function __construct(
+        public PurchaseOrder $purchaseOrder,
+        public string $action, // created, updated, status_changed, cancelled
+        public array $changes = []
+    ) {
+        //
+    }
+
+    /**
+     * Get the notification's delivery channels.
+     *
+     * @return array<int, string>
+     */
+    public function via(object $notifiable): array
+    {
+        return ['mail', 'database'];
+    }
+
+    /**
+     * Get the mail representation of the notification.
+     */
+    public function toMail(object $notifiable): MailMessage
+    {
+        $mail = (new MailMessage)
+            ->subject($this->getSubject())
+            ->greeting('Hello ' . $notifiable->name . ',');
+
+        switch ($this->action) {
+            case 'created':
+                $mail->line('A new purchase order has been created.')
+                    ->line('**PO Number:** ' . $this->purchaseOrder->po_number)
+                    ->line('**Total Quantity:** ' . number_format($this->purchaseOrder->total_quantity))
+                    ->line('**Total Value:** ' . $this->formatCurrency($this->purchaseOrder->total_value));
+                break;
+
+            case 'updated':
+                $mail->line('Purchase order ' . $this->purchaseOrder->po_number . ' has been updated.');
+                if (!empty($this->changes)) {
+                    $mail->line('**Changes made:**');
+                    foreach ($this->changes as $field => $values) {
+                        $mail->line("- {$field}: {$values['old']} → {$values['new']}");
+                    }
+                }
+                break;
+
+            case 'status_changed':
+                $mail->line('Purchase order ' . $this->purchaseOrder->po_number . ' status has changed.')
+                    ->line('**New Status:** ' . ucwords(str_replace('_', ' ', $this->purchaseOrder->status)));
+                if (isset($this->changes['status'])) {
+                    $mail->line('**Previous Status:** ' . ucwords(str_replace('_', ' ', $this->changes['status']['old'])));
+                }
+                break;
+
+            case 'cancelled':
+                $mail->line('Purchase order ' . $this->purchaseOrder->po_number . ' has been cancelled.')
+                    ->line('Please review and take necessary actions.');
+                break;
+        }
+
+        $mail->action('View Purchase Order', url('/purchase-orders/' . $this->purchaseOrder->id));
+
+        return $mail;
+    }
+
+    /**
+     * Get the array representation of the notification.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(object $notifiable): array
+    {
+        return [
+            'purchase_order_id' => $this->purchaseOrder->id,
+            'po_number' => $this->purchaseOrder->po_number,
+            'action' => $this->action,
+            'changes' => $this->changes,
+            'total_value' => $this->purchaseOrder->total_value,
+            'currency' => $this->purchaseOrder->currency,
+        ];
+    }
+
+    /**
+     * Get the notification subject.
+     */
+    private function getSubject(): string
+    {
+        return match ($this->action) {
+            'created' => 'New Purchase Order: ' . $this->purchaseOrder->po_number,
+            'updated' => 'Purchase Order Updated: ' . $this->purchaseOrder->po_number,
+            'status_changed' => 'PO Status Changed: ' . $this->purchaseOrder->po_number,
+            'cancelled' => 'Purchase Order Cancelled: ' . $this->purchaseOrder->po_number,
+            default => 'Purchase Order Notification: ' . $this->purchaseOrder->po_number,
+        };
+    }
+
+    /**
+     * Format currency value.
+     */
+    private function formatCurrency(float $value): string
+    {
+        return number_format($value, 2) . ' ' . $this->purchaseOrder->currency;
+    }
+}

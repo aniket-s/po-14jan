@@ -1,0 +1,122 @@
+<?php
+
+namespace App\Notifications;
+
+use App\Models\QualityInspection;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\Notification;
+
+class QualityInspectionNotification extends Notification implements ShouldQueue
+{
+    use Queueable;
+
+    /**
+     * Create a new notification instance.
+     */
+    public function __construct(
+        public QualityInspection $inspection,
+        public string $action // created, completed, failed
+    ) {
+        //
+    }
+
+    /**
+     * Get the notification's delivery channels.
+     *
+     * @return array<int, string>
+     */
+    public function via(object $notifiable): array
+    {
+        return ['mail', 'database'];
+    }
+
+    /**
+     * Get the mail representation of the notification.
+     */
+    public function toMail(object $notifiable): MailMessage
+    {
+        $mail = (new MailMessage)
+            ->subject($this->getSubject())
+            ->greeting('Hello ' . $notifiable->name . ',');
+
+        // Load relationships if needed
+        $this->inspection->load('style.purchaseOrder');
+
+        switch ($this->action) {
+            case 'created':
+                $mail->line('A new quality inspection has been scheduled.')
+                    ->line('**Inspection Date:** ' . $this->inspection->inspection_date->format('M d, Y'))
+                    ->line('**Style:** ' . $this->inspection->style->style_number)
+                    ->line('**PO Number:** ' . $this->inspection->style->purchaseOrder->po_number);
+                break;
+
+            case 'completed':
+                $statusColor = $this->inspection->result === 'passed' ? '✅' : ($this->inspection->result === 'failed' ? '❌' : '⚠️');
+                $mail->line('Quality inspection has been completed.')
+                    ->line('**Result:** ' . $statusColor . ' ' . strtoupper($this->inspection->result))
+                    ->line('**Style:** ' . $this->inspection->style->style_number)
+                    ->line('**Inspected Quantity:** ' . number_format($this->inspection->inspected_quantity))
+                    ->line('**Defects Found:** ' . number_format($this->inspection->defects_found));
+
+                if ($this->inspection->result === 'failed') {
+                    $mail->line('⚠️ **Action Required:** Please review the defects and take corrective measures.');
+                } elseif ($this->inspection->result === 'conditional') {
+                    $mail->line('⚠️ **Conditional Approval:** Minor issues found. Please review comments.');
+                }
+
+                if ($this->inspection->notes) {
+                    $mail->line('**Notes:** ' . $this->inspection->notes);
+                }
+                break;
+
+            case 'failed':
+                $mail->line('Quality inspection has **FAILED**.')
+                    ->line('**Style:** ' . $this->inspection->style->style_number)
+                    ->line('**Defects Found:** ' . number_format($this->inspection->defects_found))
+                    ->line('**Critical Issues:** Immediate action required');
+
+                if ($this->inspection->notes) {
+                    $mail->line('**Details:** ' . $this->inspection->notes);
+                }
+
+                $mail->line('Please contact the QC team for detailed defect analysis.');
+                break;
+        }
+
+        $mail->action('View Inspection Report', url('/quality-inspections/' . $this->inspection->id));
+
+        return $mail;
+    }
+
+    /**
+     * Get the array representation of the notification.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(object $notifiable): array
+    {
+        return [
+            'inspection_id' => $this->inspection->id,
+            'style_id' => $this->inspection->style_id,
+            'action' => $this->action,
+            'result' => $this->inspection->result,
+            'defects_found' => $this->inspection->defects_found,
+            'inspection_date' => $this->inspection->inspection_date->toDateString(),
+        ];
+    }
+
+    /**
+     * Get the notification subject.
+     */
+    private function getSubject(): string
+    {
+        return match ($this->action) {
+            'created' => 'Quality Inspection Scheduled',
+            'completed' => 'Quality Inspection Completed - ' . strtoupper($this->inspection->result),
+            'failed' => '⚠️ Quality Inspection FAILED - Immediate Action Required',
+            default => 'Quality Inspection Notification',
+        };
+    }
+}
