@@ -46,8 +46,9 @@ class FileUploadController extends Controller
                 $filename
             );
 
-            // Get public URL
-            $url = Storage::url($path);
+            // Get public URL - use the API domain instead of APP_URL
+            $relativePath = str_replace('public/', '', $path);
+            $url = url('/storage/' . $relativePath);
 
             return response()->json([
                 'message' => 'File uploaded successfully',
@@ -107,8 +108,9 @@ class FileUploadController extends Controller
                     $filename
                 );
 
-                // Get public URL
-                $url = Storage::url($path);
+                // Get public URL - use the API domain instead of APP_URL
+                $relativePath = str_replace('public/', '', $path);
+                $url = url('/storage/' . $relativePath);
 
                 $uploadedFiles[] = [
                     'path' => $path,
@@ -168,8 +170,9 @@ class FileUploadController extends Controller
                     $filename
                 );
 
-                // Get public URL
-                $url = Storage::url($path);
+                // Get public URL - use the API domain instead of APP_URL
+                $relativePath = str_replace('public/', '', $path);
+                $url = url('/storage/' . $relativePath);
 
                 $uploadedImages[] = [
                     'path' => $path,
@@ -229,8 +232,9 @@ class FileUploadController extends Controller
                     $filename
                 );
 
-                // Get public URL
-                $url = Storage::url($path);
+                // Get public URL - use the API domain instead of APP_URL
+                $relativePath = str_replace('public/', '', $path);
+                $url = url('/storage/' . $relativePath);
 
                 $uploadedFiles[] = [
                     'path' => $path,
