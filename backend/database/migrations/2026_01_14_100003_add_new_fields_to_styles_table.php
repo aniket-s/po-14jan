@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -54,24 +55,29 @@ return new class extends Migration
         });
 
         // Add indexes in a separate Schema::table call to avoid issues
+        // Use raw SQL to check for index existence since Doctrine DBAL is removed in Laravel 12
         Schema::table('styles', function (Blueprint $table) {
-            $sm = Schema::getConnection()->getDoctrineSchemaManager();
-            $indexesFound = $sm->listTableIndexes('styles');
+            $connection = Schema::getConnection();
+            $tableName = $connection->getTablePrefix() . 'styles';
 
-            if (!isset($indexesFound['styles_buyer_id_index'])) {
+            // Get existing indexes
+            $indexes = $connection->select("SHOW INDEX FROM `{$tableName}`");
+            $existingIndexes = array_column($indexes, 'Key_name');
+
+            if (!in_array('styles_buyer_id_index', $existingIndexes)) {
                 $table->index('buyer_id');
             }
-            if (!isset($indexesFound['styles_category_id_index'])) {
+            if (!in_array('styles_category_id_index', $existingIndexes)) {
                 $table->index('category_id');
             }
             // Note: season_id index already exists from previous migration
-            if (!isset($indexesFound['styles_color_id_index'])) {
+            if (!in_array('styles_color_id_index', $existingIndexes)) {
                 $table->index('color_id');
             }
-            if (!isset($indexesFound['styles_is_active_index'])) {
+            if (!in_array('styles_is_active_index', $existingIndexes)) {
                 $table->index('is_active');
             }
-            if (!isset($indexesFound['styles_updated_by_index'])) {
+            if (!in_array('styles_updated_by_index', $existingIndexes)) {
                 $table->index('updated_by');
             }
         });
@@ -100,24 +106,28 @@ return new class extends Migration
         });
 
         Schema::table('styles', function (Blueprint $table) {
-            // Drop indexes
-            $sm = Schema::getConnection()->getDoctrineSchemaManager();
-            $indexesFound = $sm->listTableIndexes('styles');
+            // Drop indexes using raw SQL check
+            $connection = Schema::getConnection();
+            $tableName = $connection->getTablePrefix() . 'styles';
 
-            if (isset($indexesFound['styles_buyer_id_index'])) {
+            // Get existing indexes
+            $indexes = $connection->select("SHOW INDEX FROM `{$tableName}`");
+            $existingIndexes = array_column($indexes, 'Key_name');
+
+            if (in_array('styles_buyer_id_index', $existingIndexes)) {
                 $table->dropIndex(['buyer_id']);
             }
-            if (isset($indexesFound['styles_category_id_index'])) {
+            if (in_array('styles_category_id_index', $existingIndexes)) {
                 $table->dropIndex(['category_id']);
             }
             // Note: season_id index not dropped as it wasn't added by this migration
-            if (isset($indexesFound['styles_color_id_index'])) {
+            if (in_array('styles_color_id_index', $existingIndexes)) {
                 $table->dropIndex(['color_id']);
             }
-            if (isset($indexesFound['styles_is_active_index'])) {
+            if (in_array('styles_is_active_index', $existingIndexes)) {
                 $table->dropIndex(['is_active']);
             }
-            if (isset($indexesFound['styles_updated_by_index'])) {
+            if (in_array('styles_updated_by_index', $existingIndexes)) {
                 $table->dropIndex(['updated_by']);
             }
         });
