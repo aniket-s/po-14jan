@@ -754,7 +754,11 @@ class StyleController extends Controller
             'images' => 'nullable|array',
             // Master data foreign keys
             'brand_id' => 'nullable|exists:brands,id',
+            'buyer_id' => 'nullable|exists:buyers,id',
+            'category_id' => 'nullable|exists:categories,id',
+            'season_id' => 'nullable|exists:seasons,id',
             'gender_id' => 'required|exists:genders,id', // REQUIRED for size management
+            'color_id' => 'nullable|exists:colors,id',
             // Enhanced style fields
             'color_code' => 'nullable|string|max:50',
             'color_name' => 'nullable|string|max:100',
@@ -765,6 +769,15 @@ class StyleController extends Controller
             'country_of_origin' => 'nullable|string|max:100',
             'item_description' => 'nullable|string',
             'fit' => 'nullable|string|max:100',
+            // Pricing fields
+            'msrp' => 'nullable|numeric|min:0',
+            'price_1' => 'nullable|numeric|min:0',
+            'price_2' => 'nullable|numeric|min:0',
+            'price_3' => 'nullable|numeric|min:0',
+            'price_4' => 'nullable|numeric|min:0',
+            'price_5' => 'nullable|numeric|min:0',
+            // Status
+            'is_active' => 'boolean',
             // Trims association
             'trims' => 'nullable|array',
             'trims.*.trim_id' => 'required|exists:trims,id',
@@ -797,7 +810,11 @@ class StyleController extends Controller
             'images' => $request->images,
             // Master data foreign keys
             'brand_id' => $request->brand_id,
+            'buyer_id' => $request->buyer_id,
+            'category_id' => $request->category_id,
+            'season_id' => $request->season_id,
             'gender_id' => $request->gender_id,
+            'color_id' => $request->color_id,
             // Enhanced style fields
             'color_code' => $request->color_code,
             'color_name' => $request->color_name,
@@ -808,6 +825,16 @@ class StyleController extends Controller
             'country_of_origin' => $request->country_of_origin,
             'item_description' => $request->item_description,
             'fit' => $request->fit,
+            // Pricing fields
+            'msrp' => $request->msrp,
+            'price_1' => $request->price_1,
+            'price_2' => $request->price_2,
+            'price_3' => $request->price_3,
+            'price_4' => $request->price_4,
+            'price_5' => $request->price_5,
+            // Status
+            'is_active' => $request->input('is_active', true),
+            // Audit
             'created_by' => $user->id,
         ]);
 
@@ -854,8 +881,20 @@ class StyleController extends Controller
      */
     public function showStandalone(Request $request, $id)
     {
-        $style = Style::with(['brand', 'season', 'agent', 'vendor', 'purchaseOrders', 'prepacks.prepackCode'])
-            ->findOrFail($id);
+        $style = Style::with([
+            'brand',
+            'buyer',
+            'category',
+            'season',
+            'gender',
+            'color',
+            'agent',
+            'vendor',
+            'purchaseOrders',
+            'prepacks.prepackCode',
+            'creator',
+            'updatedBy'
+        ])->findOrFail($id);
 
         return response()->json($style);
     }
@@ -888,6 +927,11 @@ class StyleController extends Controller
             'images' => 'nullable|array',
             // Master data
             'brand_id' => 'nullable|exists:brands,id',
+            'buyer_id' => 'nullable|exists:buyers,id',
+            'category_id' => 'nullable|exists:categories,id',
+            'season_id' => 'nullable|exists:seasons,id',
+            'gender_id' => 'nullable|exists:genders,id',
+            'color_id' => 'nullable|exists:colors,id',
             // Enhanced fields
             'color_code' => 'nullable|string|max:50',
             'color_name' => 'nullable|string|max:100',
@@ -898,6 +942,15 @@ class StyleController extends Controller
             'country_of_origin' => 'nullable|string|max:100',
             'item_description' => 'nullable|string',
             'fit' => 'nullable|string|max:100',
+            // Pricing fields
+            'msrp' => 'nullable|numeric|min:0',
+            'price_1' => 'nullable|numeric|min:0',
+            'price_2' => 'nullable|numeric|min:0',
+            'price_3' => 'nullable|numeric|min:0',
+            'price_4' => 'nullable|numeric|min:0',
+            'price_5' => 'nullable|numeric|min:0',
+            // Status
+            'is_active' => 'boolean',
             // Trims association
             'trims' => 'nullable|array',
             'trims.*.trim_id' => 'required|exists:trims,id',
@@ -936,6 +989,11 @@ class StyleController extends Controller
             'images' => $request->images,
             // Master data
             'brand_id' => $request->brand_id,
+            'buyer_id' => $request->buyer_id,
+            'category_id' => $request->category_id,
+            'season_id' => $request->season_id,
+            'gender_id' => $request->gender_id,
+            'color_id' => $request->color_id,
             // Enhanced fields
             'color_code' => $request->color_code,
             'color_name' => $request->color_name,
@@ -946,6 +1004,17 @@ class StyleController extends Controller
             'country_of_origin' => $request->country_of_origin,
             'item_description' => $request->item_description,
             'fit' => $request->fit,
+            // Pricing fields
+            'msrp' => $request->msrp,
+            'price_1' => $request->price_1,
+            'price_2' => $request->price_2,
+            'price_3' => $request->price_3,
+            'price_4' => $request->price_4,
+            'price_5' => $request->price_5,
+            // Status
+            'is_active' => $request->input('is_active', $style->is_active),
+            // Audit
+            'updated_by' => $user->id,
         ]);
 
         // Sync trims if provided

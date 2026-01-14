@@ -364,6 +364,15 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Sizes (NEW - gender-based sizes)
         Route::apiResource('sizes', \App\Http\Controllers\Api\SizeController::class);
+
+        // Colors (NEW - for style color management with fabric type filtering)
+        Route::apiResource('colors', \App\Http\Controllers\Api\ColorController::class);
+
+        // Buyers (NEW - for style buyer categorization)
+        Route::apiResource('buyers', \App\Http\Controllers\Api\BuyerController::class);
+
+        // Categories (NEW - for style product categorization)
+        Route::apiResource('categories', \App\Http\Controllers\Api\CategoryController::class);
     });
 
     // Purchase Order Management
