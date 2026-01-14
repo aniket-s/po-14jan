@@ -13,30 +13,67 @@ return new class extends Migration
     {
         Schema::table('styles', function (Blueprint $table) {
             // New master data relationships
-            $table->foreignId('buyer_id')->nullable()->after('brand_id')->constrained('buyers')->nullOnDelete();
-            $table->foreignId('category_id')->nullable()->after('buyer_id')->constrained('categories')->nullOnDelete();
+            if (!Schema::hasColumn('styles', 'buyer_id')) {
+                $table->foreignId('buyer_id')->nullable()->after('brand_id')->constrained('buyers')->nullOnDelete();
+            }
+            if (!Schema::hasColumn('styles', 'category_id')) {
+                $table->foreignId('category_id')->nullable()->after('buyer_id')->constrained('categories')->nullOnDelete();
+            }
             // Note: season_id already exists from 2025_11_23_090911_add_master_data_fields_to_styles_table.php
-            $table->foreignId('color_id')->nullable()->after('color')->constrained('colors')->nullOnDelete();
+            if (!Schema::hasColumn('styles', 'color_id')) {
+                $table->foreignId('color_id')->nullable()->after('color')->constrained('colors')->nullOnDelete();
+            }
 
             // Pricing fields
-            $table->decimal('msrp', 10, 2)->nullable()->after('fob_price')->comment('Manufacturer Suggested Retail Price');
-            $table->decimal('price_1', 10, 2)->nullable()->after('msrp')->comment('Price tier 1');
-            $table->decimal('price_2', 10, 2)->nullable()->after('price_1')->comment('Price tier 2');
-            $table->decimal('price_3', 10, 2)->nullable()->after('price_2')->comment('Price tier 3');
-            $table->decimal('price_4', 10, 2)->nullable()->after('price_3')->comment('Price tier 4');
-            $table->decimal('price_5', 10, 2)->nullable()->after('price_4')->comment('Price tier 5');
+            if (!Schema::hasColumn('styles', 'msrp')) {
+                $table->decimal('msrp', 10, 2)->nullable()->after('fob_price')->comment('Manufacturer Suggested Retail Price');
+            }
+            if (!Schema::hasColumn('styles', 'price_1')) {
+                $table->decimal('price_1', 10, 2)->nullable()->after('msrp')->comment('Price tier 1');
+            }
+            if (!Schema::hasColumn('styles', 'price_2')) {
+                $table->decimal('price_2', 10, 2)->nullable()->after('price_1')->comment('Price tier 2');
+            }
+            if (!Schema::hasColumn('styles', 'price_3')) {
+                $table->decimal('price_3', 10, 2)->nullable()->after('price_2')->comment('Price tier 3');
+            }
+            if (!Schema::hasColumn('styles', 'price_4')) {
+                $table->decimal('price_4', 10, 2)->nullable()->after('price_3')->comment('Price tier 4');
+            }
+            if (!Schema::hasColumn('styles', 'price_5')) {
+                $table->decimal('price_5', 10, 2)->nullable()->after('price_4')->comment('Price tier 5');
+            }
 
             // Status and audit fields
-            $table->boolean('is_active')->default(true)->after('status')->comment('Whether this style is active');
-            $table->foreignId('updated_by')->nullable()->after('is_active')->constrained('users')->nullOnDelete();
+            if (!Schema::hasColumn('styles', 'is_active')) {
+                $table->boolean('is_active')->default(true)->after('status')->comment('Whether this style is active');
+            }
+            if (!Schema::hasColumn('styles', 'updated_by')) {
+                $table->foreignId('updated_by')->nullable()->after('is_active')->constrained('users')->nullOnDelete();
+            }
+        });
 
-            // Indexes
-            $table->index('buyer_id');
-            $table->index('category_id');
+        // Add indexes in a separate Schema::table call to avoid issues
+        Schema::table('styles', function (Blueprint $table) {
+            $sm = Schema::getConnection()->getDoctrineSchemaManager();
+            $indexesFound = $sm->listTableIndexes('styles');
+
+            if (!isset($indexesFound['styles_buyer_id_index'])) {
+                $table->index('buyer_id');
+            }
+            if (!isset($indexesFound['styles_category_id_index'])) {
+                $table->index('category_id');
+            }
             // Note: season_id index already exists from previous migration
-            $table->index('color_id');
-            $table->index('is_active');
-            $table->index('updated_by');
+            if (!isset($indexesFound['styles_color_id_index'])) {
+                $table->index('color_id');
+            }
+            if (!isset($indexesFound['styles_is_active_index'])) {
+                $table->index('is_active');
+            }
+            if (!isset($indexesFound['styles_updated_by_index'])) {
+                $table->index('updated_by');
+            }
         });
     }
 
@@ -46,36 +83,87 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('styles', function (Blueprint $table) {
-            // Drop foreign keys first
-            $table->dropForeign(['buyer_id']);
-            $table->dropForeign(['category_id']);
+            // Drop foreign keys first (only if columns exist)
+            if (Schema::hasColumn('styles', 'buyer_id')) {
+                $table->dropForeign(['buyer_id']);
+            }
+            if (Schema::hasColumn('styles', 'category_id')) {
+                $table->dropForeign(['category_id']);
+            }
             // Note: season_id not dropped as it wasn't added by this migration
-            $table->dropForeign(['color_id']);
-            $table->dropForeign(['updated_by']);
+            if (Schema::hasColumn('styles', 'color_id')) {
+                $table->dropForeign(['color_id']);
+            }
+            if (Schema::hasColumn('styles', 'updated_by')) {
+                $table->dropForeign(['updated_by']);
+            }
+        });
 
+        Schema::table('styles', function (Blueprint $table) {
             // Drop indexes
-            $table->dropIndex(['buyer_id']);
-            $table->dropIndex(['category_id']);
-            // Note: season_id index not dropped as it wasn't added by this migration
-            $table->dropIndex(['color_id']);
-            $table->dropIndex(['is_active']);
-            $table->dropIndex(['updated_by']);
+            $sm = Schema::getConnection()->getDoctrineSchemaManager();
+            $indexesFound = $sm->listTableIndexes('styles');
 
-            // Drop columns
-            $table->dropColumn([
-                'buyer_id',
-                'category_id',
-                // Note: season_id not dropped as it wasn't added by this migration
-                'color_id',
-                'msrp',
-                'price_1',
-                'price_2',
-                'price_3',
-                'price_4',
-                'price_5',
-                'is_active',
-                'updated_by',
-            ]);
+            if (isset($indexesFound['styles_buyer_id_index'])) {
+                $table->dropIndex(['buyer_id']);
+            }
+            if (isset($indexesFound['styles_category_id_index'])) {
+                $table->dropIndex(['category_id']);
+            }
+            // Note: season_id index not dropped as it wasn't added by this migration
+            if (isset($indexesFound['styles_color_id_index'])) {
+                $table->dropIndex(['color_id']);
+            }
+            if (isset($indexesFound['styles_is_active_index'])) {
+                $table->dropIndex(['is_active']);
+            }
+            if (isset($indexesFound['styles_updated_by_index'])) {
+                $table->dropIndex(['updated_by']);
+            }
+        });
+
+        Schema::table('styles', function (Blueprint $table) {
+            // Drop columns (only if they exist)
+            $columnsToDrop = [];
+
+            if (Schema::hasColumn('styles', 'buyer_id')) {
+                $columnsToDrop[] = 'buyer_id';
+            }
+            if (Schema::hasColumn('styles', 'category_id')) {
+                $columnsToDrop[] = 'category_id';
+            }
+            // Note: season_id not dropped as it wasn't added by this migration
+            if (Schema::hasColumn('styles', 'color_id')) {
+                $columnsToDrop[] = 'color_id';
+            }
+            if (Schema::hasColumn('styles', 'msrp')) {
+                $columnsToDrop[] = 'msrp';
+            }
+            if (Schema::hasColumn('styles', 'price_1')) {
+                $columnsToDrop[] = 'price_1';
+            }
+            if (Schema::hasColumn('styles', 'price_2')) {
+                $columnsToDrop[] = 'price_2';
+            }
+            if (Schema::hasColumn('styles', 'price_3')) {
+                $columnsToDrop[] = 'price_3';
+            }
+            if (Schema::hasColumn('styles', 'price_4')) {
+                $columnsToDrop[] = 'price_4';
+            }
+            if (Schema::hasColumn('styles', 'price_5')) {
+                $columnsToDrop[] = 'price_5';
+            }
+            if (Schema::hasColumn('styles', 'is_active')) {
+                $columnsToDrop[] = 'is_active';
+            }
+            if (Schema::hasColumn('styles', 'updated_by')) {
+                $columnsToDrop[] = 'updated_by';
+            }
+
+            if (!empty($columnsToDrop)) {
+                $table->dropColumn($columnsToDrop);
+            }
         });
     }
 };
