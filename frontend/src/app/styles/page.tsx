@@ -72,6 +72,10 @@ export default function StylesPage() {
     total: 0,
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
+  const [buyerFilter, setBuyerFilter] = useState('');
+  const [brands, setBrands] = useState<any[]>([]);
+  const [buyers, setBuyers] = useState<any[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<number[]>([]);
   const [isSampleProcessModalOpen, setIsSampleProcessModalOpen] = useState(false);
 
@@ -90,6 +94,23 @@ export default function StylesPage() {
     }
   }, [can, router, authLoading]);
 
+  // Fetch brands and buyers for filters
+  useEffect(() => {
+    const fetchFilterData = async () => {
+      try {
+        const [brandsResponse, buyersResponse] = await Promise.all([
+          api.get('/master-data/brands?all=true'),
+          api.get('/master-data/buyers?all=true'),
+        ]);
+        setBrands(brandsResponse.data || []);
+        setBuyers(buyersResponse.data || []);
+      } catch (error) {
+        console.error('Failed to fetch filter data:', error);
+      }
+    };
+    fetchFilterData();
+  }, []);
+
   // Fetch styles
   const fetchStyles = async () => {
     try {
@@ -101,6 +122,14 @@ export default function StylesPage() {
 
       if (searchQuery) {
         params.search = searchQuery;
+      }
+
+      if (brandFilter) {
+        params.brand_id = brandFilter;
+      }
+
+      if (buyerFilter) {
+        params.buyer_id = buyerFilter;
       }
 
       const response = await api.get<PaginatedStyles>('/styles', { params });
@@ -120,7 +149,7 @@ export default function StylesPage() {
 
   useEffect(() => {
     fetchStyles();
-  }, [pagination.currentPage, searchQuery]);
+  }, [pagination.currentPage, searchQuery, brandFilter, buyerFilter]);
 
   // Format currency
   const formatCurrency = (amount: number | null | undefined, currency: string = 'USD') => {
@@ -237,20 +266,69 @@ export default function StylesPage() {
           </Card>
         </div>
 
-        {/* Search */}
+        {/* Search & Filters */}
         <Card>
           <CardHeader>
-            <CardTitle>Search Styles</CardTitle>
+            <CardTitle>Search & Filter Styles</CardTitle>
+            <CardDescription>Search by style number or filter by brand/buyer</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by style number, name, or PO number..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8"
-              />
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by style number, name, or PO number..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="brand-filter">Filter by Brand</Label>
+                  <select
+                    id="brand-filter"
+                    value={brandFilter}
+                    onChange={(e) => setBrandFilter(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">All Brands</option>
+                    {brands.map((brand) => (
+                      <option key={brand.id} value={brand.id}>
+                        {brand.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="buyer-filter">Filter by Buyer</Label>
+                  <select
+                    id="buyer-filter"
+                    value={buyerFilter}
+                    onChange={(e) => setBuyerFilter(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">All Buyers</option>
+                    {buyers.map((buyer) => (
+                      <option key={buyer.id} value={buyer.id}>
+                        {buyer.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {(brandFilter || buyerFilter) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setBrandFilter('');
+                    setBuyerFilter('');
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
