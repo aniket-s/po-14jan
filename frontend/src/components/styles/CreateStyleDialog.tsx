@@ -37,7 +37,6 @@ const styleSchema = z.object({
   fabric_type_name: z.string().optional(), // Combined fabric type and name
   fabric_weight: z.string().optional(), // NEW: Fabric weight
   color: z.string().optional(), // Kept for backward compatibility
-  color_code: z.string().optional(), // Pantone number (optional)
   color_id: z.coerce.number().optional(), // NEW: Foreign key to colors table
   size: z.string().optional(),
   fit: z.string().optional(),
@@ -103,7 +102,6 @@ export function CreateStyleDialog({
       fabric_type_name: '', // Combined fabric type and name
       fabric_weight: '',
       color: '',
-      color_code: '', // Pantone number
       color_id: undefined,
       size: '',
       fit: '',
@@ -220,7 +218,6 @@ export function CreateStyleDialog({
         fabric_type_name: data.fabric_type_name || undefined,
         fabric_weight: data.fabric_weight || undefined,
         color: data.color || undefined,
-        color_code: data.color_code || undefined,
         color_id: data.color_id || undefined,
         fit: data.fit || undefined,
         images: parsedImages,
@@ -478,20 +475,6 @@ export function CreateStyleDialog({
                             </option>
                           ))}
                         </select>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="color_code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Color Code (Pantone) - Optional</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., PMS 2965C, Pantone 19-4052" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
