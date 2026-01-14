@@ -29,32 +29,36 @@ import { toast } from 'sonner';
 import { createStandaloneStyle, type CreateStyleData } from '@/services/styles';
 import { Loader2, Package, Plus, X, Upload, FileText, Image as ImageIcon } from 'lucide-react';
 import { MultiSelect, type MultiSelectOption } from '@/components/ui/multi-select';
-import { PrepackSelector } from './PrepackSelector';
+import { FileDropzone } from '@/components/ui/file-dropzone';
 
 const styleSchema = z.object({
   style_number: z.string().min(1, 'Style number is required'),
   description: z.string().optional(),
   fabric_type_name: z.string().optional(), // Combined fabric type and name
-  color: z.string().optional(),
-  color_code: z.string().optional(), // Pantone number
+  fabric_weight: z.string().optional(), // NEW: Fabric weight
+  color: z.string().optional(), // Kept for backward compatibility
+  color_id: z.coerce.number().optional(), // NEW: Foreign key to colors table
   size: z.string().optional(),
   fit: z.string().optional(),
   images: z.string().optional(), // Comma-separated URLs
   technical_file_paths: z.array(z.string()).optional(), // Changed to array for multiple files
   // Master data
   brand_id: z.coerce.number().optional(),
+  buyer_id: z.coerce.number().optional(), // NEW: Buyer
+  category_id: z.coerce.number().optional(), // NEW: Category
+  season_id: z.coerce.number().optional(), // NEW: Season
   gender_id: z.coerce.number().min(1, 'Gender is required'), // REQUIRED: Gender for size management
-  // REMOVED from styles (PO-level fields):
-  // - season_id
-  // - agent_id
-  // - vendor_id
-  // REMOVED buyer/trim detail fields:
-  // - price_ticket_spec
-  // - labels_hangtags
-  // - price_ticket_info
+  // Pricing fields
+  msrp: z.coerce.number().optional(), // NEW: MSRP
+  price_1: z.coerce.number().optional(), // NEW: Price tier 1
+  price_2: z.coerce.number().optional(), // NEW: Price tier 2
+  price_3: z.coerce.number().optional(), // NEW: Price tier 3
+  price_4: z.coerce.number().optional(), // NEW: Price tier 4
+  price_5: z.coerce.number().optional(), // NEW: Price tier 5
+  // Status
+  is_active: z.boolean().optional(), // NEW: Active/Inactive
   // Trims (array of trim IDs)
   trims: z.array(z.number()).optional(),
-  // Note: quantity, unit_price, size_breakdown removed - added at PO level
 });
 
 type StyleFormData = z.infer<typeof styleSchema>;
@@ -77,17 +81,18 @@ export function CreateStyleDialog({
   const [isUploadingTechPack, setIsUploadingTechPack] = useState(false);
   const [trims, setTrims] = useState<any[]>([]);
   const [genders, setGenders] = useState<any[]>([]); // NEW: Genders list
+  const [brands, setBrands] = useState<any[]>([]); // NEW: Brands list
+  const [buyers, setBuyers] = useState<any[]>([]); // NEW: Buyers list
+  const [categories, setCategories] = useState<any[]>([]); // NEW: Categories list
+  const [seasons, setSeasons] = useState<any[]>([]); // NEW: Seasons list
+  const [colors, setColors] = useState<any[]>([]); // NEW: Colors list
   const [selectedTrims, setSelectedTrims] = useState<number[]>([]);
   const [trimOptions, setTrimOptions] = useState<MultiSelectOption[]>([]);
   const [sizes, setSizes] = useState<any[]>([]); // Sizes based on selected gender
   const [selectedGender, setSelectedGender] = useState<number | undefined>();
-  const [isCreateTrimDialogOpen, setIsCreateTrimDialogOpen] = useState(false);
-  const [isCreatingTrim, setIsCreatingTrim] = useState(false);
-  const [selectedPrepacks, setSelectedPrepacks] = useState<Array<{
-    prepack_code_id: number;
-    quantity: number;
-    notes?: string;
-  }>>([]);
+  const [selectedFabricType, setSelectedFabricType] = useState<string | undefined>(); // For color filtering
+  // REMOVED: Inline trim creation dialog
+  // REMOVED: Prepacks selector
 
   const form = useForm<StyleFormData>({
     resolver: zodResolver(styleSchema),
@@ -95,29 +100,59 @@ export function CreateStyleDialog({
       style_number: '',
       description: '',
       fabric_type_name: '', // Combined fabric type and name
+      fabric_weight: '',
       color: '',
-      color_code: '', // Pantone number
+      color_id: undefined,
       size: '',
       fit: '',
       images: '',
       technical_file_paths: [], // Changed to array
-      gender_id: undefined, // NEW: Gender selection
+      brand_id: undefined,
+      buyer_id: undefined,
+      category_id: undefined,
+      season_id: undefined,
+      gender_id: undefined, // REQUIRED: Gender selection
+      msrp: undefined,
+      price_1: undefined,
+      price_2: undefined,
+      price_3: undefined,
+      price_4: undefined,
+      price_5: undefined,
+      is_active: true, // Default to active
       trims: [],
     },
   });
 
-  // Fetch trims and genders when dialog opens
+  // Fetch all master data when dialog opens
   useEffect(() => {
     const fetchMasterData = async () => {
       try {
         const api = (await import('@/lib/api')).default;
-        const [trimsResponse, gendersResponse] = await Promise.all([
+        const [
+          trimsResponse,
+          gendersResponse,
+          brandsResponse,
+          buyersResponse,
+          categoriesResponse,
+          seasonsResponse,
+          colorsResponse,
+        ] = await Promise.all([
           api.get('/master-data/trims?all=true'),
           api.get('/master-data/genders?active_only=true&all=true'),
+          api.get('/master-data/brands?all=true'),
+          api.get('/master-data/buyers?all=true'),
+          api.get('/master-data/categories?all=true'),
+          api.get('/master-data/seasons?all=true'),
+          api.get('/master-data/colors?all=true'),
         ]);
         const fetchedTrims = trimsResponse.data || [];
         setTrims(fetchedTrims);
         setGenders(gendersResponse.data || []);
+        setBrands(brandsResponse.data || []);
+        setBuyers(buyersResponse.data || []);
+        setCategories(categoriesResponse.data || []);
+        setSeasons(seasonsResponse.data || []);
+        setColors(colorsResponse.data || []);
 
         // Transform trims to multi-select options
         const options: MultiSelectOption[] = fetchedTrims.map((trim: any) => ({
@@ -176,34 +211,42 @@ export function CreateStyleDialog({
         }));
       }
 
-      // Prepare data for API (removed: quantity, unit_price, size_breakdown - added at PO level)
+      // Prepare data for API
       const styleData: CreateStyleData = {
         style_number: data.style_number,
         description: data.description || undefined,
-        fabric_type_name: data.fabric_type_name || undefined, // Combined fabric type and name
+        fabric_type_name: data.fabric_type_name || undefined,
+        fabric_weight: data.fabric_weight || undefined,
         color: data.color || undefined,
-        color_code: data.color_code || undefined, // Pantone number
+        color_id: data.color_id || undefined,
         fit: data.fit || undefined,
         images: parsedImages,
-        technical_file_paths: uploadedTechPacks.length > 0 ? uploadedTechPacks : undefined, // Changed to array
+        technical_file_paths: uploadedTechPacks.length > 0 ? uploadedTechPacks : undefined,
+        // Master data
         brand_id: data.brand_id || undefined,
-        gender_id: data.gender_id || undefined, // NEW: Gender for size management
-        // REMOVED from styles (PO-level fields): season_id, agent_id, vendor_id
-        // REMOVED buyer details fields:
-        // - price_ticket_spec
-        // - labels_hangtags
-        // - price_ticket_info
+        buyer_id: data.buyer_id || undefined,
+        category_id: data.category_id || undefined,
+        season_id: data.season_id || undefined,
+        gender_id: data.gender_id || undefined,
+        // Pricing
+        msrp: data.msrp || undefined,
+        price_1: data.price_1 || undefined,
+        price_2: data.price_2 || undefined,
+        price_3: data.price_3 || undefined,
+        price_4: data.price_4 || undefined,
+        price_5: data.price_5 || undefined,
+        // Status
+        is_active: data.is_active !== undefined ? data.is_active : true,
+        // Trims
         trims: transformedTrims,
-        prepacks: selectedPrepacks.length > 0 ? selectedPrepacks : undefined,
       };
 
       const newStyle = await createStandaloneStyle(styleData);
       toast.success(`Style "${newStyle.style_number}" created successfully`);
       form.reset();
       setSelectedTrims([]);
-      setSelectedPrepacks([]);
       setUploadedImages([]);
-      setUploadedTechPacks([]); // Changed to array
+      setUploadedTechPacks([]);
       onOpenChange(false);
       onSuccess();
     } catch (error: any) {
@@ -229,12 +272,11 @@ export function CreateStyleDialog({
     form.reset();
     setSelectedTrims([]);
     setUploadedImages([]);
-    setUploadedTechPacks([]); // Changed to array
+    setUploadedTechPacks([]);
     onOpenChange(false);
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const handleImageUpload = async (files: FileList) => {
     if (!files || files.length === 0) return;
 
     setIsUploadingImage(true);
@@ -262,13 +304,10 @@ export function CreateStyleDialog({
       toast.error('Failed to upload images');
     } finally {
       setIsUploadingImage(false);
-      // Reset input
-      e.target.value = '';
     }
   };
 
-  const handleTechPackUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const handleTechPackUpload = async (files: FileList) => {
     if (!files || files.length === 0) return;
 
     setIsUploadingTechPack(true);
@@ -293,8 +332,6 @@ export function CreateStyleDialog({
       toast.error('Failed to upload tech pack');
     } finally {
       setIsUploadingTechPack(false);
-      // Reset input
-      e.target.value = '';
     }
   };
 
@@ -304,39 +341,6 @@ export function CreateStyleDialog({
 
   const removeTechPack = (index: number) => {
     setUploadedTechPacks(uploadedTechPacks.filter((_, i) => i !== index));
-  };
-
-  const handleCreateTrim = async (trimData: any) => {
-    setIsCreatingTrim(true);
-    try {
-      const api = (await import('@/lib/api')).default;
-      const response = await api.post('/master-data/trims', trimData);
-      const newTrim = response.data;
-
-      // Refresh trims list
-      const trimsResponse = await api.get('/master-data/trims?all=true');
-      const fetchedTrims = trimsResponse.data || [];
-      setTrims(fetchedTrims);
-
-      // Update trim options
-      const options: MultiSelectOption[] = fetchedTrims.map((trim: any) => ({
-        value: trim.id,
-        label: `${trim.trim_code} - ${trim.trim_type}`,
-        description: trim.description || undefined,
-      }));
-      setTrimOptions(options);
-
-      // Auto-select the newly created trim
-      setSelectedTrims([...selectedTrims, newTrim.id]);
-
-      toast.success('Trim created successfully');
-      setIsCreateTrimDialogOpen(false);
-    } catch (error: any) {
-      console.error('Failed to create trim:', error);
-      toast.error(error.response?.data?.message || 'Failed to create trim');
-    } finally {
-      setIsCreatingTrim(false);
-    }
   };
 
   return (
@@ -417,7 +421,14 @@ export function CreateStyleDialog({
                     <FormItem>
                       <FormLabel>Fabric Type Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Premium Cotton Twill, 100% Polyester" {...field} />
+                        <Input
+                          placeholder="e.g., 60/40 CVC 200GSM, Premium Cotton Twill"
+                          {...field}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            setSelectedFabricType(e.target.value);
+                          }}
+                        />
                       </FormControl>
                       <FormDescription>
                         Combined fabric type and name
@@ -429,12 +440,12 @@ export function CreateStyleDialog({
 
                 <FormField
                   control={form.control}
-                  name="color"
+                  name="fabric_weight"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Color</FormLabel>
+                      <FormLabel>Fabric Weight</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Navy Blue, Red" {...field} />
+                        <Input placeholder="e.g., 200 GSM, 5.5 oz/yd²" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -443,12 +454,113 @@ export function CreateStyleDialog({
 
                 <FormField
                   control={form.control}
-                  name="color_code"
+                  name="color_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Color Code (Pantone)</FormLabel>
+                      <FormLabel>Color</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., PMS 2965C, Pantone 19-4052" {...field} />
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select color...</option>
+                          {colors.map((color: any) => (
+                            <option key={color.id} value={color.id}>
+                              {color.name} {color.code ? `(${color.code})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            {/* Pricing */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold border-b pb-2">Pricing</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={form.control}
+                  name="msrp"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>MSRP</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormDescription>Manufacturer Suggested Retail Price</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_1"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 1</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_2"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 2</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_3"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 3</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_4"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 4</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="price_5"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Price 5</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -463,10 +575,122 @@ export function CreateStyleDialog({
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
+                  name="brand_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Brand</FormLabel>
+                      <FormControl>
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select brand...</option>
+                          {brands.map((brand: any) => (
+                            <option key={brand.id} value={brand.id}>
+                              {brand.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="buyer_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Buyer</FormLabel>
+                      <FormControl>
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select buyer...</option>
+                          {buyers.map((buyer: any) => (
+                            <option key={buyer.id} value={buyer.id}>
+                              {buyer.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="category_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Category</FormLabel>
+                      <FormControl>
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select category...</option>
+                          {categories.map((category: any) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="season_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Season</FormLabel>
+                      <FormControl>
+                        <select
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select season...</option>
+                          {seasons.map((season: any) => (
+                            <option key={season.id} value={season.id}>
+                              {season.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="gender_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Gender</FormLabel>
+                      <FormLabel>Gender *</FormLabel>
                       <FormControl>
                         <select
                           {...field}
@@ -490,6 +714,28 @@ export function CreateStyleDialog({
                         Select gender to load size options
                       </FormDescription>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="is_active"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Active</FormLabel>
+                        <FormDescription>
+                          Is this style currently active?
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <input
+                          type="checkbox"
+                          checked={field.value}
+                          onChange={field.onChange}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                      </FormControl>
                     </FormItem>
                   )}
                 />
@@ -543,24 +789,13 @@ export function CreateStyleDialog({
             <div className="space-y-4">
               <h3 className="text-sm font-semibold border-b pb-2">Trims & Accessories</h3>
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Select Trims</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsCreateTrimDialogOpen(true)}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Create Trim
-                  </Button>
-                </div>
+                <Label>Select Trims</Label>
                 <MultiSelect
                   options={trimOptions}
                   selected={selectedTrims}
                   onChange={(selected) => setSelectedTrims(selected as number[])}
                   placeholder={trimOptions.length === 0 ? 'No trims available' : 'Select trims...'}
-                  emptyMessage="No trims found. Click 'Create Trim' to add one."
+                  emptyMessage="No trims found."
                   disabled={trimOptions.length === 0}
                 />
                 {selectedTrims.length > 0 && (
@@ -568,15 +803,10 @@ export function CreateStyleDialog({
                     <strong>{selectedTrims.length}</strong> trim{selectedTrims.length !== 1 ? 's' : ''} selected
                   </p>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  To add new trims, visit the Master Data → Trims page
+                </p>
               </div>
-            </div>
-
-            {/* Prepacks */}
-            <div className="space-y-4">
-              <PrepackSelector
-                prepacks={selectedPrepacks}
-                onChange={setSelectedPrepacks}
-              />
             </div>
 
             {/* Files & Documents */}
@@ -586,84 +816,37 @@ export function CreateStyleDialog({
               {/* Image Upload */}
               <div className="space-y-2">
                 <Label>Style Images</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImageUpload}
-                    disabled={isUploadingImage}
-                    className="flex-1"
-                  />
-                  {isUploadingImage && <Loader2 className="h-4 w-4 animate-spin" />}
-                </div>
-
-                {uploadedImages.length > 0 && (
-                  <div className="grid grid-cols-4 gap-2 mt-2">
-                    {uploadedImages.map((img, index) => (
-                      <div key={index} className="relative group">
-                        <img
-                          src={img.url}
-                          alt={`Style ${index + 1}`}
-                          className="w-full h-24 object-cover rounded border"
-                        />
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon"
-                          className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => removeImage(index)}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Upload product images (PNG, JPG, etc.)
-                </p>
+                <FileDropzone
+                  accept="image/*"
+                  multiple
+                  onUpload={handleImageUpload}
+                  isUploading={isUploadingImage}
+                  uploadedFiles={uploadedImages}
+                  onRemove={removeImage}
+                  type="image"
+                  maxSizeMB={10}
+                  helpText="Upload product images (PNG, JPG, etc.)"
+                />
               </div>
 
               {/* Tech Pack Upload */}
               <div className="space-y-2">
                 <Label>Technical Pack / Spec Sheet</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="file"
-                    accept=".ai,.pdf,.jpg,.jpeg,.png"
-                    multiple
-                    onChange={handleTechPackUpload}
-                    disabled={isUploadingTechPack}
-                    className="flex-1"
-                  />
-                  {isUploadingTechPack && <Loader2 className="h-4 w-4 animate-spin" />}
-                </div>
-
-                {uploadedTechPacks.length > 0 && (
-                  <div className="space-y-2">
-                    {uploadedTechPacks.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 border rounded bg-muted">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          <span className="text-sm">Tech pack file {index + 1}</span>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeTechPack(index)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Upload technical documents (.ai, .pdf, .jpeg, .png) - Multiple files supported
-                </p>
+                <FileDropzone
+                  accept=".ai,.pdf,.jpg,.jpeg,.png"
+                  multiple
+                  onUpload={handleTechPackUpload}
+                  isUploading={isUploadingTechPack}
+                  uploadedFiles={uploadedTechPacks.map((path, idx) => ({
+                    url: path,
+                    path: path,
+                    name: `Tech pack file ${idx + 1}`,
+                  }))}
+                  onRemove={removeTechPack}
+                  type="document"
+                  maxSizeMB={20}
+                  helpText="Upload technical documents (.ai, .pdf, .jpeg, .png)"
+                />
               </div>
             </div>
 
@@ -685,212 +868,6 @@ export function CreateStyleDialog({
           </form>
         </Form>
       </DialogContent>
-
-      {/* Inline Trim Creation Dialog */}
-      <Dialog open={isCreateTrimDialogOpen} onOpenChange={setIsCreateTrimDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create New Trim</DialogTitle>
-            <DialogDescription>Add a new trim/accessory to the system</DialogDescription>
-          </DialogHeader>
-          <InlineTrimForm onSubmit={handleCreateTrim} isSubmitting={isCreatingTrim} onCancel={() => setIsCreateTrimDialogOpen(false)} />
-        </DialogContent>
-      </Dialog>
     </Dialog>
-  );
-}
-
-// Inline Trim Creation Form Component
-function InlineTrimForm({ onSubmit, isSubmitting, onCancel }: { onSubmit: (data: any) => void; isSubmitting: boolean; onCancel: () => void }) {
-  const [formData, setFormData] = useState({
-    brand_id: '',
-    trim_type: '',
-    trim_code: '',
-    description: '',
-    is_active: true,
-    image_path: '',
-    file_path: '',
-  });
-  const [brands, setBrands] = useState<any[]>([]);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [isUploadingFile, setIsUploadingFile] = useState(false);
-
-  useEffect(() => {
-    const fetchBrands = async () => {
-      try {
-        const api = (await import('@/lib/api')).default;
-        const response = await api.get('/master-data/brands?all=true');
-        setBrands(response.data || []);
-      } catch (error) {
-        console.error('Failed to fetch brands:', error);
-      }
-    };
-    fetchBrands();
-  }, []);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.brand_id || !formData.trim_type || !formData.trim_code) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-    onSubmit({
-      ...formData,
-      brand_id: parseInt(formData.brand_id),
-    });
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploadingImage(true);
-    try {
-      const formDataUpload = new FormData();
-      formDataUpload.append('images[]', file);
-
-      const api = (await import('@/lib/api')).default;
-      const response = await api.post('/upload/style-images', formDataUpload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      const imagePath = response.data.images[0].path;
-      setFormData({ ...formData, image_path: imagePath });
-      toast.success('Image uploaded');
-    } catch (error) {
-      console.error('Failed to upload image:', error);
-      toast.error('Failed to upload image');
-    } finally {
-      setIsUploadingImage(false);
-      e.target.value = '';
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploadingFile(true);
-    try {
-      const formDataUpload = new FormData();
-      formDataUpload.append('files[]', file);
-
-      const api = (await import('@/lib/api')).default;
-      const response = await api.post('/upload/technical-files', formDataUpload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      const filePath = response.data.files[0].path;
-      setFormData({ ...formData, file_path: filePath });
-      toast.success('File uploaded');
-    } catch (error) {
-      console.error('Failed to upload file:', error);
-      toast.error('Failed to upload file');
-    } finally {
-      setIsUploadingFile(false);
-      e.target.value = '';
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="trim_brand">Brand *</Label>
-        <select
-          id="trim_brand"
-          value={formData.brand_id}
-          onChange={(e) => setFormData({ ...formData, brand_id: e.target.value })}
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          required
-        >
-          <option value="">Select brand...</option>
-          {brands.map((brand) => (
-            <option key={brand.id} value={brand.id}>{brand.name}</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="trim_type">Trim Type *</Label>
-        <select
-          id="trim_type"
-          value={formData.trim_type}
-          onChange={(e) => setFormData({ ...formData, trim_type: e.target.value })}
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          required
-        >
-          <option value="">Select type...</option>
-          <option value="main_label">Main Label</option>
-          <option value="size_label">Size Label</option>
-          <option value="tag_1">Tag 1</option>
-          <option value="tag_2">Tag 2</option>
-          <option value="wash_care_label">Wash Care Label</option>
-          <option value="special_label">Special Label</option>
-          <option value="special_tag">Special Tag</option>
-          <option value="price_ticket">Price Ticket</option>
-        </select>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="trim_code">Trim Code *</Label>
-        <Input
-          id="trim_code"
-          value={formData.trim_code}
-          onChange={(e) => setFormData({ ...formData, trim_code: e.target.value })}
-          placeholder="e.g., LABEL-001"
-          required
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="trim_description">Description</Label>
-        <Textarea
-          id="trim_description"
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          rows={2}
-          placeholder="Optional description..."
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="trim_image">Trim Image (Optional)</Label>
-        <Input
-          id="trim_image"
-          type="file"
-          accept="image/jpeg,image/jpg,image/png"
-          onChange={handleImageUpload}
-          disabled={isUploadingImage || isSubmitting}
-        />
-        {isUploadingImage && <p className="text-sm text-muted-foreground">Uploading...</p>}
-        {formData.image_path && (
-          <p className="text-sm text-green-600">✓ Image uploaded</p>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="trim_file">Trim Document (Optional)</Label>
-        <Input
-          id="trim_file"
-          type="file"
-          accept=".pdf,.doc,.docx,.ai"
-          onChange={handleFileUpload}
-          disabled={isUploadingFile || isSubmitting}
-        />
-        {isUploadingFile && <p className="text-sm text-muted-foreground">Uploading...</p>}
-        {formData.file_path && (
-          <p className="text-sm text-green-600">✓ File uploaded</p>
-        )}
-      </div>
-
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Creating...' : 'Create Trim'}
-        </Button>
-      </DialogFooter>
-    </form>
   );
 }
