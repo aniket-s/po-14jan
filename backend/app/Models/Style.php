@@ -155,11 +155,11 @@ class Style extends Model
 
             // If it starts with /storage/, convert to absolute URL
             if (str_starts_with($imageUrl, '/storage/')) {
-                return url($imageUrl);
+                return request()->getSchemeAndHttpHost() . $imageUrl;
             }
 
             // If it's just a path like 'styles/images/...', convert to absolute URL
-            return url('/storage/' . $imageUrl);
+            return request()->getSchemeAndHttpHost() . '/storage/' . $imageUrl;
         }, $images);
     }
 
@@ -182,11 +182,11 @@ class Style extends Model
 
             // If it starts with /storage/, convert to absolute URL
             if (str_starts_with($fileUrl, '/storage/')) {
-                return url($fileUrl);
+                return request()->getSchemeAndHttpHost() . $fileUrl;
             }
 
             // If it's just a path like 'styles/technical/...', convert to absolute URL
-            return url('/storage/' . $fileUrl);
+            return request()->getSchemeAndHttpHost() . '/storage/' . $fileUrl;
         }, $paths);
     }
 

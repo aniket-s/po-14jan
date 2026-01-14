@@ -55,14 +55,22 @@ return new class extends Migration
         });
 
         // Add indexes in a separate Schema::table call to avoid issues
-        // Use raw SQL to check for index existence since Doctrine DBAL is removed in Laravel 12
+        // Use database-agnostic method to check for index existence
         Schema::table('styles', function (Blueprint $table) {
             $connection = Schema::getConnection();
+            $driverName = $connection->getDriverName();
             $tableName = $connection->getTablePrefix() . 'styles';
 
-            // Get existing indexes
-            $indexes = $connection->select("SHOW INDEX FROM `{$tableName}`");
-            $existingIndexes = array_column($indexes, 'Key_name');
+            // Get existing indexes based on database driver
+            if ($driverName === 'sqlite') {
+                // For SQLite, query sqlite_master table
+                $indexes = $connection->select("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='{$tableName}'");
+                $existingIndexes = array_column($indexes, 'name');
+            } else {
+                // For MySQL/PostgreSQL
+                $indexes = $connection->select("SHOW INDEX FROM `{$tableName}`");
+                $existingIndexes = array_column($indexes, 'Key_name');
+            }
 
             if (!in_array('styles_buyer_id_index', $existingIndexes)) {
                 $table->index('buyer_id');
@@ -106,13 +114,21 @@ return new class extends Migration
         });
 
         Schema::table('styles', function (Blueprint $table) {
-            // Drop indexes using raw SQL check
+            // Drop indexes using database-agnostic method
             $connection = Schema::getConnection();
+            $driverName = $connection->getDriverName();
             $tableName = $connection->getTablePrefix() . 'styles';
 
-            // Get existing indexes
-            $indexes = $connection->select("SHOW INDEX FROM `{$tableName}`");
-            $existingIndexes = array_column($indexes, 'Key_name');
+            // Get existing indexes based on database driver
+            if ($driverName === 'sqlite') {
+                // For SQLite, query sqlite_master table
+                $indexes = $connection->select("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='{$tableName}'");
+                $existingIndexes = array_column($indexes, 'name');
+            } else {
+                // For MySQL/PostgreSQL
+                $indexes = $connection->select("SHOW INDEX FROM `{$tableName}`");
+                $existingIndexes = array_column($indexes, 'Key_name');
+            }
 
             if (in_array('styles_buyer_id_index', $existingIndexes)) {
                 $table->dropIndex(['buyer_id']);
