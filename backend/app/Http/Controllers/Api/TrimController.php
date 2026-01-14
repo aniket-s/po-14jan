@@ -151,12 +151,18 @@ class TrimController extends Controller
         }
 
         $file = $request->file('image');
-        $path = $file->store('trims/images', 'public');
+        $storedPath = $file->store('trims/images', 'public');
+
+        // Remove 'public/' prefix if present (Laravel sometimes adds this)
+        $path = str_replace('public/', '', $storedPath);
+
+        // Build absolute URL with request scheme and host
+        $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
         return response()->json([
             'message' => 'Image uploaded successfully',
             'path' => $path,
-            'url' => Storage::url($path)
+            'url' => $url
         ]);
     }
 
@@ -177,12 +183,18 @@ class TrimController extends Controller
         }
 
         $file = $request->file('file');
-        $path = $file->store('trims/files', 'public');
+        $storedPath = $file->store('trims/files', 'public');
+
+        // Remove 'public/' prefix if present (Laravel sometimes adds this)
+        $path = str_replace('public/', '', $storedPath);
+
+        // Build absolute URL with request scheme and host
+        $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
         return response()->json([
             'message' => 'File uploaded successfully',
             'path' => $path,
-            'url' => Storage::url($path)
+            'url' => $url
         ]);
     }
 
