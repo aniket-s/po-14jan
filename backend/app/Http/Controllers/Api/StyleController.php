@@ -771,11 +771,7 @@ class StyleController extends Controller
             'fit' => 'nullable|string|max:100',
             // Pricing fields
             'msrp' => 'nullable|numeric|min:0',
-            'price_1' => 'nullable|numeric|min:0',
-            'price_2' => 'nullable|numeric|min:0',
-            'price_3' => 'nullable|numeric|min:0',
-            'price_4' => 'nullable|numeric|min:0',
-            'price_5' => 'nullable|numeric|min:0',
+            'wholesale_price' => 'nullable|numeric|min:0',
             // Status
             'is_active' => 'boolean',
             // Trims association
@@ -827,11 +823,7 @@ class StyleController extends Controller
             'fit' => $request->fit,
             // Pricing fields
             'msrp' => $request->msrp,
-            'price_1' => $request->price_1,
-            'price_2' => $request->price_2,
-            'price_3' => $request->price_3,
-            'price_4' => $request->price_4,
-            'price_5' => $request->price_5,
+            'wholesale_price' => $request->wholesale_price,
             // Status
             'is_active' => $request->input('is_active', true),
             // Audit
@@ -944,11 +936,7 @@ class StyleController extends Controller
             'fit' => 'nullable|string|max:100',
             // Pricing fields
             'msrp' => 'nullable|numeric|min:0',
-            'price_1' => 'nullable|numeric|min:0',
-            'price_2' => 'nullable|numeric|min:0',
-            'price_3' => 'nullable|numeric|min:0',
-            'price_4' => 'nullable|numeric|min:0',
-            'price_5' => 'nullable|numeric|min:0',
+            'wholesale_price' => 'nullable|numeric|min:0',
             // Status
             'is_active' => 'boolean',
             // Trims association

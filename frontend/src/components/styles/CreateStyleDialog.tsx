@@ -51,11 +51,7 @@ const styleSchema = z.object({
   gender_id: z.coerce.number().min(1, 'Gender is required'), // REQUIRED: Gender for size management
   // Pricing fields
   msrp: z.coerce.number().optional(), // NEW: MSRP
-  price_1: z.coerce.number().optional(), // NEW: Price tier 1
-  price_2: z.coerce.number().optional(), // NEW: Price tier 2
-  price_3: z.coerce.number().optional(), // NEW: Price tier 3
-  price_4: z.coerce.number().optional(), // NEW: Price tier 4
-  price_5: z.coerce.number().optional(), // NEW: Price tier 5
+  wholesale_price: z.coerce.number().optional(), // NEW: Wholesale price
   // Status
   is_active: z.boolean().optional(), // NEW: Active/Inactive
   // Trims (array of trim IDs)
@@ -114,11 +110,7 @@ export function CreateStyleDialog({
       season_id: undefined,
       gender_id: undefined, // REQUIRED: Gender selection
       msrp: undefined,
-      price_1: undefined,
-      price_2: undefined,
-      price_3: undefined,
-      price_4: undefined,
-      price_5: undefined,
+      wholesale_price: undefined,
       is_active: true, // Default to active
       trims: [],
     },
@@ -231,11 +223,7 @@ export function CreateStyleDialog({
         gender_id: data.gender_id || undefined,
         // Pricing
         msrp: data.msrp || undefined,
-        price_1: data.price_1 || undefined,
-        price_2: data.price_2 || undefined,
-        price_3: data.price_3 || undefined,
-        price_4: data.price_4 || undefined,
-        price_5: data.price_5 || undefined,
+        wholesale_price: data.wholesale_price || undefined,
         // Status
         is_active: data.is_active !== undefined ? data.is_active : true,
         // Trims
@@ -489,7 +477,7 @@ export function CreateStyleDialog({
             {/* Pricing */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold border-b pb-2">Pricing</h3>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="msrp"
@@ -506,65 +494,14 @@ export function CreateStyleDialog({
                 />
                 <FormField
                   control={form.control}
-                  name="price_1"
+                  name="wholesale_price"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price 1</FormLabel>
+                      <FormLabel>Wholesale Price</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" placeholder="0.00" {...field} />
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="price_2"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Price 2</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="price_3"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Price 3</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="price_4"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Price 4</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="price_5"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Price 5</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                      </FormControl>
+                      <FormDescription>Price for wholesale customers</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

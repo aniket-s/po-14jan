@@ -54,11 +54,7 @@ class Style extends Model
         'tp_date',
         // Pricing fields
         'msrp', // NEW: Manufacturer Suggested Retail Price
-        'price_1', // NEW: Price tier 1
-        'price_2', // NEW: Price tier 2
-        'price_3', // NEW: Price tier 3
-        'price_4', // NEW: Price tier 4
-        'price_5', // NEW: Price tier 5
+        'wholesale_price', // NEW: Wholesale price for bulk customers
         // Status
         'is_active', // NEW: Active/Inactive flag
         // loading_port - REMOVED (not for styles)
@@ -92,11 +88,7 @@ class Style extends Model
         'total_price' => 'decimal:2',
         'fob_price' => 'decimal:2',
         'msrp' => 'decimal:2',
-        'price_1' => 'decimal:2',
-        'price_2' => 'decimal:2',
-        'price_3' => 'decimal:2',
-        'price_4' => 'decimal:2',
-        'price_5' => 'decimal:2',
+        'wholesale_price' => 'decimal:2',
         'tp_date' => 'date',
         'images' => 'array',
         'technical_file_paths' => 'array', // NEW: Support multiple technical files

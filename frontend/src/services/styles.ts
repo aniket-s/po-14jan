@@ -99,11 +99,7 @@ export interface CreateStyleData {
 
   // Pricing
   msrp?: number; // NEW: MSRP
-  price_1?: number; // NEW: Price tier 1
-  price_2?: number; // NEW: Price tier 2
-  price_3?: number; // NEW: Price tier 3
-  price_4?: number; // NEW: Price tier 4
-  price_5?: number; // NEW: Price tier 5
+  wholesale_price?: number; // NEW: Wholesale price
 
   // Status
   is_active?: boolean; // NEW: Active/Inactive
