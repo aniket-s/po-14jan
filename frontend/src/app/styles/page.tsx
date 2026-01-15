@@ -41,7 +41,6 @@ interface Style {
 
   // OLD fields (for backward compatibility)
   fabric: string | null;
-  color: string | null;
 
   // NEW relational field IDs
   brand_id: number | null;
@@ -57,11 +56,13 @@ interface Style {
   fabric_type_name: string | null;
   fabric_weight: string | null;
 
+  // Color field - union type for backward compatibility (can be string OR object)
+  color: string | { id: number; name: string; code: string; pantone_code: string | null } | null;
+
   // Relationships (loaded via eager loading)
   brand?: { id: number; name: string };
   buyer?: { id: number; name: string };
   category?: { id: number; name: string };
-  color?: { id: number; name: string; code: string; pantone_code: string | null };
   gender?: { id: number; name: string };
   season?: { id: number; name: string };
 
@@ -433,14 +434,23 @@ export default function StylesPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {style.color?.name || style.color_name || style.color ? (
-                              <Badge variant="outline">
-                                {style.color?.name || style.color_name || style.color}
-                                {style.color?.code && <span className="ml-1 text-xs opacity-70">({style.color.code})</span>}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
+                            {(() => {
+                              const colorDisplay = typeof style.color === 'string'
+                                ? style.color
+                                : typeof style.color === 'object' && style.color
+                                  ? style.color.name
+                                  : style.color_name;
+                              const colorCode = typeof style.color === 'object' && style.color?.code;
+
+                              return colorDisplay ? (
+                                <Badge variant="outline">
+                                  {colorDisplay}
+                                  {colorCode && <span className="ml-1 text-xs opacity-70">({colorCode})</span>}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell>
                             {style.buyer?.name || (style.buyer_id ? `Buyer #${style.buyer_id}` : '-')}
