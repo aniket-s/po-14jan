@@ -38,8 +38,33 @@ interface Style {
   quantity: number | null;
   unit_price: number | null;
   total_price: number;
+
+  // OLD fields (for backward compatibility)
   fabric: string | null;
   color: string | null;
+
+  // NEW relational field IDs
+  brand_id: number | null;
+  buyer_id: number | null;
+  category_id: number | null;
+  color_id: number | null;
+  gender_id: number | null;
+  season_id: number | null;
+
+  // NEW direct fields
+  color_name: string | null;
+  color_code: string | null;
+  fabric_type_name: string | null;
+  fabric_weight: string | null;
+
+  // Relationships (loaded via eager loading)
+  brand?: { id: number; name: string };
+  buyer?: { id: number; name: string };
+  category?: { id: number; name: string };
+  color?: { id: number; name: string; code: string; pantone_code: string | null };
+  gender?: { id: number; name: string };
+  season?: { id: number; name: string };
+
   size_breakdown: any;
   description: string | null;
   purchase_order: {
@@ -47,7 +72,7 @@ interface Style {
     po_number: string;
     buyer_name: string | null;
     delivery_date: string;
-  };
+  } | null;
   created_at: string;
   updated_at: string;
 }
@@ -355,8 +380,10 @@ export default function StylesPage() {
                     </TableHead>
                     <TableHead>Style Number</TableHead>
                     <TableHead>Style Name</TableHead>
-                    <TableHead>Fabric</TableHead>
+                    <TableHead>Fabric / Weight</TableHead>
                     <TableHead>Color</TableHead>
+                    <TableHead>Buyer</TableHead>
+                    <TableHead>Category</TableHead>
                     <TableHead>Used in POs</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -364,7 +391,7 @@ export default function StylesPage() {
                 <TableBody>
                   {styles.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                         <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
                         <p>No styles found</p>
                         {can('style.create') && (
@@ -395,13 +422,31 @@ export default function StylesPage() {
                               {style.description || '-'}
                             </span>
                           </TableCell>
-                          <TableCell>{style.fabric || '-'}</TableCell>
                           <TableCell>
-                            {style.color ? (
-                              <Badge variant="outline">{style.color}</Badge>
+                            {style.fabric_type_name || style.fabric_weight ? (
+                              <div className="space-y-0.5">
+                                {style.fabric_type_name && <div className="text-sm">{style.fabric_type_name}</div>}
+                                {style.fabric_weight && <div className="text-xs text-muted-foreground">{style.fabric_weight}</div>}
+                              </div>
+                            ) : (
+                              style.fabric || '-'
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {style.color?.name || style.color_name || style.color ? (
+                              <Badge variant="outline">
+                                {style.color?.name || style.color_name || style.color}
+                                {style.color?.code && <span className="ml-1 text-xs opacity-70">({style.color.code})</span>}
+                              </Badge>
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
+                          </TableCell>
+                          <TableCell>
+                            {style.buyer?.name || (style.buyer_id ? `Buyer #${style.buyer_id}` : '-')}
+                          </TableCell>
+                          <TableCell>
+                            {style.category?.name || (style.category_id ? `Category #${style.category_id}` : '-')}
                           </TableCell>
                           <TableCell>
                             {style.purchase_order ? (

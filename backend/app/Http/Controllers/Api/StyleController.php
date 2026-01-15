@@ -1100,7 +1100,16 @@ class StyleController extends Controller
     {
         $user = $request->user();
 
-        $query = Style::with(['purchaseOrder:id,po_number,status', 'prepacks.prepackCode']);
+        $query = Style::with([
+            'purchaseOrder:id,po_number,status',
+            'prepacks.prepackCode',
+            'brand:id,name',
+            'buyer:id,name',
+            'category:id,name',
+            'season:id,name',
+            'gender:id,name',
+            'color:id,name,code,pantone_code'
+        ]);
 
         // Apply role-based filtering
         if (!$user->can('style.view_all')) {
