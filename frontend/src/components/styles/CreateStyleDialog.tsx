@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { createStandaloneStyle, type CreateStyleData } from '@/services/styles';
 import { Loader2, Package, Plus, X, Upload, FileText, Image as ImageIcon } from 'lucide-react';
 import { MultiSelect, type MultiSelectOption } from '@/components/ui/multi-select';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FileDropzone } from '@/components/ui/file-dropzone';
 
 const styleSchema = z.object({
@@ -91,7 +92,6 @@ export function CreateStyleDialog({
   const [sizes, setSizes] = useState<any[]>([]); // Sizes based on selected gender
   const [selectedGender, setSelectedGender] = useState<number | undefined>();
   const [selectedFabricType, setSelectedFabricType] = useState<string | undefined>(); // For color filtering
-  const [colorSearch, setColorSearch] = useState<string>(''); // For searchable color select
   // REMOVED: Inline trim creation dialog
   // REMOVED: Prepacks selector
 
@@ -456,53 +456,32 @@ export function CreateStyleDialog({
                 <FormField
                   control={form.control}
                   name="color_id"
-                  render={({ field }) => {
-                    const filteredColors = colors.filter((color: any) =>
-                      colorSearch === '' ||
-                      color.name.toLowerCase().includes(colorSearch.toLowerCase()) ||
-                      (color.code && color.code.toLowerCase().includes(colorSearch.toLowerCase())) ||
-                      (color.pantone_code && color.pantone_code.toLowerCase().includes(colorSearch.toLowerCase()))
-                    );
-
-                    return (
-                      <FormItem>
-                        <FormLabel>Color</FormLabel>
-                        <div className="space-y-2">
-                          <Input
-                            type="text"
-                            placeholder="Search colors..."
-                            value={colorSearch}
-                            onChange={(e) => setColorSearch(e.target.value)}
-                            className="h-9"
-                          />
-                          <FormControl>
-                            <select
-                              {...field}
-                              value={field.value || ''}
-                              onChange={(e) => {
-                                const value = e.target.value ? parseInt(e.target.value) : undefined;
-                                field.onChange(value);
-                              }}
-                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <option value="">Select color...</option>
-                              {filteredColors.map((color: any) => (
-                                <option key={color.id} value={color.id}>
-                                  {color.name} {color.code ? `(${color.code})` : ''} {color.pantone_code ? `- ${color.pantone_code}` : ''}
-                                </option>
-                              ))}
-                            </select>
-                          </FormControl>
-                          {colorSearch && (
-                            <p className="text-xs text-muted-foreground">
-                              Showing {filteredColors.length} of {colors.length} colors
-                            </p>
-                          )}
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    );
-                  }}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Color</FormLabel>
+                      <FormControl>
+                        <Combobox
+                          options={colors.map((color: any) => ({
+                            label: `${color.name}${color.code ? ` (${color.code})` : ''}`,
+                            value: color.id,
+                            description: color.pantone_code || undefined,
+                            searchTerms: [
+                              color.name,
+                              color.code || '',
+                              color.pantone_code || ''
+                            ].filter(Boolean),
+                          }))}
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder="Select color..."
+                          searchPlaceholder="Search by name, code, or Pantone..."
+                          emptyMessage="No colors found"
+                          clearable
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
               </div>
             </div>
