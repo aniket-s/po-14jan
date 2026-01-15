@@ -92,6 +92,7 @@ export function EditStyleDialog({
   const [trimOptions, setTrimOptions] = useState<MultiSelectOption[]>([]);
   const [sizes, setSizes] = useState<any[]>([]); // Sizes based on selected gender
   const [selectedGender, setSelectedGender] = useState<number | undefined>();
+  const [colorSearch, setColorSearch] = useState<string>(''); // For searchable color select
 
   const form = useForm<StyleFormData>({
     resolver: zodResolver(styleSchema),
@@ -507,30 +508,53 @@ export function EditStyleDialog({
                 <FormField
                   control={form.control}
                   name="color_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Color</FormLabel>
-                      <FormControl>
-                        <select
-                          {...field}
-                          value={field.value || ''}
-                          onChange={(e) => {
-                            const value = e.target.value ? parseInt(e.target.value) : undefined;
-                            field.onChange(value);
-                          }}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="">Select color...</option>
-                          {colors.map((color: any) => (
-                            <option key={color.id} value={color.id}>
-                              {color.name} {color.code ? `(${color.code})` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  render={({ field }) => {
+                    const filteredColors = colors.filter((color: any) =>
+                      colorSearch === '' ||
+                      color.name.toLowerCase().includes(colorSearch.toLowerCase()) ||
+                      (color.code && color.code.toLowerCase().includes(colorSearch.toLowerCase())) ||
+                      (color.pantone_code && color.pantone_code.toLowerCase().includes(colorSearch.toLowerCase()))
+                    );
+
+                    return (
+                      <FormItem>
+                        <FormLabel>Color</FormLabel>
+                        <div className="space-y-2">
+                          <Input
+                            type="text"
+                            placeholder="Search colors..."
+                            value={colorSearch}
+                            onChange={(e) => setColorSearch(e.target.value)}
+                            className="h-9"
+                          />
+                          <FormControl>
+                            <select
+                              {...field}
+                              value={field.value || ''}
+                              onChange={(e) => {
+                                const value = e.target.value ? parseInt(e.target.value) : undefined;
+                                field.onChange(value);
+                              }}
+                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <option value="">Select color...</option>
+                              {filteredColors.map((color: any) => (
+                                <option key={color.id} value={color.id}>
+                                  {color.name} {color.code ? `(${color.code})` : ''} {color.pantone_code ? `- ${color.pantone_code}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </FormControl>
+                          {colorSearch && (
+                            <p className="text-xs text-muted-foreground">
+                              Showing {filteredColors.length} of {colors.length} colors
+                            </p>
+                          )}
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
                 />
               </div>
             </div>
