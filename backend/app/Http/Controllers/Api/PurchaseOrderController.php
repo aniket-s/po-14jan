@@ -269,6 +269,7 @@ class PurchaseOrderController extends Controller
             'currency_id' => 'nullable|exists:currencies,id', // NEW: Currency selection with + button
             'exchange_rate' => 'nullable|numeric|min:0',
             'payment_terms' => 'nullable|string',
+            'payment_term_id' => 'nullable|exists:payment_terms,id', // NEW: Dynamic payment term
             'payment_terms_structured' => 'nullable|array', // For structured payment terms
             'payment_terms_structured.term' => 'nullable|string',
             'payment_terms_structured.percentage' => 'nullable|numeric|min:0|max:100',
@@ -333,16 +334,31 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
-        // VALIDATION: If payment term is ADVANCE, percentage is compulsory
+        // VALIDATION: If payment term requires percentage (e.g., ADVANCE), percentage is compulsory
         $paymentTermsStructured = $request->payment_terms_structured;
+        $requiresPercentage = false;
+
+        // Check if selected payment_term_id requires percentage
+        if ($request->filled('payment_term_id')) {
+            $paymentTermModel = \App\Models\PaymentTerm::find($request->payment_term_id);
+            if ($paymentTermModel && $paymentTermModel->requires_percentage) {
+                $requiresPercentage = true;
+            }
+        }
+
+        // Also check legacy term field for backward compatibility
         if ($paymentTermsStructured &&
             isset($paymentTermsStructured['term']) &&
             strtoupper($paymentTermsStructured['term']) === 'ADVANCE') {
+            $requiresPercentage = true;
+        }
+
+        if ($requiresPercentage) {
             if (!isset($paymentTermsStructured['percentage']) || $paymentTermsStructured['percentage'] === null) {
                 return response()->json([
                     'message' => 'Validation failed',
                     'errors' => [
-                        'payment_terms_structured.percentage' => ['Percentage is required when payment term is ADVANCE'],
+                        'payment_terms_structured.percentage' => ['Percentage is required for this payment term'],
                     ]
                 ], 422);
             }
@@ -350,12 +366,34 @@ class PurchaseOrderController extends Controller
 
         // DATE CALCULATION BASED ON SHIPPING TERM
         $etdDate = $request->etd_date;
+        $exFactoryDate = $request->ex_factory_date;
+        $etaDate = $request->eta_date;
+        $inWarehouseDate = $request->in_warehouse_date;
         $shippingTerm = $request->shipping_term ?? 'FOB';
 
         if ($shippingTerm === 'FOB') {
-            // FOB: ETD = ex_factory_date + 7 days
-            if ($request->filled('ex_factory_date') && empty($etdDate)) {
-                $etdDate = \Carbon\Carbon::parse($request->ex_factory_date)->addDays(7)->format('Y-m-d');
+            // FOB: User inputs ETD
+            // Ex-Factory = ETD - 7 days
+            // ETA = ETD + sailing_time_days
+            // IHD (In-Warehouse) = ETA + 5 days
+            if ($request->filled('etd_date') && $request->filled('country_id')) {
+                $country = \App\Models\Country::find($request->country_id);
+                $sailingDays = $country ? ($country->sailing_time_days ?? 0) : 0;
+
+                // Ex-Factory = ETD - 7 days (if not provided)
+                if (empty($exFactoryDate)) {
+                    $exFactoryDate = \Carbon\Carbon::parse($request->etd_date)->subDays(7)->format('Y-m-d');
+                }
+
+                // ETA = ETD + sailing time (if not provided)
+                if (empty($etaDate)) {
+                    $etaDate = \Carbon\Carbon::parse($request->etd_date)->addDays($sailingDays)->format('Y-m-d');
+                }
+
+                // IHD (In-Warehouse) = ETA + 5 days (if not provided)
+                if (empty($inWarehouseDate) && $etaDate) {
+                    $inWarehouseDate = \Carbon\Carbon::parse($etaDate)->addDays(5)->format('Y-m-d');
+                }
             }
         } elseif ($shippingTerm === 'DDP') {
             // DDP: ETD = in_warehouse_date - transit_time - 5 days
@@ -406,6 +444,8 @@ class PurchaseOrderController extends Controller
             'currency_id' => $request->currency_id, // NEW: Store foreign key
             'exchange_rate' => $request->exchange_rate ?? 1.0,
             'payment_terms' => $request->payment_terms,
+            'payment_term_id' => $request->payment_term_id, // NEW: Dynamic payment term foreign key
+            'payment_terms_structured' => $request->payment_terms_structured,
             'terms_of_delivery' => $request->terms_of_delivery,
             'destination_country' => $request->destination_country,
             'additional_notes' => $request->additional_notes,
@@ -415,10 +455,10 @@ class PurchaseOrderController extends Controller
             'total_value' => 0,
             // Enhanced PO fields (removed: ship_from, manufacturer)
             'revision_date' => $request->revision_date,
-            'etd_date' => $etdDate, // Use calculated ETD based on shipping term
-            'ex_factory_date' => $request->ex_factory_date, // NEW: For FOB
-            'eta_date' => $request->eta_date,
-            'in_warehouse_date' => $request->in_warehouse_date,
+            'etd_date' => $etdDate, // Use provided or calculated ETD
+            'ex_factory_date' => $exFactoryDate, // Auto-calculated for FOB: ETD - 7 days
+            'eta_date' => $etaDate, // Auto-calculated: ETD + sailing time
+            'in_warehouse_date' => $inWarehouseDate, // Auto-calculated for FOB: ETA + 5 days (IHD)
             'ship_to' => $request->ship_to,
             'ship_to_address' => $request->ship_to_address,
             'sample_schedule' => $request->sample_schedule,
@@ -508,6 +548,10 @@ class PurchaseOrderController extends Controller
             'currency_id' => 'nullable|exists:currencies,id',
             'exchange_rate' => 'nullable|numeric|min:0',
             'payment_terms' => 'nullable|string',
+            'payment_term_id' => 'nullable|exists:payment_terms,id', // NEW: Dynamic payment term
+            'payment_terms_structured' => 'nullable|array', // For structured payment terms
+            'payment_terms_structured.term' => 'nullable|string',
+            'payment_terms_structured.percentage' => 'nullable|numeric|min:0|max:100',
             'terms_of_delivery' => 'nullable|string',
             'destination_country' => 'nullable|string|max:100',
             'additional_notes' => 'nullable|string',
@@ -593,6 +637,8 @@ class PurchaseOrderController extends Controller
             'currency_id' => $request->currency_id ?? $po->currency_id,
             'exchange_rate' => $request->exchange_rate ?? $po->exchange_rate,
             'payment_terms' => $request->payment_terms,
+            'payment_term_id' => $request->payment_term_id ?? $po->payment_term_id,
+            'payment_terms_structured' => $request->payment_terms_structured ?? $po->payment_terms_structured,
             'terms_of_delivery' => $request->terms_of_delivery,
             'destination_country' => $request->destination_country,
             'additional_notes' => $request->additional_notes,

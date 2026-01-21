@@ -383,6 +383,9 @@ Route::middleware('auth:sanctum')->group(function () {
         // Currencies (NEW - for dynamic currency selection in POs)
         Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
 
+        // Payment Terms (NEW - for dynamic payment term selection in POs)
+        Route::apiResource('payment-terms', \App\Http\Controllers\Api\PaymentTermController::class);
+
         // Trim Types (NEW - for dynamic trim type selection)
         Route::apiResource('trim-types', \App\Http\Controllers\Api\TrimTypeController::class);
         Route::post('trim-types/reorder', [\App\Http\Controllers\Api\TrimTypeController::class, 'reorder']);
