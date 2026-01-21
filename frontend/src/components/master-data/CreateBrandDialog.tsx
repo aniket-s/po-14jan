@@ -15,29 +15,30 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 
-const countrySchema = z.object({
-  name: z.string().min(1, 'Country name is required'),
-  // code field removed - auto-generated on backend
-  shipping_days: z.coerce.number().min(0).max(365).optional(),
+const brandSchema = z.object({
+  name: z.string().min(1, 'Brand name is required'),
+  code: z.string().optional(),
+  description: z.string().optional(),
 });
 
-type CountryFormData = z.infer<typeof countrySchema>;
+type BrandFormData = z.infer<typeof brandSchema>;
 
-interface CreateCountryDialogProps {
+interface CreateBrandDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
+  onSuccess: (data?: any) => void;
 }
 
-export function CreateCountryDialog({
+export function CreateBrandDialog({
   open,
   onOpenChange,
   onSuccess,
-}: CreateCountryDialogProps) {
+}: CreateBrandDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
@@ -45,28 +46,29 @@ export function CreateCountryDialog({
     handleSubmit,
     formState: { errors },
     reset,
-  } = useForm<CountryFormData>({
-    resolver: zodResolver(countrySchema),
+  } = useForm<BrandFormData>({
+    resolver: zodResolver(brandSchema),
     defaultValues: {
       name: '',
-      shipping_days: 0,
+      code: '',
+      description: '',
     },
   });
 
-  const onSubmit = async (data: CountryFormData) => {
+  const onSubmit = async (data: BrandFormData) => {
     setIsSubmitting(true);
     try {
-      const response = await api.post('/master-data/countries', {
+      const response = await api.post('/master-data/brands', {
         ...data,
         is_active: true,
       });
-      toast.success(`Country "${data.name}" created successfully`);
+      toast.success(`Brand "${data.name}" created successfully`);
       reset();
       onOpenChange(false);
-      onSuccess();
+      onSuccess(response.data?.data);
     } catch (error: any) {
-      console.error('Failed to create country:', error);
-      toast.error(error.response?.data?.message || 'Failed to create country');
+      console.error('Failed to create brand:', error);
+      toast.error(error.response?.data?.message || 'Failed to create brand');
     } finally {
       setIsSubmitting(false);
     }
@@ -76,39 +78,39 @@ export function CreateCountryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Create New Country</DialogTitle>
+          <DialogTitle>Create New Brand</DialogTitle>
           <DialogDescription>
-            Add a new country of origin with shipping time.
+            Add a new brand to your master data.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Country Name *</Label>
+              <Label htmlFor="name">Brand Name *</Label>
               <Input
                 id="name"
-                placeholder="e.g., Bangladesh"
+                placeholder="e.g., Nike, Adidas"
                 {...register('name')}
               />
               {errors.name && (
                 <p className="text-sm text-destructive">{errors.name.message}</p>
               )}
             </div>
-            {/* Country code field removed - auto-generated on backend */}
             <div className="space-y-2">
-              <Label htmlFor="shipping_days">Transit Time (Days)</Label>
+              <Label htmlFor="code">Code</Label>
               <Input
-                id="shipping_days"
-                type="number"
-                placeholder="e.g., 30"
-                {...register('shipping_days')}
+                id="code"
+                placeholder="e.g., NK, AD"
+                {...register('code')}
               />
-              <p className="text-xs text-muted-foreground">
-                Average shipping time from this country
-              </p>
-              {errors.shipping_days && (
-                <p className="text-sm text-destructive">{errors.shipping_days.message}</p>
-              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                placeholder="Optional description..."
+                {...register('description')}
+              />
             </div>
           </div>
           <DialogFooter>
@@ -127,7 +129,7 @@ export function CreateCountryDialog({
                   Creating...
                 </>
               ) : (
-                'Create Country'
+                'Create Brand'
               )}
             </Button>
           </DialogFooter>

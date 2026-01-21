@@ -31,13 +31,16 @@ class Style extends Model
         // destination_port - REMOVED (not for styles)
         // Master data foreign keys
         'brand_id',
-        'buyer_id', // NEW: Buyer for categorization
-        'category_id', // NEW: Product category
-        'season_id', // NEW: Season/collection
-        'gender_id', // NEW: Gender for size management
-        'color_id', // NEW: Foreign key to colors table
+        'retailer_id', // CHANGED: Replaced buyer_id with retailer_id
+        'category_id', // Product category
+        'season_id', // Season/collection - "Styles Created for Season"
+        'gender_id', // Gender for size management
+        'color_id', // Foreign key to colors table
+        'fabric_type_id', // NEW: Foreign key to fabric_types table
+        'fabric_quality_id', // NEW: Foreign key to fabric_qualities table
         // division_id - REMOVED
         // customer_id - REMOVED
+        // buyer_id - REMOVED (replaced by retailer_id)
         // agent_id - REMOVED (not for styles)
         // vendor_id - REMOVED (not for styles)
         // Enhanced fields
@@ -234,11 +237,27 @@ class Style extends Model
     }
 
     /**
-     * Get the buyer for the style
+     * Get the retailer for the style (replaced buyer)
      */
-    public function buyer()
+    public function retailer()
     {
-        return $this->belongsTo(Buyer::class);
+        return $this->belongsTo(Retailer::class);
+    }
+
+    /**
+     * Get the fabric type for the style
+     */
+    public function fabricType()
+    {
+        return $this->belongsTo(FabricType::class);
+    }
+
+    /**
+     * Get the fabric quality for the style
+     */
+    public function fabricQuality()
+    {
+        return $this->belongsTo(FabricQuality::class);
     }
 
     /**

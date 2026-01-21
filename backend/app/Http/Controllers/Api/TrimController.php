@@ -56,16 +56,18 @@ class TrimController extends Controller
 
     /**
      * Store a newly created trim.
+     * Now supports multiple trim types (array) and removes file_path (specification document)
      */
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'brand_id' => 'required|exists:brands,id',
-            'trim_type' => 'required|in:main_label,size_label,tag_1,tag_2,wash_care_label,special_label,special_tag,price_ticket',
+            'trim_types' => 'required|array|min:1', // Now supports multiple selection
+            'trim_types.*' => 'string', // Each type should be a string
             'trim_code' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'image_path' => 'nullable|string',
-            'file_path' => 'nullable|string',
+            'image_path' => 'nullable|string', // Now accepts PDF, AI, and images
+            // 'file_path' removed - specification document no longer needed
             'is_active' => 'nullable|boolean',
         ]);
 
@@ -94,16 +96,18 @@ class TrimController extends Controller
 
     /**
      * Update the specified trim.
+     * Now supports multiple trim types (array) and removes file_path
      */
     public function update(Request $request, Trim $trim): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'brand_id' => 'sometimes|required|exists:brands,id',
-            'trim_type' => 'sometimes|required|in:main_label,size_label,tag_1,tag_2,wash_care_label,special_label,special_tag,price_ticket',
+            'trim_types' => 'sometimes|required|array|min:1', // Now supports multiple selection
+            'trim_types.*' => 'string', // Each type should be a string
             'trim_code' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
-            'image_path' => 'nullable|string',
-            'file_path' => 'nullable|string',
+            'image_path' => 'nullable|string', // Now accepts PDF, AI, and images
+            // 'file_path' removed - specification document no longer needed
             'is_active' => 'nullable|boolean',
         ]);
 
@@ -136,11 +140,13 @@ class TrimController extends Controller
 
     /**
      * Upload trim image.
+     * Now accepts PDF, AI, EPS files in addition to standard images
      */
     public function uploadImage(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:10240', // 10MB max
+            // Now accepts: images + PDF, AI, EPS, SVG files
+            'image' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp,pdf,ai,eps|max:20480', // 20MB max
         ]);
 
         if ($validator->fails()) {
@@ -159,43 +165,27 @@ class TrimController extends Controller
         // Build absolute URL with request scheme and host
         $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
+        // Determine file type for frontend display
+        $extension = strtolower($file->getClientOriginalExtension());
+        $isDocument = in_array($extension, ['pdf', 'ai', 'eps']);
+
         return response()->json([
-            'message' => 'Image uploaded successfully',
+            'message' => 'File uploaded successfully',
             'path' => $path,
-            'url' => $url
+            'url' => $url,
+            'is_document' => $isDocument,
+            'extension' => $extension
         ]);
     }
 
     /**
      * Upload trim file/document.
+     * DEPRECATED: Use uploadImage instead - now supports all file types
      */
     public function uploadFile(Request $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'file' => 'required|file|mimes:pdf,doc,docx,xlsx,xls,txt|max:20480', // 20MB max
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $file = $request->file('file');
-        $storedPath = $file->store('trims/files', 'public');
-
-        // Remove 'public/' prefix if present (Laravel sometimes adds this)
-        $path = str_replace('public/', '', $storedPath);
-
-        // Build absolute URL with request scheme and host
-        $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
-
-        return response()->json([
-            'message' => 'File uploaded successfully',
-            'path' => $path,
-            'url' => $url
-        ]);
+        // Redirect to uploadImage which now handles all file types
+        return $this->uploadImage($request);
     }
 
     /**

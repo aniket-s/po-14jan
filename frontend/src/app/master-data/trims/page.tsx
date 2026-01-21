@@ -34,21 +34,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, Search, Edit, Trash2, Package, Upload, X, Image as ImageIcon, FileText } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Package, Upload, X, Image as ImageIcon, FileText, File } from 'lucide-react';
 import api from '@/lib/api';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
+import { CreateBrandDialog } from '@/components/master-data/CreateBrandDialog';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface TrimData {
   id: number;
   brand_id: number;
-  trim_type: string;
+  trim_types: string[]; // Changed from trim_type to trim_types (array for multi-select)
   trim_code: string;
   description: string | null;
-  image_path: string | null;
-  file_path: string | null;
+  image_path: string | null; // Now accepts PDF, AI, and images
+  // file_path removed - specification document no longer needed
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -76,7 +78,7 @@ const TRIM_TYPES = [
 
 const trimSchema = z.object({
   brand_id: z.coerce.number().min(1, 'Brand is required'),
-  trim_type: z.string().min(1, 'Trim type is required'),
+  trim_types: z.array(z.string()).min(1, 'At least one trim type is required'), // Changed to array for multi-select
   trim_code: z.string().min(1, 'Trim code is required').max(100),
   description: z.string().optional(),
   is_active: z.boolean(),
@@ -94,11 +96,11 @@ export default function TrimsPage() {
   const [editingTrim, setEditingTrim] = useState<TrimData | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [uploadedFile, setUploadedFile] = useState<string | null>(null);
+  // uploadedFile removed - specification document no longer needed
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [selectedBrandId, setSelectedBrandId] = useState<string>('');
-  const [selectedTrimType, setSelectedTrimType] = useState<string>('');
+  const [selectedTrimTypes, setSelectedTrimTypes] = useState<string[]>([]); // Changed to array for multi-select
+  const [showBrandDialog, setShowBrandDialog] = useState(false); // NEW: For inline brand creation
 
   const {
     register,
@@ -110,7 +112,7 @@ export default function TrimsPage() {
     resolver: zodResolver(trimSchema),
     defaultValues: {
       brand_id: 0,
-      trim_type: '',
+      trim_types: [], // Changed to array for multi-select
       trim_code: '',
       description: '',
       is_active: true,
@@ -149,12 +151,11 @@ export default function TrimsPage() {
   const handleCreate = () => {
     setEditingTrim(null);
     setUploadedImage(null);
-    setUploadedFile(null);
     setSelectedBrandId('');
-    setSelectedTrimType('');
+    setSelectedTrimTypes([]); // Changed to array
     reset({
       brand_id: 0,
-      trim_type: '',
+      trim_types: [], // Changed to array
       trim_code: '',
       description: '',
       is_active: true,
@@ -165,12 +166,11 @@ export default function TrimsPage() {
   const handleEdit = (trim: TrimData) => {
     setEditingTrim(trim);
     setUploadedImage(trim.image_path);
-    setUploadedFile(trim.file_path);
     setSelectedBrandId(trim.brand_id.toString());
-    setSelectedTrimType(trim.trim_type);
+    setSelectedTrimTypes(trim.trim_types || []); // Changed to array
     reset({
       brand_id: trim.brand_id,
-      trim_type: trim.trim_type,
+      trim_types: trim.trim_types || [], // Changed to array
       trim_code: trim.trim_code,
       description: trim.description || '',
       is_active: trim.is_active,
@@ -193,6 +193,7 @@ export default function TrimsPage() {
     }
   };
 
+  // Updated to accept PDF, AI, and images
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -206,39 +207,26 @@ export default function TrimsPage() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setUploadedImage(response.data.path || URL.createObjectURL(file));
-      toast.success('Image uploaded successfully');
+      setUploadedImage(response.data.path || response.data.url || URL.createObjectURL(file));
+      toast.success('File uploaded successfully');
     } catch (error) {
-      console.error('Failed to upload image:', error);
-      toast.error('Failed to upload image');
+      console.error('Failed to upload file:', error);
+      toast.error('Failed to upload file');
     } finally {
       setIsUploadingImage(false);
       e.target.value = '';
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // handleFileUpload removed - specification document no longer needed
 
-    setIsUploadingFile(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await api.post('/master-data/trims/upload-file', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      setUploadedFile(response.data.path || URL.createObjectURL(file));
-      toast.success('File uploaded successfully');
-    } catch (error) {
-      console.error('Failed to upload file:', error);
-      toast.error('Failed to upload file');
-    } finally {
-      setIsUploadingFile(false);
-      e.target.value = '';
-    }
+  // Toggle trim type in multi-select
+  const toggleTrimType = (type: string) => {
+    const newTypes = selectedTrimTypes.includes(type)
+      ? selectedTrimTypes.filter((t) => t !== type)
+      : [...selectedTrimTypes, type];
+    setSelectedTrimTypes(newTypes);
+    setValue('trim_types', newTypes);
   };
 
   const onSubmit = async (data: TrimFormData) => {
@@ -248,7 +236,7 @@ export default function TrimsPage() {
       const submitData = {
         ...data,
         image_path: uploadedImage || undefined,
-        file_path: uploadedFile || undefined,
+        // file_path removed - specification document no longer needed
       };
 
       if (editingTrim) {
@@ -263,7 +251,7 @@ export default function TrimsPage() {
       fetchTrims();
       reset();
       setUploadedImage(null);
-      setUploadedFile(null);
+      setSelectedTrimTypes([]);
     } catch (error: any) {
       console.error('Failed to save trim:', error);
       toast.error(error.response?.data?.message || 'Failed to save trim');
@@ -272,12 +260,18 @@ export default function TrimsPage() {
     }
   };
 
-  const filteredTrims = trims.filter((trim) =>
-    trim.trim_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    trim.trim_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (trim.description && trim.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    (trim.brand?.name && trim.brand.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredTrims = trims.filter((trim) => {
+    const searchLower = searchQuery.toLowerCase();
+    const typesMatch = Array.isArray(trim.trim_types)
+      ? trim.trim_types.some((t) => t.toLowerCase().includes(searchLower))
+      : false;
+    return (
+      trim.trim_code.toLowerCase().includes(searchLower) ||
+      typesMatch ||
+      (trim.description && trim.description.toLowerCase().includes(searchLower)) ||
+      (trim.brand?.name && trim.brand.name.toLowerCase().includes(searchLower))
+    );
+  });
 
   if (authLoading || loading) {
     return (
@@ -346,7 +340,20 @@ export default function TrimsPage() {
                   filteredTrims.map((trim) => (
                     <TableRow key={trim.id}>
                       <TableCell className="font-medium">{trim.trim_code}</TableCell>
-                      <TableCell>{trim.trim_type}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {Array.isArray(trim.trim_types) && trim.trim_types.length > 0
+                            ? trim.trim_types.map((type) => {
+                                const trimType = TRIM_TYPES.find((t) => t.value === type);
+                                return (
+                                  <Badge key={type} variant="outline" className="text-xs">
+                                    {trimType?.label || type}
+                                  </Badge>
+                                );
+                              })
+                            : '-'}
+                        </div>
+                      </TableCell>
                       <TableCell>{trim.brand?.name || '-'}</TableCell>
                       <TableCell className="max-w-xs truncate">
                         {trim.description || '-'}
@@ -406,9 +413,9 @@ export default function TrimsPage() {
           </DialogHeader>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="brand_id">Brand *</Label>
+            <div className="space-y-2">
+              <Label htmlFor="brand_id">Brand *</Label>
+              <div className="flex gap-2">
                 <Select
                   value={selectedBrandId}
                   onValueChange={(value) => {
@@ -416,7 +423,7 @@ export default function TrimsPage() {
                     setValue('brand_id', parseInt(value));
                   }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select brand" />
                   </SelectTrigger>
                   <SelectContent>
@@ -427,35 +434,43 @@ export default function TrimsPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                {errors.brand_id && (
-                  <p className="text-sm text-destructive">{errors.brand_id.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="trim_type">Trim Type *</Label>
-                <Select
-                  value={selectedTrimType}
-                  onValueChange={(value) => {
-                    setSelectedTrimType(value);
-                    setValue('trim_type', value);
-                  }}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setShowBrandDialog(true)}
+                  title="Add new brand"
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TRIM_TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.trim_type && (
-                  <p className="text-sm text-destructive">{errors.trim_type.message}</p>
-                )}
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
+              {errors.brand_id && (
+                <p className="text-sm text-destructive">{errors.brand_id.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Trim Types * (Select multiple)</Label>
+              <div className="border rounded-md p-3 grid grid-cols-2 gap-2">
+                {TRIM_TYPES.map((type) => (
+                  <div key={type.value} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`trim-type-${type.value}`}
+                      checked={selectedTrimTypes.includes(type.value)}
+                      onCheckedChange={() => toggleTrimType(type.value)}
+                    />
+                    <label
+                      htmlFor={`trim-type-${type.value}`}
+                      className="text-sm cursor-pointer"
+                    >
+                      {type.label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+              {errors.trim_types && (
+                <p className="text-sm text-destructive">{errors.trim_types.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -480,13 +495,13 @@ export default function TrimsPage() {
               />
             </div>
 
-            {/* Image Upload */}
+            {/* Image/File Upload - accepts images, PDF, AI */}
             <div className="space-y-2">
-              <Label>Trim Image</Label>
+              <Label>Trim Image/File (Image, PDF, AI)</Label>
               <div className="flex items-center gap-2">
                 <Input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.pdf,.ai,application/pdf,application/postscript"
                   onChange={handleImageUpload}
                   disabled={isUploadingImage}
                   className="flex-1"
@@ -494,49 +509,22 @@ export default function TrimsPage() {
                 {isUploadingImage && <span className="text-sm text-muted-foreground">Uploading...</span>}
               </div>
               {uploadedImage && (
-                <div className="relative inline-block">
-                  <img
-                    src={uploadedImage}
-                    alt="Trim"
-                    className="w-32 h-32 object-cover rounded border"
-                  />
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="icon"
-                    className="absolute top-1 right-1 h-6 w-6"
-                    onClick={() => setUploadedImage(null)}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* File Upload */}
-            <div className="space-y-2">
-              <Label>Specification Document</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="file"
-                  accept=".pdf,.doc,.docx,.xlsx,.xls"
-                  onChange={handleFileUpload}
-                  disabled={isUploadingFile}
-                  className="flex-1"
-                />
-                {isUploadingFile && <span className="text-sm text-muted-foreground">Uploading...</span>}
-              </div>
-              {uploadedFile && (
                 <div className="flex items-center justify-between p-2 border rounded bg-muted">
                   <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    <span className="text-sm">Document uploaded</span>
+                    {uploadedImage.toLowerCase().endsWith('.pdf') ? (
+                      <FileText className="h-4 w-4" />
+                    ) : uploadedImage.toLowerCase().endsWith('.ai') ? (
+                      <File className="h-4 w-4" />
+                    ) : (
+                      <ImageIcon className="h-4 w-4" />
+                    )}
+                    <span className="text-sm truncate max-w-xs">File uploaded</span>
                   </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => setUploadedFile(null)}
+                    onClick={() => setUploadedImage(null)}
                     className="text-destructive hover:text-destructive"
                   >
                     <X className="h-4 w-4" />
@@ -573,6 +561,19 @@ export default function TrimsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Brand Creation Dialog */}
+      <CreateBrandDialog
+        open={showBrandDialog}
+        onOpenChange={setShowBrandDialog}
+        onSuccess={(newBrand) => {
+          fetchBrands();
+          if (newBrand?.id) {
+            setSelectedBrandId(newBrand.id.toString());
+            setValue('brand_id', newBrand.id);
+          }
+        }}
+      />
     </DashboardLayout>
   );
 }
