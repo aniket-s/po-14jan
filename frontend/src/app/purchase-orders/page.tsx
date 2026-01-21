@@ -46,6 +46,7 @@ import { CreateAgentDialog } from '@/components/master-data/CreateAgentDialog';
 import { CreateVendorDialog } from '@/components/master-data/CreateVendorDialog';
 import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialog';
 import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
+import { CreatePaymentTermDialog } from '@/components/master-data/CreatePaymentTermDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { RatioInput } from '@/components/purchase-orders/RatioInput';
 
@@ -124,9 +125,11 @@ export default function PurchaseOrdersPage() {
   const [isCreateVendorDialogOpen, setIsCreateVendorDialogOpen] = useState(false);
   const [isCreateCountryDialogOpen, setIsCreateCountryDialogOpen] = useState(false);
   const [isCreateCurrencyDialogOpen, setIsCreateCurrencyDialogOpen] = useState(false);
+  const [isCreatePaymentTermDialogOpen, setIsCreatePaymentTermDialogOpen] = useState(false);
 
   // Master data state (brands removed - brand is in Style)
   const [currencies, setCurrencies] = useState<any[]>([]);
+  const [paymentTerms, setPaymentTerms] = useState<any[]>([]);
   const [seasons, setSeasons] = useState<any[]>([]);
   const [retailers, setRetailers] = useState<any[]>([]);
   const [countries, setCountries] = useState<any[]>([]);
@@ -196,7 +199,7 @@ export default function PurchaseOrdersPage() {
 
   const fetchMasterData = async () => {
     try {
-      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, stylesRes, currenciesRes] = await Promise.all([
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, stylesRes, currenciesRes, paymentTermsRes] = await Promise.all([
         api.get('/master-data/seasons?all=true'),
         api.get('/master-data/retailers?all=true'),
         api.get('/master-data/countries?all=true'),
@@ -205,6 +208,7 @@ export default function PurchaseOrdersPage() {
         api.get('/master-data/vendors?all=true'),
         api.get('/styles?all=true'),
         api.get('/master-data/currencies?all=true'),
+        api.get('/master-data/payment-terms?all=true'),
       ]);
 
       setSeasons(seasonsRes.data || []);
@@ -216,6 +220,7 @@ export default function PurchaseOrdersPage() {
       // Handle paginated response from /styles endpoint
       setStyles(stylesRes.data?.data || stylesRes.data || []);
       setCurrencies(currenciesRes.data || []);
+      setPaymentTerms(paymentTermsRes.data || []);
     } catch (error) {
       console.error('Failed to fetch master data:', error);
     }
@@ -755,35 +760,45 @@ export default function PurchaseOrdersPage() {
                           </div>
                         </div>
                       </div>
-                      {/* Payment Terms (Structured) */}
+                      {/* Payment Terms (Dynamic with + button) */}
                       <div className="space-y-2">
                         <Label>Payment Terms</Label>
                         <div className="grid grid-cols-2 gap-4">
-                          <Select
-                            value={paymentTerm}
-                            onValueChange={(value) => {
-                              setPaymentTerm(value);
-                              const percentage = paymentPercentage ? parseFloat(paymentPercentage) : undefined;
-                              setValue('payment_terms_structured', {
-                                term: value,
-                                percentage
-                              });
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select term" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="NET30">NET 30</SelectItem>
-                              <SelectItem value="NET60">NET 60</SelectItem>
-                              <SelectItem value="NET90">NET 90</SelectItem>
-                              <SelectItem value="DP_SIGHT">DP SIGHT</SelectItem>
-                              <SelectItem value="LC">LC (Letter of Credit)</SelectItem>
-                              <SelectItem value="ADVANCE">ADVANCE</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {/* Percentage field - only show when ADVANCE is selected */}
-                          {paymentTerm === 'ADVANCE' && (
+                          <div className="flex gap-2">
+                            <Select
+                              value={paymentTerm}
+                              onValueChange={(value) => {
+                                setPaymentTerm(value);
+                                const selectedPT = paymentTerms.find(pt => pt.code === value);
+                                const percentage = paymentPercentage ? parseFloat(paymentPercentage) : undefined;
+                                setValue('payment_terms_structured', {
+                                  term: value,
+                                  percentage: selectedPT?.requires_percentage ? percentage : undefined
+                                });
+                              }}
+                            >
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select term" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {paymentTerms.map((pt) => (
+                                  <SelectItem key={pt.id} value={pt.code}>
+                                    {pt.name}{pt.days ? ` (${pt.days} days)` : ''}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsCreatePaymentTermDialogOpen(true)}
+                              title="Create new payment term"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          {/* Percentage field - only show when selected payment term requires percentage */}
+                          {paymentTerms.find(pt => pt.code === paymentTerm)?.requires_percentage && (
                             <div className="space-y-1">
                               <Input
                                 type="number"
@@ -847,46 +862,97 @@ export default function PurchaseOrdersPage() {
                         )}
                       </div>
 
-                      {/* FOB: Show Ex-Factory Date, auto-calculate ETD = ex-factory + 7 days */}
+                      {/* FOB: User inputs ETD, auto-calculate Ex-Factory (ETD-7), ETA (ETD+sailing), IHD (ETA+5) */}
                       {shippingTerm === 'FOB' && (
-                        <div className="grid grid-cols-3 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="ex_factory_date">Ex-Factory Date *</Label>
-                            <Input
-                              id="ex_factory_date"
-                              type="date"
-                              {...register('ex_factory_date')}
-                              onChange={(e) => {
-                                const exFactoryDate = e.target.value;
-                                if (exFactoryDate) {
-                                  // ETD = Ex-Factory + 7 days
-                                  const etd = new Date(exFactoryDate);
-                                  etd.setDate(etd.getDate() + 7);
-                                  setValue('etd_date', etd.toISOString().split('T')[0]);
-                                }
-                              }}
-                            />
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="etd_date">ETD Date (Ship Date) *</Label>
+                              <Input
+                                id="etd_date"
+                                type="date"
+                                {...register('etd_date')}
+                                onChange={(e) => {
+                                  const etdDate = e.target.value;
+                                  setValue('etd_date', etdDate);
+                                  if (etdDate) {
+                                    // Ex-Factory = ETD - 7 days
+                                    const exFactory = new Date(etdDate);
+                                    exFactory.setDate(exFactory.getDate() - 7);
+                                    setValue('ex_factory_date', exFactory.toISOString().split('T')[0]);
+
+                                    // ETA = ETD + sailing time (from country)
+                                    if (selectedCountryId) {
+                                      const country = countries.find(c => c.id.toString() === selectedCountryId);
+                                      const sailingDays = country?.sailing_time_days || 0;
+                                      const etd = new Date(etdDate);
+                                      const eta = new Date(etd);
+                                      eta.setDate(eta.getDate() + sailingDays);
+                                      setValue('eta_date', eta.toISOString().split('T')[0]);
+
+                                      // IHD (In-House Date) = ETA + 5 days
+                                      const ihd = new Date(eta);
+                                      ihd.setDate(ihd.getDate() + 5);
+                                      setValue('in_warehouse_date', ihd.toISOString().split('T')[0]);
+                                    }
+                                  }
+                                }}
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Enter ETD to auto-calculate other dates
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="delivery_date">Delivery Date *</Label>
+                              <Input
+                                id="delivery_date"
+                                type="date"
+                                {...register('delivery_date')}
+                              />
+                              {errors.delivery_date && (
+                                <p className="text-sm text-destructive">{errors.delivery_date.message}</p>
+                              )}
+                            </div>
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="etd_date">ETD Date (Auto: +7 days)</Label>
-                            <Input
-                              id="etd_date"
-                              type="date"
-                              {...register('etd_date')}
-                              disabled
-                              className="bg-muted"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="delivery_date">Delivery Date *</Label>
-                            <Input
-                              id="delivery_date"
-                              type="date"
-                              {...register('delivery_date')}
-                            />
-                            {errors.delivery_date && (
-                              <p className="text-sm text-destructive">{errors.delivery_date.message}</p>
-                            )}
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="ex_factory_date">Ex-Factory (Auto: ETD - 7 days)</Label>
+                              <Input
+                                id="ex_factory_date"
+                                type="date"
+                                {...register('ex_factory_date')}
+                                disabled
+                                className="bg-muted"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="eta_date">ETA (Auto: ETD + Sailing)</Label>
+                              <Input
+                                id="eta_date"
+                                type="date"
+                                {...register('eta_date')}
+                                disabled
+                                className="bg-muted"
+                              />
+                              {selectedCountryId && (
+                                <p className="text-xs text-muted-foreground">
+                                  +{countries.find(c => c.id.toString() === selectedCountryId)?.sailing_time_days || 0} sailing days
+                                </p>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="in_warehouse_date">IHD (Auto: ETA + 5 days)</Label>
+                              <Input
+                                id="in_warehouse_date"
+                                type="date"
+                                {...register('in_warehouse_date')}
+                                disabled
+                                className="bg-muted"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                In-House Date
+                              </p>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -1508,6 +1574,11 @@ export default function PurchaseOrdersPage() {
         <CreateCurrencyDialog
           open={isCreateCurrencyDialogOpen}
           onOpenChange={setIsCreateCurrencyDialogOpen}
+          onSuccess={fetchMasterData}
+        />
+        <CreatePaymentTermDialog
+          open={isCreatePaymentTermDialogOpen}
+          onOpenChange={setIsCreatePaymentTermDialogOpen}
           onSuccess={fetchMasterData}
         />
       </div>

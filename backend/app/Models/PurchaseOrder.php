@@ -26,6 +26,7 @@ class PurchaseOrder extends Model
         'total_value',
         'payment_terms',
         'payment_terms_structured', // New JSON field
+        'payment_term_id', // NEW: Foreign key to payment_terms table
         'incoterms',
         'destination_port',
         'special_instructions',
@@ -128,6 +129,14 @@ class PurchaseOrder extends Model
     public function currency()
     {
         return $this->belongsTo(Currency::class);
+    }
+
+    /**
+     * Get the payment term for the PO
+     */
+    public function paymentTerm()
+    {
+        return $this->belongsTo(PaymentTerm::class);
     }
 
     /**
