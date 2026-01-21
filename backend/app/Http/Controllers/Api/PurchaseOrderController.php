@@ -264,7 +264,6 @@ class PurchaseOrderController extends Controller
             'retailer' => 'nullable|string|max:255', // Backward compatibility
             'retailer_id' => 'nullable|exists:retailers,id',
             'po_date' => 'required|date',
-            'delivery_date' => 'nullable|date|after:po_date',
             'currency' => 'nullable|string|max:10', // Changed from max:3 to support currency_id
             'currency_id' => 'nullable|exists:currencies,id', // NEW: Currency selection with + button
             'exchange_rate' => 'nullable|numeric|min:0',
@@ -439,7 +438,6 @@ class PurchaseOrderController extends Controller
             'agency_id' => $request->agency_id,
             'retailer' => $retailerName, // Backward compatibility - fetch from retailer_id
             'po_date' => $request->po_date,
-            'delivery_date' => $request->delivery_date,
             'currency' => $currencyCode, // Currency code (from currency_id or legacy field)
             'currency_id' => $request->currency_id, // NEW: Store foreign key
             'exchange_rate' => $request->exchange_rate ?? 1.0,
@@ -543,7 +541,6 @@ class PurchaseOrderController extends Controller
             'retailer' => 'nullable|string|max:255', // Backward compatibility
             'retailer_id' => 'nullable|exists:retailers,id',
             'po_date' => 'required|date',
-            'delivery_date' => 'nullable|date|after:po_date',
             'currency' => 'nullable|string|max:10',
             'currency_id' => 'nullable|exists:currencies,id',
             'exchange_rate' => 'nullable|numeric|min:0',
@@ -632,7 +629,6 @@ class PurchaseOrderController extends Controller
             'headline' => $request->headline,
             'retailer' => $retailerName, // Backward compatibility - fetch from retailer_id if needed
             'po_date' => $request->po_date,
-            'delivery_date' => $request->delivery_date,
             'currency' => $currencyCode, // Currency code (from currency_id or legacy field)
             'currency_id' => $request->currency_id ?? $po->currency_id,
             'exchange_rate' => $request->exchange_rate ?? $po->exchange_rate,

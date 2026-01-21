@@ -34,7 +34,7 @@ export interface PurchaseOrder {
   importer_id: number;
   agency_id: number | null;
   po_date: string;
-  delivery_date: string;
+  delivery_date?: string | null;
   status: string;
   total_quantity: number;
   total_value: number;
@@ -249,7 +249,7 @@ export interface CreatePurchaseOrderData {
   importer_id?: number;
   agency_id?: number | null;
   po_date: string;
-  delivery_date: string;
+  delivery_date?: string | null;
   status: string;
   currency: string;
   payment_terms?: string;

@@ -60,7 +60,6 @@ class PurchaseOrder extends Model
         'revision_number',
         'revised_by',
         'po_date',
-        'delivery_date',
         'retailer', // Keep for backward compatibility
         'exchange_rate',
         'terms_of_delivery',
@@ -85,7 +84,6 @@ class PurchaseOrder extends Model
         'payment_terms_structured' => 'array', // New JSON cast
         // Additional casts
         'po_date' => 'date',
-        'delivery_date' => 'date',
         'exchange_rate' => 'decimal:4',
         'revision_number' => 'integer',
         'total_styles' => 'integer',

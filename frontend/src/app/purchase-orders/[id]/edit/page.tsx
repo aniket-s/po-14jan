@@ -33,7 +33,6 @@ const poSchema = z.object({
   headline: z.string().optional(),
   retailer_id: z.string().min(1, 'Retailer is required'),
   po_date: z.string().min(1, 'PO date is required'),
-  delivery_date: z.string().min(1, 'Delivery date is required'),
   status: z.string().min(1, 'Status is required'),
   currency: z.string().min(1, 'Currency is required'),
   shipping_method: z.string().optional(),
@@ -171,7 +170,6 @@ export default function EditPurchaseOrderPage() {
       }
 
       setValue('po_date', po.po_date ? po.po_date.split('T')[0] : '');
-      setValue('delivery_date', po.delivery_date ? po.delivery_date.split('T')[0] : '');
 
       setSelectedStatus(po.status);
       setValue('status', po.status);
@@ -340,7 +338,6 @@ export default function EditPurchaseOrderPage() {
         headline: data.headline || null,
         retailer_id: data.retailer_id ? parseInt(data.retailer_id) : null,
         po_date: data.po_date,
-        delivery_date: data.delivery_date,
         status: data.status,
         currency: data.currency,
         shipping_method: data.shipping_method,
@@ -854,17 +851,6 @@ export default function EditPurchaseOrderPage() {
                         </div>
                       </>
                     )}
-                    <div className="space-y-2">
-                      <Label htmlFor="delivery_date">Delivery Date *</Label>
-                      <Input
-                        id="delivery_date"
-                        type="date"
-                        {...register('delivery_date')}
-                      />
-                      {errors.delivery_date && (
-                        <p className="text-sm text-destructive">{errors.delivery_date.message}</p>
-                      )}
-                    </div>
                   </div>
                 </div>
 

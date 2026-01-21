@@ -56,7 +56,6 @@ const poSchema = z.object({
   headline: z.string().optional(), // NEW: PO headline/title
   retailer_id: z.string().min(1, 'Retailer is required'),
   po_date: z.string().min(1, 'PO date is required'),
-  delivery_date: z.string().min(1, 'Delivery date is required'),
   // status removed from creation - auto-set to draft on backend
   currency_id: z.string().min(1, 'Currency is required'),
   shipping_method: z.string().optional(),
@@ -348,7 +347,6 @@ export default function PurchaseOrdersPage() {
         headline: data.headline || null, // NEW: PO headline
         retailer_id: data.retailer_id ? parseInt(data.retailer_id) : null,
         po_date: data.po_date,
-        delivery_date: data.delivery_date,
         // status removed - auto-set to 'draft' on backend
         currency_id: data.currency_id ? parseInt(data.currency_id) : null,
         shipping_method: data.shipping_method,
@@ -902,17 +900,6 @@ export default function PurchaseOrdersPage() {
                                 Enter ETD to auto-calculate other dates
                               </p>
                             </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="delivery_date">Delivery Date *</Label>
-                              <Input
-                                id="delivery_date"
-                                type="date"
-                                {...register('delivery_date')}
-                              />
-                              {errors.delivery_date && (
-                                <p className="text-sm text-destructive">{errors.delivery_date.message}</p>
-                              )}
-                            </div>
                           </div>
                           <div className="grid grid-cols-3 gap-4">
                             <div className="space-y-2">
@@ -1004,17 +991,6 @@ export default function PurchaseOrdersPage() {
                               className="bg-muted"
                             />
                             {isCalculatingDates && <p className="text-xs text-muted-foreground">Calculating...</p>}
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="delivery_date">Delivery Date *</Label>
-                            <Input
-                              id="delivery_date"
-                              type="date"
-                              {...register('delivery_date')}
-                            />
-                            {errors.delivery_date && (
-                              <p className="text-sm text-destructive">{errors.delivery_date.message}</p>
-                            )}
                           </div>
                         </div>
                       )}
@@ -1366,7 +1342,6 @@ export default function PurchaseOrdersPage() {
                   <TableRow>
                     <TableHead>PO Number</TableHead>
                     <TableHead>Date</TableHead>
-                    <TableHead>Delivery Date</TableHead>
                     {/* Status column removed from creation - still shown in list for existing POs */}
                     <TableHead className="text-right">Quantity</TableHead>
                     <TableHead className="text-right">Value</TableHead>
@@ -1395,7 +1370,6 @@ export default function PurchaseOrdersPage() {
                           </div>
                         </TableCell>
                         <TableCell>{formatDate(po.po_date)}</TableCell>
-                        <TableCell>{formatDate(po.delivery_date)}</TableCell>
                         {/* Status cell removed */}
                         <TableCell className="text-right">
                           {po.total_quantity.toLocaleString()}
@@ -1480,7 +1454,6 @@ export default function PurchaseOrdersPage() {
                   <TableRow>
                     <TableHead>PO Number</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Delivery Date</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1490,9 +1463,6 @@ export default function PurchaseOrdersPage() {
                       <TableCell className="font-medium">{po.po_number}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{po.status}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {new Date(po.delivery_date).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
