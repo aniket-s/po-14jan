@@ -118,6 +118,26 @@ export function StyleSelectorDialog({
     const style = newSelected.get(styleId);
     if (style) {
       style.quantity_in_po = quantity;
+      // For prepack, recalculate packs and size breakdown when quantity changes
+      if (style.packing_method === 'prepack' && Object.keys(style.ratio).length > 0) {
+        const unitsPerPack = Object.values(style.ratio).reduce((sum, r) => sum + r, 0);
+        if (unitsPerPack > 0) {
+          const packs = quantity / unitsPerPack;
+          // Only update breakdown if packs is a whole number
+          if (Number.isInteger(packs)) {
+            style.packs_count = packs;
+            const sizeBreakdown: Record<string, number> = {};
+            Object.entries(style.ratio).forEach(([size, r]) => {
+              sizeBreakdown[size] = r * packs;
+            });
+            style.size_breakdown = sizeBreakdown;
+          } else {
+            // Store the decimal packs for display, but don't update breakdown
+            style.packs_count = packs;
+            style.size_breakdown = {};
+          }
+        }
+      }
       newSelected.set(styleId, style);
       setSelectedStyles(newSelected);
     }
@@ -149,49 +169,30 @@ export function StyleSelectorDialog({
     }
   };
 
-  // Update ratio for prepack - recalculates quantity and breakdown based on packs_count
+  // Update ratio for prepack - recalculates packs and breakdown based on quantity
   const updateRatio = (styleId: number, ratio: Record<string, number>) => {
     const newSelected = new Map(selectedStyles);
     const style = newSelected.get(styleId);
     if (style) {
       style.ratio = ratio;
-      // Auto-calculate size breakdown and total quantity from ratio and packs_count
-      if (style.packing_method === 'prepack' && Object.keys(ratio).length > 0 && style.packs_count > 0) {
+      // Auto-calculate packs and size breakdown from quantity and ratio
+      if (style.packing_method === 'prepack' && Object.keys(ratio).length > 0 && style.quantity_in_po > 0) {
         const unitsPerPack = Object.values(ratio).reduce((sum, r) => sum + r, 0);
         if (unitsPerPack > 0) {
-          // Calculate total quantity = packs × units per pack
-          style.quantity_in_po = style.packs_count * unitsPerPack;
-          // Calculate size breakdown = ratio × packs
-          const sizeBreakdown: Record<string, number> = {};
-          Object.entries(ratio).forEach(([size, r]) => {
-            sizeBreakdown[size] = r * style.packs_count;
-          });
-          style.size_breakdown = sizeBreakdown;
-        }
-      }
-      newSelected.set(styleId, style);
-      setSelectedStyles(newSelected);
-    }
-  };
-
-  // Update packs count for prepack - recalculates quantity and breakdown
-  const updatePacksCount = (styleId: number, packsCount: number) => {
-    const newSelected = new Map(selectedStyles);
-    const style = newSelected.get(styleId);
-    if (style) {
-      style.packs_count = packsCount;
-      // Auto-calculate size breakdown and total quantity from ratio and packs_count
-      if (style.packing_method === 'prepack' && Object.keys(style.ratio).length > 0 && packsCount > 0) {
-        const unitsPerPack = Object.values(style.ratio).reduce((sum, r) => sum + r, 0);
-        if (unitsPerPack > 0) {
-          // Calculate total quantity = packs × units per pack
-          style.quantity_in_po = packsCount * unitsPerPack;
-          // Calculate size breakdown = ratio × packs
-          const sizeBreakdown: Record<string, number> = {};
-          Object.entries(style.ratio).forEach(([size, r]) => {
-            sizeBreakdown[size] = r * packsCount;
-          });
-          style.size_breakdown = sizeBreakdown;
+          // Calculate packs = quantity / units per pack
+          const packs = style.quantity_in_po / unitsPerPack;
+          style.packs_count = packs;
+          // Only calculate size breakdown if packs is a whole number
+          if (Number.isInteger(packs)) {
+            const sizeBreakdown: Record<string, number> = {};
+            Object.entries(ratio).forEach(([size, r]) => {
+              sizeBreakdown[size] = r * packs;
+            });
+            style.size_breakdown = sizeBreakdown;
+          } else {
+            // Clear breakdown if packs is decimal
+            style.size_breakdown = {};
+          }
         }
       }
       newSelected.set(styleId, style);
@@ -228,9 +229,10 @@ export function StyleSelectorDialog({
       return;
     }
 
-    // Validate solid pack size breakdown totals match quantity_in_po
+    // Validate styles before submission
     for (const style of stylesArray) {
       if (style.packing_method === 'solid') {
+        // Validate solid pack size breakdown totals match quantity_in_po
         const sizeBreakdownTotal = Object.values(style.size_breakdown || {}).reduce(
           (sum, qty) => sum + (Number(qty) || 0),
           0
@@ -238,6 +240,23 @@ export function StyleSelectorDialog({
         if (sizeBreakdownTotal > 0 && sizeBreakdownTotal !== style.quantity_in_po) {
           toast.error(
             `Size breakdown mismatch for style ${style.style_number}: Size total (${sizeBreakdownTotal}) does not match quantity (${style.quantity_in_po})`
+          );
+          return;
+        }
+      } else if (style.packing_method === 'prepack') {
+        // Validate prepack has ratio defined
+        const unitsPerPack = Object.values(style.ratio || {}).reduce((sum, r) => sum + r, 0);
+        if (unitsPerPack === 0) {
+          toast.error(
+            `Style ${style.style_number}: Please enter a ratio for prepack`
+          );
+          return;
+        }
+        // Validate packs is a whole number
+        const packs = style.quantity_in_po / unitsPerPack;
+        if (!Number.isInteger(packs)) {
+          toast.error(
+            `Style ${style.style_number}: Quantity (${style.quantity_in_po}) doesn't divide evenly by ratio total (${unitsPerPack}). Please adjust quantity.`
           );
           return;
         }
@@ -390,21 +409,21 @@ export function StyleSelectorDialog({
                       </div>
 
                       <div className="space-y-2">
-                        {/* Only show direct quantity input for solid pack */}
-                        {style.packing_method === 'solid' && (
-                          <div>
-                            <Label className="text-xs">Quantity for this PO</Label>
-                            <Input
-                              type="number"
-                              min="1"
-                              value={style.quantity_in_po}
-                              onChange={(e) =>
-                                updateQuantity(style.id, parseInt(e.target.value) || 0)
-                              }
-                              className="h-8 text-sm"
-                            />
-                          </div>
-                        )}
+                        {/* Quantity input for both solid and prepack */}
+                        <div>
+                          <Label className="text-xs">
+                            {style.packing_method === 'prepack' ? 'Step 1: Total Quantity' : 'Quantity for this PO'}
+                          </Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={style.quantity_in_po}
+                            onChange={(e) =>
+                              updateQuantity(style.id, parseInt(e.target.value) || 0)
+                            }
+                            className="h-8 text-sm"
+                          />
+                        </div>
 
                         <div>
                           <Label className="text-xs">
@@ -465,11 +484,11 @@ export function StyleSelectorDialog({
                           </div>
 
                           {style.packing_method === 'prepack' ? (
-                            /* Prepack: Ratio-first flow with packs input */
+                            /* Prepack: Quantity-first flow with auto-calculated packs */
                             <div className="space-y-3">
-                              {/* Step 1: Enter Ratio */}
+                              {/* Step 2: Enter Ratio */}
                               <div>
-                                <Label className="text-xs font-medium">Step 1: Enter Ratio (units per size in each pack)</Label>
+                                <Label className="text-xs font-medium">Step 2: Enter Ratio (units per size in each pack)</Label>
                                 <div className="grid grid-cols-4 gap-2 mt-1">
                                   {getSizesForStyle(style).map((size) => (
                                     <div key={size} className="space-y-1">
@@ -509,40 +528,74 @@ export function StyleSelectorDialog({
                                 )}
                               </div>
 
-                              {/* Step 2: Enter Number of Packs */}
-                              <div>
-                                <Label className="text-xs font-medium">Step 2: Number of Packs</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  value={style.packs_count || ''}
-                                  onChange={(e) => updatePacksCount(style.id, parseInt(e.target.value) || 0)}
-                                  placeholder="Enter number of packs..."
-                                  className="h-8 text-sm mt-1"
-                                />
-                              </div>
-
                               {/* Calculated Results */}
-                              {style.packs_count > 0 && Object.keys(style.ratio || {}).length > 0 && (
-                                <div className="p-2 bg-green-50 dark:bg-green-950 rounded space-y-1">
-                                  <div className="text-xs">
-                                    <strong>Total Quantity:</strong>{' '}
-                                    <span className="text-green-700 dark:text-green-400 font-semibold">
-                                      {style.quantity_in_po.toLocaleString()} units
-                                    </span>
-                                  </div>
-                                  <div className="text-xs">
-                                    <strong>Size Breakdown:</strong>
-                                  </div>
-                                  <div className="grid grid-cols-4 gap-1 text-xs">
-                                    {Object.entries(style.size_breakdown || {}).map(([size, qty]) => (
-                                      <div key={size} className="text-center p-1 bg-white dark:bg-gray-800 rounded">
-                                        <span className="font-medium">{size}</span>: {qty}
+                              {(() => {
+                                const unitsPerPack = Object.values(style.ratio || {}).reduce((sum, r) => sum + r, 0);
+                                if (unitsPerPack === 0 || style.quantity_in_po === 0) return null;
+
+                                const packs = style.quantity_in_po / unitsPerPack;
+                                const isValidPacks = Number.isInteger(packs);
+                                const floorPacks = Math.floor(packs);
+                                const ceilPacks = Math.ceil(packs);
+                                const suggestedLower = floorPacks * unitsPerPack;
+                                const suggestedHigher = ceilPacks * unitsPerPack;
+
+                                if (!isValidPacks) {
+                                  return (
+                                    <div className="p-2 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded space-y-2">
+                                      <div className="flex items-center gap-1 text-amber-700 dark:text-amber-400 text-xs font-medium">
+                                        <AlertCircle className="h-3 w-3" />
+                                        Quantity doesn't divide evenly
                                       </div>
-                                    ))}
+                                      <div className="text-xs text-muted-foreground">
+                                        {style.quantity_in_po} ÷ {unitsPerPack} = {packs.toFixed(2)} packs (not a whole number)
+                                      </div>
+                                      <div className="text-xs font-medium">Suggested quantities:</div>
+                                      <div className="flex gap-2">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="flex-1 h-7 text-xs"
+                                          onClick={() => updateQuantity(style.id, suggestedLower)}
+                                        >
+                                          {suggestedLower} ({floorPacks} packs)
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="flex-1 h-7 text-xs"
+                                          onClick={() => updateQuantity(style.id, suggestedHigher)}
+                                        >
+                                          {suggestedHigher} ({ceilPacks} packs)
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="p-2 bg-green-50 dark:bg-green-950 rounded space-y-1">
+                                    <div className="text-xs">
+                                      <strong>Number of Packs:</strong>{' '}
+                                      <span className="text-green-700 dark:text-green-400 font-semibold">
+                                        {packs} packs
+                                      </span>
+                                    </div>
+                                    <div className="text-xs">
+                                      <strong>Size Breakdown:</strong>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-1 text-xs">
+                                      {Object.entries(style.size_breakdown || {}).map(([size, qty]) => (
+                                        <div key={size} className="text-center p-1 bg-white dark:bg-gray-800 rounded">
+                                          <span className="font-medium">{size}</span>: {qty}
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                );
+                              })()}
                             </div>
                           ) : (
                             /* Solid: Show direct quantity inputs */
