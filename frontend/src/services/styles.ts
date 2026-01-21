@@ -7,6 +7,20 @@ export interface ColorObject {
   pantone_code: string;
 }
 
+export interface SizeObject {
+  id: number;
+  gender_id: number;
+  size_code: string;
+  size_name: string;
+  display_order: number;
+}
+
+export interface GenderObject {
+  id: number;
+  name: string;
+  active_sizes?: SizeObject[];
+}
+
 export interface Style {
   id: number;
   style_number: string;
@@ -53,6 +67,7 @@ export interface Style {
   // Relationships (loaded when needed)
   brand?: any;
   season?: any;
+  gender?: GenderObject; // Gender with active_sizes for size management
   division?: any;
   customer?: any;
   agent?: any;

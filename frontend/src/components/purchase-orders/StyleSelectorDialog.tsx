@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -23,14 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Search, Package, ShoppingCart, X } from 'lucide-react';
+import { Search, Package, ShoppingCart, X, AlertCircle } from 'lucide-react';
 import { getAllStyles, Style } from '@/services/styles';
 import { toast } from 'sonner';
 
@@ -66,7 +58,6 @@ export function StyleSelectorDialog({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStyles, setSelectedStyles] = useState<Map<number, SelectedStyle>>(new Map());
   const [page, setPage] = useState(1);
-  const [prepacks, setPrepacks] = useState<any[]>([]);
 
   // Fetch available styles
   const fetchStyles = async () => {
@@ -86,21 +77,9 @@ export function StyleSelectorDialog({
     }
   };
 
-  // Fetch prepacks
-  const fetchPrepacks = async () => {
-    try {
-      const api = (await import('@/lib/api')).default;
-      const response = await api.get('/master-data/prepack-codes?all=true');
-      setPrepacks(response.data || []);
-    } catch (error) {
-      console.error('Failed to fetch prepacks:', error);
-    }
-  };
-
   useEffect(() => {
     if (open) {
       fetchStyles();
-      fetchPrepacks();
     }
   }, [open, searchQuery, page]);
 
@@ -231,30 +210,14 @@ export function StyleSelectorDialog({
     }
   };
 
-  // Auto-fill ratio from prepack code
-  const autoFillFromPrepack = (styleId: number, prepackId: number) => {
-    const prepack = prepacks.find(p => p.id === prepackId);
-    if (!prepack) return;
-
-    const style = selectedStyles.get(styleId);
-    if (!style) return;
-
-    const prepackSizes = prepack.sizes; // JSON object like {S: 2, M: 2, L: 1, XL: 1}
-
-    if (!prepackSizes) {
-      toast.error('Invalid prepack data');
-      return;
+  // Get sizes for a style based on its gender
+  const getSizesForStyle = (style: SelectedStyle): string[] => {
+    // Use gender's active sizes if available
+    if (style.gender?.active_sizes && style.gender.active_sizes.length > 0) {
+      return style.gender.active_sizes.map(s => s.size_code);
     }
-
-    // Convert prepack sizes to ratio format
-    const ratio: Record<string, number> = {};
-    Object.entries(prepackSizes).forEach(([size, value]) => {
-      ratio[size] = Number(value);
-    });
-
-    // Update the ratio - this will auto-calculate if packs_count is set
-    updateRatio(styleId, ratio);
-    toast.success(`Ratio set from ${prepack.code}. Now enter number of packs.`);
+    // Fallback to default sizes if no gender sizes available
+    return ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
   };
 
   // Handle submit
@@ -264,6 +227,23 @@ export function StyleSelectorDialog({
       toast.error('Please select at least one style');
       return;
     }
+
+    // Validate solid pack size breakdown totals match quantity_in_po
+    for (const style of stylesArray) {
+      if (style.packing_method === 'solid') {
+        const sizeBreakdownTotal = Object.values(style.size_breakdown || {}).reduce(
+          (sum, qty) => sum + (Number(qty) || 0),
+          0
+        );
+        if (sizeBreakdownTotal > 0 && sizeBreakdownTotal !== style.quantity_in_po) {
+          toast.error(
+            `Size breakdown mismatch for style ${style.style_number}: Size total (${sizeBreakdownTotal}) does not match quantity (${style.quantity_in_po})`
+          );
+          return;
+        }
+      }
+    }
+
     onSelect(stylesArray);
     onOpenChange(false);
   };
@@ -482,21 +462,6 @@ export function StyleSelectorDialog({
                             <Label className="text-xs">
                               {style.packing_method === 'prepack' ? 'Prepack Configuration' : 'Size Breakdown'}
                             </Label>
-                            {/* Prepack code selector */}
-                            {style.packing_method === 'prepack' && prepacks.length > 0 && (
-                              <Select onValueChange={(value) => autoFillFromPrepack(style.id, parseInt(value))}>
-                                <SelectTrigger className="h-6 text-xs w-auto px-2">
-                                  <SelectValue placeholder="Use Prepack Code" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {prepacks.map((prepack) => (
-                                    <SelectItem key={prepack.id} value={prepack.id.toString()}>
-                                      {prepack.code} ({prepack.size_range})
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            )}
                           </div>
 
                           {style.packing_method === 'prepack' ? (
@@ -506,7 +471,7 @@ export function StyleSelectorDialog({
                               <div>
                                 <Label className="text-xs font-medium">Step 1: Enter Ratio (units per size in each pack)</Label>
                                 <div className="grid grid-cols-4 gap-2 mt-1">
-                                  {['S', 'M', 'L', 'XL'].map((size) => (
+                                  {getSizesForStyle(style).map((size) => (
                                     <div key={size} className="space-y-1">
                                       <Label htmlFor={`ratio-${style.id}-${size}`} className="text-xs text-center block">
                                         {size}
@@ -583,7 +548,7 @@ export function StyleSelectorDialog({
                             /* Solid: Show direct quantity inputs */
                             <div>
                               <div className="grid grid-cols-4 gap-2 mt-2">
-                                {['S', 'M', 'L', 'XL'].map((size) => (
+                                {getSizesForStyle(style).map((size) => (
                                   <div key={size} className="space-y-1">
                                     <Label htmlFor={`size-${style.id}-${size}`} className="text-xs">
                                       {size}
@@ -609,9 +574,17 @@ export function StyleSelectorDialog({
                                   </div>
                                 ))}
                               </div>
-                              <div className="text-xs text-muted-foreground mt-2">
-                                Total: {Object.values(style.size_breakdown || {}).reduce((sum, qty) => sum + (Number(qty) || 0), 0)} pcs
-                              </div>
+                              {(() => {
+                                const sizeTotal = Object.values(style.size_breakdown || {}).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
+                                const hasMismatch = sizeTotal > 0 && sizeTotal !== style.quantity_in_po;
+                                return (
+                                  <div className={`text-xs mt-2 flex items-center gap-1 ${hasMismatch ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
+                                    {hasMismatch && <AlertCircle className="h-3 w-3" />}
+                                    Total: {sizeTotal} pcs
+                                    {hasMismatch && ` (Expected: ${style.quantity_in_po})`}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
                         </div>
