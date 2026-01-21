@@ -45,6 +45,7 @@ import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseD
 import { CreateAgentDialog } from '@/components/master-data/CreateAgentDialog';
 import { CreateVendorDialog } from '@/components/master-data/CreateVendorDialog';
 import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialog';
+import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { RatioInput } from '@/components/purchase-orders/RatioInput';
 
@@ -55,8 +56,8 @@ const poSchema = z.object({
   retailer_id: z.string().min(1, 'Retailer is required'),
   po_date: z.string().min(1, 'PO date is required'),
   delivery_date: z.string().min(1, 'Delivery date is required'),
-  status: z.string().min(1, 'Status is required'),
-  currency: z.string().min(1, 'Currency is required'),
+  // status removed from creation - auto-set to draft on backend
+  currency_id: z.string().min(1, 'Currency is required'),
   shipping_method: z.string().optional(),
   notes: z.string().optional(),
   // Master data foreign keys (division_id, customer_id, and brand_id removed - brand already in Style)
@@ -78,7 +79,10 @@ const poSchema = z.object({
   other_terms: z.string().optional(),
   // Enhanced PO fields (ship_from and manufacturer removed)
   revision_date: z.string().optional(),
-  etd_date: z.string().min(1, 'ETD date is required'), // NOW REQUIRED
+  // FOB: ex_factory_date required, ETD auto-calculated (ex_factory + 7 days)
+  // DDP: in_warehouse_date required, ETD auto-calculated (in_warehouse - transit - 5 days)
+  ex_factory_date: z.string().optional(),
+  etd_date: z.string().optional(), // Auto-calculated based on shipping term
   eta_date: z.string().optional(),
   in_warehouse_date: z.string().optional(),
   ship_to: z.string().optional(),
@@ -119,8 +123,10 @@ export default function PurchaseOrdersPage() {
   const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
   const [isCreateVendorDialogOpen, setIsCreateVendorDialogOpen] = useState(false);
   const [isCreateCountryDialogOpen, setIsCreateCountryDialogOpen] = useState(false);
+  const [isCreateCurrencyDialogOpen, setIsCreateCurrencyDialogOpen] = useState(false);
 
   // Master data state (brands removed - brand is in Style)
+  const [currencies, setCurrencies] = useState<any[]>([]);
   const [seasons, setSeasons] = useState<any[]>([]);
   const [retailers, setRetailers] = useState<any[]>([]);
   const [countries, setCountries] = useState<any[]>([]);
@@ -140,6 +146,8 @@ export default function PurchaseOrdersPage() {
 
   // Shipping term state (FOB/DDP)
   const [shippingTerm, setShippingTerm] = useState<'FOB' | 'DDP'>('FOB');
+  // Selected country ID for DDP date calculations
+  const [selectedCountryId, setSelectedCountryId] = useState<string>('');
 
   // Selected styles with quantity, ratio, and price
   const [selectedStyles, setSelectedStyles] = useState<Array<{
@@ -158,8 +166,7 @@ export default function PurchaseOrdersPage() {
   } = useForm<POFormData>({
     resolver: zodResolver(poSchema),
     defaultValues: {
-      status: 'draft',
-      currency: 'USD',
+      // status removed - auto-set to draft on backend
     },
   });
 
@@ -189,7 +196,7 @@ export default function PurchaseOrdersPage() {
 
   const fetchMasterData = async () => {
     try {
-      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, stylesRes] = await Promise.all([
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, stylesRes, currenciesRes] = await Promise.all([
         api.get('/master-data/seasons?all=true'),
         api.get('/master-data/retailers?all=true'),
         api.get('/master-data/countries?all=true'),
@@ -197,6 +204,7 @@ export default function PurchaseOrdersPage() {
         api.get('/master-data/agents?all=true'),
         api.get('/master-data/vendors?all=true'),
         api.get('/styles?all=true'),
+        api.get('/master-data/currencies?all=true'),
       ]);
 
       setSeasons(seasonsRes.data || []);
@@ -207,6 +215,7 @@ export default function PurchaseOrdersPage() {
       setVendors(vendorsRes.data || []);
       // Handle paginated response from /styles endpoint
       setStyles(stylesRes.data?.data || stylesRes.data || []);
+      setCurrencies(currenciesRes.data || []);
     } catch (error) {
       console.error('Failed to fetch master data:', error);
     }
@@ -335,8 +344,8 @@ export default function PurchaseOrdersPage() {
         retailer_id: data.retailer_id ? parseInt(data.retailer_id) : null,
         po_date: data.po_date,
         delivery_date: data.delivery_date,
-        status: data.status,
-        currency: data.currency,
+        // status removed - auto-set to 'draft' on backend
+        currency_id: data.currency_id ? parseInt(data.currency_id) : null,
         shipping_method: data.shipping_method,
         notes: data.notes,
         // Master data (division_id, customer_id, and brand_id removed - brand is in Style)
@@ -353,6 +362,7 @@ export default function PurchaseOrdersPage() {
         other_terms: data.other_terms || null,
         // Enhanced fields (ship_from and manufacturer removed)
         revision_date: data.revision_date,
+        ex_factory_date: data.ex_factory_date,
         etd_date: data.etd_date,
         eta_date: data.eta_date,
         in_warehouse_date: data.in_warehouse_date,
@@ -373,6 +383,8 @@ export default function PurchaseOrdersPage() {
       setSelectedStyles([]);
       setPaymentTerm('');
       setPaymentPercentage('');
+      setSelectedCountryId('');
+      setShippingTerm('FOB');
       fetchPurchaseOrders();
     } catch (error) {
       console.error('Failed to create purchase order:', error);
@@ -558,50 +570,34 @@ export default function PurchaseOrdersPage() {
                           )}
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="status">Status *</Label>
-                          <Select
-                            defaultValue="draft"
-                            onValueChange={(value) => setValue('status', value)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="draft">Draft</SelectItem>
-                              <SelectItem value="confirmed">Confirmed</SelectItem>
-                              <SelectItem value="in_production">In Production</SelectItem>
-                              <SelectItem value="completed">Completed</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {errors.status && (
-                            <p className="text-sm text-destructive">{errors.status.message}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="currency">Currency *</Label>
-                          <Select
-                            defaultValue="USD"
-                            onValueChange={(value) => setValue('currency', value)}
-                          >
-                            <SelectTrigger>
+                      {/* Status removed from creation - auto-set to draft on backend */}
+                      <div className="space-y-2">
+                        <Label htmlFor="currency_id">Currency *</Label>
+                        <div className="flex gap-2">
+                          <Select onValueChange={(value) => setValue('currency_id', value)}>
+                            <SelectTrigger className="flex-1">
                               <SelectValue placeholder="Select currency" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="USD">USD</SelectItem>
-                              <SelectItem value="EUR">EUR</SelectItem>
-                              <SelectItem value="GBP">GBP</SelectItem>
-                              <SelectItem value="BDT">BDT</SelectItem>
-                              <SelectItem value="CNY">CNY</SelectItem>
+                              {currencies.map((currency) => (
+                                <SelectItem key={currency.id} value={currency.id.toString()}>
+                                  {currency.code} - {currency.name} {currency.symbol && `(${currency.symbol})`}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
-                          {errors.currency && (
-                            <p className="text-sm text-destructive">{errors.currency.message}</p>
-                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsCreateCurrencyDialogOpen(true)}
+                            title="Create new currency"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
                         </div>
+                        {errors.currency_id && (
+                          <p className="text-sm text-destructive">{errors.currency_id.message}</p>
+                        )}
                       </div>
                     </div>
 
@@ -611,7 +607,7 @@ export default function PurchaseOrdersPage() {
                       <div className="grid grid-cols-3 gap-4">
                         {/* REMOVED: brand_id - Brand is already in Style */}
                         <div className="space-y-2">
-                          <Label htmlFor="season_id">Season</Label>
+                          <Label htmlFor="season_id">Production Season</Label>
                           <div className="flex gap-2">
                             <Select onValueChange={(value) => setValue('season_id', value)}>
                               <SelectTrigger className="flex-1">
@@ -715,14 +711,28 @@ export default function PurchaseOrdersPage() {
                         <div className="space-y-2">
                           <Label htmlFor="country_id">Country of Origin *</Label>
                           <div className="flex gap-2">
-                            <Select onValueChange={(value) => {
-                              setValue('country_id', value);
-                              // Auto-calculate dates when country changes
-                              const etdDate = document.getElementById('etd_date') as HTMLInputElement;
-                              if (etdDate?.value) {
-                                calculateDates(etdDate.value, value);
-                              }
-                            }}>
+                            <Select
+                              value={selectedCountryId}
+                              onValueChange={(value) => {
+                                setValue('country_id', value);
+                                setSelectedCountryId(value);
+                                // Re-calculate DDP dates if in-warehouse date is set
+                                if (shippingTerm === 'DDP') {
+                                  const inWarehouseInput = document.getElementById('in_warehouse_date') as HTMLInputElement;
+                                  if (inWarehouseInput?.value) {
+                                    const country = countries.find(c => c.id.toString() === value);
+                                    const transitDays = country?.sailing_time_days || 0;
+                                    const inWarehouseDate = inWarehouseInput.value;
+                                    const etd = new Date(inWarehouseDate);
+                                    etd.setDate(etd.getDate() - transitDays - 5);
+                                    setValue('etd_date', etd.toISOString().split('T')[0]);
+                                    const eta = new Date(etd);
+                                    eta.setDate(eta.getDate() + transitDays);
+                                    setValue('eta_date', eta.toISOString().split('T')[0]);
+                                  }
+                                }
+                              }}
+                            >
                               <SelectTrigger className="flex-1">
                                 <SelectValue placeholder="Select country" />
                               </SelectTrigger>
@@ -836,58 +846,112 @@ export default function PurchaseOrdersPage() {
                           <p className="text-sm text-destructive">{errors.po_date.message}</p>
                         )}
                       </div>
-                      <div className={`grid gap-4 ${shippingTerm === 'DDP' ? 'grid-cols-4' : 'grid-cols-2'}`}>
-                        <div className="space-y-2">
-                          <Label htmlFor="etd_date">ETD Date *</Label>
-                          <Input
-                            id="etd_date"
-                            type="date"
-                            {...register('etd_date')}
-                            onChange={(e) => {
-                              const countrySelect = document.querySelector('[name="country_id"]') as HTMLInputElement;
-                              if (countrySelect?.value && shippingTerm === 'DDP') {
-                                calculateDates(e.target.value, countrySelect.value);
-                              }
-                            }}
-                          />
+
+                      {/* FOB: Show Ex-Factory Date, auto-calculate ETD = ex-factory + 7 days */}
+                      {shippingTerm === 'FOB' && (
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="ex_factory_date">Ex-Factory Date *</Label>
+                            <Input
+                              id="ex_factory_date"
+                              type="date"
+                              {...register('ex_factory_date')}
+                              onChange={(e) => {
+                                const exFactoryDate = e.target.value;
+                                if (exFactoryDate) {
+                                  // ETD = Ex-Factory + 7 days
+                                  const etd = new Date(exFactoryDate);
+                                  etd.setDate(etd.getDate() + 7);
+                                  setValue('etd_date', etd.toISOString().split('T')[0]);
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="etd_date">ETD Date (Auto: +7 days)</Label>
+                            <Input
+                              id="etd_date"
+                              type="date"
+                              {...register('etd_date')}
+                              disabled
+                              className="bg-muted"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="delivery_date">Delivery Date *</Label>
+                            <Input
+                              id="delivery_date"
+                              type="date"
+                              {...register('delivery_date')}
+                            />
+                            {errors.delivery_date && (
+                              <p className="text-sm text-destructive">{errors.delivery_date.message}</p>
+                            )}
+                          </div>
                         </div>
-                        {shippingTerm === 'DDP' && (
-                          <>
-                            <div className="space-y-2">
-                              <Label htmlFor="eta_date">ETA Date (Auto)</Label>
-                              <Input
-                                id="eta_date"
-                                type="date"
-                                {...register('eta_date')}
-                                disabled
-                                className="bg-muted"
-                              />
-                              {isCalculatingDates && <p className="text-xs text-muted-foreground">Calculating...</p>}
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="in_warehouse_date">In-Warehouse (Auto)</Label>
-                              <Input
-                                id="in_warehouse_date"
-                                type="date"
-                                {...register('in_warehouse_date')}
-                                disabled
-                                className="bg-muted"
-                              />
-                            </div>
-                          </>
-                        )}
-                        <div className="space-y-2">
-                          <Label htmlFor="delivery_date">Delivery Date *</Label>
-                          <Input
-                            id="delivery_date"
-                            type="date"
-                            {...register('delivery_date')}
-                          />
-                          {errors.delivery_date && (
-                            <p className="text-sm text-destructive">{errors.delivery_date.message}</p>
-                          )}
+                      )}
+
+                      {/* DDP: Show In-Warehouse Date, auto-calculate ETD = in-warehouse - transit - 5 days */}
+                      {shippingTerm === 'DDP' && (
+                        <div className="grid grid-cols-4 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="in_warehouse_date">In-Warehouse Date *</Label>
+                            <Input
+                              id="in_warehouse_date"
+                              type="date"
+                              {...register('in_warehouse_date')}
+                              onChange={(e) => {
+                                const inWarehouseDate = e.target.value;
+                                if (inWarehouseDate && selectedCountryId) {
+                                  const country = countries.find(c => c.id.toString() === selectedCountryId);
+                                  const transitDays = country?.sailing_time_days || 0;
+                                  // ETD = In-Warehouse - Transit Time - 5 days
+                                  const etd = new Date(inWarehouseDate);
+                                  etd.setDate(etd.getDate() - transitDays - 5);
+                                  setValue('etd_date', etd.toISOString().split('T')[0]);
+                                  // ETA = ETD + Transit Time
+                                  const eta = new Date(etd);
+                                  eta.setDate(eta.getDate() + transitDays);
+                                  setValue('eta_date', eta.toISOString().split('T')[0]);
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="etd_date">ETD Date (Auto)</Label>
+                            <Input
+                              id="etd_date"
+                              type="date"
+                              {...register('etd_date')}
+                              disabled
+                              className="bg-muted"
+                            />
+                            <p className="text-xs text-muted-foreground">= In-Warehouse - Transit - 5 days</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="eta_date">ETA Date (Auto)</Label>
+                            <Input
+                              id="eta_date"
+                              type="date"
+                              {...register('eta_date')}
+                              disabled
+                              className="bg-muted"
+                            />
+                            {isCalculatingDates && <p className="text-xs text-muted-foreground">Calculating...</p>}
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="delivery_date">Delivery Date *</Label>
+                            <Input
+                              id="delivery_date"
+                              type="date"
+                              {...register('delivery_date')}
+                            />
+                            {errors.delivery_date && (
+                              <p className="text-sm text-destructive">{errors.delivery_date.message}</p>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     {/* Sample Schedule - 8 Milestones */}
@@ -1218,19 +1282,7 @@ export default function PurchaseOrdersPage() {
                   />
                 </div>
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="confirmed">Confirmed</SelectItem>
-                  <SelectItem value="in_production">In Production</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* Status filter removed - status is no longer shown in creation */}
             </div>
           </CardContent>
         </Card>
@@ -1249,7 +1301,7 @@ export default function PurchaseOrdersPage() {
                     <TableHead>PO Number</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Delivery Date</TableHead>
-                    <TableHead>Status</TableHead>
+                    {/* Status column removed from creation - still shown in list for existing POs */}
                     <TableHead className="text-right">Quantity</TableHead>
                     <TableHead className="text-right">Value</TableHead>
                     <TableHead>Styles</TableHead>
@@ -1259,7 +1311,7 @@ export default function PurchaseOrdersPage() {
                 <TableBody>
                   {purchaseOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
                         No purchase orders found
                       </TableCell>
                     </TableRow>
@@ -1278,11 +1330,7 @@ export default function PurchaseOrdersPage() {
                         </TableCell>
                         <TableCell>{formatDate(po.po_date)}</TableCell>
                         <TableCell>{formatDate(po.delivery_date)}</TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusColor(po.status) as any}>
-                            {po.status.replace('_', ' ')}
-                          </Badge>
-                        </TableCell>
+                        {/* Status cell removed */}
                         <TableCell className="text-right">
                           {po.total_quantity.toLocaleString()}
                         </TableCell>
@@ -1455,6 +1503,11 @@ export default function PurchaseOrdersPage() {
         <CreateCountryDialog
           open={isCreateCountryDialogOpen}
           onOpenChange={setIsCreateCountryDialogOpen}
+          onSuccess={fetchMasterData}
+        />
+        <CreateCurrencyDialog
+          open={isCreateCurrencyDialogOpen}
+          onOpenChange={setIsCreateCurrencyDialogOpen}
           onSuccess={fetchMasterData}
         />
       </div>
