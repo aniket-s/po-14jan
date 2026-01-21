@@ -72,7 +72,7 @@ interface Style {
     id: number;
     po_number: string;
     buyer_name: string | null;
-    delivery_date: string;
+    delivery_date?: string | null;
   } | null;
   created_at: string;
   updated_at: string;

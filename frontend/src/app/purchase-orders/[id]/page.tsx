@@ -330,20 +330,6 @@ export default function PurchaseOrderDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Delivery Date</CardTitle>
-              <Truck className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-lg font-bold">
-                {formatDate(purchaseOrder.delivery_date)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {formatDaysRemaining(calculateDaysRemaining(purchaseOrder.delivery_date))}
-              </p>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Tabs */}
@@ -378,12 +364,6 @@ export default function PurchaseOrderDetailPage() {
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">PO Date</span>
                     <span className="text-sm font-medium">{formatDate(purchaseOrder.po_date)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Delivery Date</span>
-                    <span className="text-sm font-medium">
-                      {formatDate(purchaseOrder.delivery_date)}
-                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Currency</span>
