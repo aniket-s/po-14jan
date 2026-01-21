@@ -719,12 +719,30 @@ export default function PurchaseOrdersPage() {
                               onValueChange={(value) => {
                                 setValue('country_id', value);
                                 setSelectedCountryId(value);
+                                const country = countries.find(c => c.id.toString() === value);
+                                const sailingDays = country?.sailing_time_days || 0;
+
+                                // Re-calculate FOB dates if ETD is set
+                                if (shippingTerm === 'FOB') {
+                                  const etdInput = document.getElementById('etd_date') as HTMLInputElement;
+                                  if (etdInput?.value) {
+                                    const etdDate = etdInput.value;
+                                    // ETA = ETD + sailing time
+                                    const eta = new Date(etdDate);
+                                    eta.setDate(eta.getDate() + sailingDays);
+                                    setValue('eta_date', eta.toISOString().split('T')[0]);
+                                    // IHD = ETA + 5 days
+                                    const ihd = new Date(eta);
+                                    ihd.setDate(ihd.getDate() + 5);
+                                    setValue('in_warehouse_date', ihd.toISOString().split('T')[0]);
+                                  }
+                                }
+
                                 // Re-calculate DDP dates if in-warehouse date is set
                                 if (shippingTerm === 'DDP') {
                                   const inWarehouseInput = document.getElementById('in_warehouse_date') as HTMLInputElement;
                                   if (inWarehouseInput?.value) {
-                                    const country = countries.find(c => c.id.toString() === value);
-                                    const transitDays = country?.sailing_time_days || 0;
+                                    const transitDays = sailingDays;
                                     const inWarehouseDate = inWarehouseInput.value;
                                     const etd = new Date(inWarehouseDate);
                                     etd.setDate(etd.getDate() - transitDays - 5);
@@ -879,20 +897,17 @@ export default function PurchaseOrdersPage() {
                                     exFactory.setDate(exFactory.getDate() - 7);
                                     setValue('ex_factory_date', exFactory.toISOString().split('T')[0]);
 
-                                    // ETA = ETD + sailing time (from country)
-                                    if (selectedCountryId) {
-                                      const country = countries.find(c => c.id.toString() === selectedCountryId);
-                                      const sailingDays = country?.sailing_time_days || 0;
-                                      const etd = new Date(etdDate);
-                                      const eta = new Date(etd);
-                                      eta.setDate(eta.getDate() + sailingDays);
-                                      setValue('eta_date', eta.toISOString().split('T')[0]);
+                                    // ETA = ETD + sailing time (from country, or 0 if no country selected)
+                                    const country = selectedCountryId ? countries.find(c => c.id.toString() === selectedCountryId) : null;
+                                    const sailingDays = country?.sailing_time_days || 0;
+                                    const eta = new Date(etdDate);
+                                    eta.setDate(eta.getDate() + sailingDays);
+                                    setValue('eta_date', eta.toISOString().split('T')[0]);
 
-                                      // IHD (In-House Date) = ETA + 5 days
-                                      const ihd = new Date(eta);
-                                      ihd.setDate(ihd.getDate() + 5);
-                                      setValue('in_warehouse_date', ihd.toISOString().split('T')[0]);
-                                    }
+                                    // IHD (In-House Date) = ETA + 5 days
+                                    const ihd = new Date(eta);
+                                    ihd.setDate(ihd.getDate() + 5);
+                                    setValue('in_warehouse_date', ihd.toISOString().split('T')[0]);
                                   }
                                 }}
                               />
