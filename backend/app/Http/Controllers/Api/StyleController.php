@@ -1096,6 +1096,7 @@ class StyleController extends Controller
             'category:id,name',
             'season:id,name',
             'gender:id,name',
+            'gender.activeSizes:id,gender_id,size_code,size_name,display_order',
             'color:id,name,code,pantone_code'
         ]);
 
