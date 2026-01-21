@@ -754,7 +754,7 @@ class StyleController extends Controller
             'images' => 'nullable|array',
             // Master data foreign keys
             'brand_id' => 'nullable|exists:brands,id',
-            'buyer_id' => 'nullable|exists:buyers,id',
+            'retailer_id' => 'nullable|exists:retailers,id',
             'category_id' => 'nullable|exists:categories,id',
             'season_id' => 'nullable|exists:seasons,id',
             'gender_id' => 'required|exists:genders,id', // REQUIRED for size management
@@ -806,7 +806,7 @@ class StyleController extends Controller
             'images' => $request->images,
             // Master data foreign keys
             'brand_id' => $request->brand_id,
-            'buyer_id' => $request->buyer_id,
+            'retailer_id' => $request->retailer_id,
             'category_id' => $request->category_id,
             'season_id' => $request->season_id,
             'gender_id' => $request->gender_id,
@@ -875,7 +875,7 @@ class StyleController extends Controller
     {
         $style = Style::with([
             'brand',
-            'buyer',
+            'retailer',
             'category',
             'season',
             'gender',
@@ -919,7 +919,7 @@ class StyleController extends Controller
             'images' => 'nullable|array',
             // Master data
             'brand_id' => 'nullable|exists:brands,id',
-            'buyer_id' => 'nullable|exists:buyers,id',
+            'retailer_id' => 'nullable|exists:retailers,id',
             'category_id' => 'nullable|exists:categories,id',
             'season_id' => 'nullable|exists:seasons,id',
             'gender_id' => 'nullable|exists:genders,id',
@@ -977,7 +977,7 @@ class StyleController extends Controller
             'images' => $request->images,
             // Master data
             'brand_id' => $request->brand_id,
-            'buyer_id' => $request->buyer_id,
+            'retailer_id' => $request->retailer_id,
             'category_id' => $request->category_id,
             'season_id' => $request->season_id,
             'gender_id' => $request->gender_id,
@@ -1092,7 +1092,7 @@ class StyleController extends Controller
             'purchaseOrder:id,po_number,status',
             'prepacks.prepackCode',
             'brand:id,name',
-            'buyer:id,name',
+            'retailer:id,name',
             'category:id,name',
             'season:id,name',
             'gender:id,name',
