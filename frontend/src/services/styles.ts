@@ -1,11 +1,18 @@
 import api from '@/lib/api';
 
+export interface ColorObject {
+  id: number;
+  name: string;
+  code: string;
+  pantone_code: string;
+}
+
 export interface Style {
   id: number;
   style_number: string;
   description: string | null;
   fabric: string | null;
-  color: string | null;
+  color: ColorObject | null;
   fit: string | null;
   size_breakup: Record<string, number>;
   size_breakdown: Record<string, number> | null; // For PO-specific size breakdown
@@ -70,8 +77,10 @@ export interface CreateStyleData {
   style_number: string;
   description?: string;
   fabric?: string; // Deprecated - use fabric_type_name
-  fabric_type_name?: string; // NEW: Combined fabric type and name
-  color?: string;
+  fabric_type_name?: string; // Combined fabric type and name
+  fabric_weight?: string;
+  color?: string; // Deprecated - use color_id
+  color_id?: number; // NEW: Foreign key to colors table
   fit?: string;
   size_breakup?: Record<string, number>;
   total_quantity?: number;
@@ -83,21 +92,24 @@ export interface CreateStyleData {
 
   // Master data
   brand_id?: number;
+  buyer_id?: number; // NEW: Buyer categorization
+  category_id?: number; // NEW: Product category
+  season_id?: number; // NEW: Season/collection
   gender_id?: number; // REQUIRED for size management
-  // REMOVED (PO-level fields moved to pivot table):
-  // - season_id
-  // - division_id (removed from database)
-  // - customer_id (removed from database)
-  // - agent_id
-  // - vendor_id
 
   // Enhanced fields
-  color_code?: string;
+  color_code?: string; // Pantone code (optional)
   color_name?: string;
   fabric_name?: string; // Deprecated - use fabric_type_name
   fabric_type?: string; // Deprecated - use fabric_type_name
-  fabric_weight?: string;
   country_of_origin?: string;
+
+  // Pricing
+  msrp?: number; // NEW: MSRP
+  wholesale_price?: number; // NEW: Wholesale price
+
+  // Status
+  is_active?: boolean; // NEW: Active/Inactive
   item_description?: string;
   // REMOVED (PO-level fields):
   // - loading_port

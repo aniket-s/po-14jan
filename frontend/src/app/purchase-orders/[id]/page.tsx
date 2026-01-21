@@ -668,7 +668,7 @@ export default function PurchaseOrderDetailPage() {
                         styles.map((style) => (
                           <TableRow key={style.id}>
                             <TableCell className="font-medium">{style.style_number}</TableCell>
-                            <TableCell>{style.color || '-'}</TableCell>
+                            <TableCell>{style.color?.name || '-'}</TableCell>
                             <TableCell>{style.description || '-'}</TableCell>
                             <TableCell className="text-right">
                               {style.quantity ? style.quantity.toLocaleString() : '-'}

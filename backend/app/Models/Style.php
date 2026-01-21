@@ -31,10 +31,13 @@ class Style extends Model
         // destination_port - REMOVED (not for styles)
         // Master data foreign keys
         'brand_id',
+        'buyer_id', // NEW: Buyer for categorization
+        'category_id', // NEW: Product category
+        'season_id', // NEW: Season/collection
         'gender_id', // NEW: Gender for size management
+        'color_id', // NEW: Foreign key to colors table
         // division_id - REMOVED
         // customer_id - REMOVED
-        // season_id - REMOVED (not for styles)
         // agent_id - REMOVED (not for styles)
         // vendor_id - REMOVED (not for styles)
         // Enhanced fields
@@ -47,7 +50,13 @@ class Style extends Model
         'country_of_origin',
         'item_description',
         'created_by',
+        'updated_by', // NEW: User who last updated
         'tp_date',
+        // Pricing fields
+        'msrp', // NEW: Manufacturer Suggested Retail Price
+        'wholesale_price', // NEW: Wholesale price for bulk customers
+        // Status
+        'is_active', // NEW: Active/Inactive flag
         // loading_port - REMOVED (not for styles)
         // packing_method - REMOVED (not for styles)
         // shipping_term - REMOVED (not for styles)
@@ -78,11 +87,14 @@ class Style extends Model
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
         'fob_price' => 'decimal:2',
+        'msrp' => 'decimal:2',
+        'wholesale_price' => 'decimal:2',
         'tp_date' => 'date',
         'images' => 'array',
         'technical_file_paths' => 'array', // NEW: Support multiple technical files
         'packing_details' => 'array',
         'metadata' => 'array',
+        'is_active' => 'boolean',
         // NOTE: PO-specific field casts moved to pivot model:
         // - assigned_at
         // - target_production_date
@@ -114,6 +126,60 @@ class Style extends Model
     public function getQuantityAttribute()
     {
         return $this->total_quantity;
+    }
+
+    /**
+     * Accessor for images - ensures all URLs are absolute with API domain
+     */
+    public function getImagesAttribute($value)
+    {
+        $images = json_decode($value, true);
+
+        if (!is_array($images)) {
+            return [];
+        }
+
+        return array_map(function($imageUrl) {
+            // If it's already an absolute URL, return as-is
+            if (str_starts_with($imageUrl, 'http://') || str_starts_with($imageUrl, 'https://')) {
+                return $imageUrl;
+            }
+
+            // If it starts with /storage/, convert to absolute URL
+            if (str_starts_with($imageUrl, '/storage/')) {
+                return request()->getSchemeAndHttpHost() . $imageUrl;
+            }
+
+            // If it's just a path like 'styles/images/...', convert to absolute URL
+            return request()->getSchemeAndHttpHost() . '/storage/' . $imageUrl;
+        }, $images);
+    }
+
+    /**
+     * Accessor for technical_file_paths - ensures all URLs are absolute with API domain
+     */
+    public function getTechnicalFilePathsAttribute($value)
+    {
+        $paths = json_decode($value, true);
+
+        if (!is_array($paths)) {
+            return [];
+        }
+
+        return array_map(function($fileUrl) {
+            // If it's already an absolute URL, return as-is
+            if (str_starts_with($fileUrl, 'http://') || str_starts_with($fileUrl, 'https://')) {
+                return $fileUrl;
+            }
+
+            // If it starts with /storage/, convert to absolute URL
+            if (str_starts_with($fileUrl, '/storage/')) {
+                return request()->getSchemeAndHttpHost() . $fileUrl;
+            }
+
+            // If it's just a path like 'styles/technical/...', convert to absolute URL
+            return request()->getSchemeAndHttpHost() . '/storage/' . $fileUrl;
+        }, $paths);
     }
 
     /**
@@ -168,6 +234,22 @@ class Style extends Model
     }
 
     /**
+     * Get the buyer for the style
+     */
+    public function buyer()
+    {
+        return $this->belongsTo(Buyer::class);
+    }
+
+    /**
+     * Get the category for the style
+     */
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    /**
      * Get the season for the style
      */
     public function season()
@@ -181,6 +263,22 @@ class Style extends Model
     public function gender()
     {
         return $this->belongsTo(Gender::class);
+    }
+
+    /**
+     * Get the color for the style
+     */
+    public function color()
+    {
+        return $this->belongsTo(Color::class);
+    }
+
+    /**
+     * Get the user who last updated the style
+     */
+    public function updatedBy()
+    {
+        return $this->belongsTo(User::class, 'updated_by');
     }
 
     /**

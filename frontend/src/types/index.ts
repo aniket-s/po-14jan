@@ -1,3 +1,10 @@
+export interface ColorObject {
+  id: number;
+  name: string;
+  code: string;
+  pantone_code: string;
+}
+
 export interface SampleSchedule {
   // Sample Submissions
   top_approval?: string;
@@ -99,7 +106,7 @@ export interface Style {
   unit_price: number;
   total_price: number;
   fabric_type: string | null;
-  color: string | null;
+  color: ColorObject | null;
   size_breakdown: Record<string, number> | null;
   packing_details?: PackingDetails | null;
   assignment_type: 'direct_to_factory' | 'via_agency' | null;

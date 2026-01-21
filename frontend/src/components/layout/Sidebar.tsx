@@ -30,6 +30,9 @@ import {
   Database,
   Store,
   Warehouse,
+  Palette,
+  FolderOpen,
+  Building2,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -122,6 +125,21 @@ const navItems: NavItem[] = [
         title: 'Prepack Codes',
         href: '/master-data/prepack-codes',
         icon: Package,
+      },
+      {
+        title: 'Colors',
+        href: '/master-data/colors',
+        icon: Palette,
+      },
+      {
+        title: 'Buyers',
+        href: '/master-data/buyers',
+        icon: Building2,
+      },
+      {
+        title: 'Categories',
+        href: '/master-data/categories',
+        icon: FolderOpen,
       },
     ],
   },

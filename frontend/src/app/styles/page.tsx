@@ -38,8 +38,34 @@ interface Style {
   quantity: number | null;
   unit_price: number | null;
   total_price: number;
+
+  // OLD fields (for backward compatibility)
   fabric: string | null;
-  color: string | null;
+
+  // NEW relational field IDs
+  brand_id: number | null;
+  buyer_id: number | null;
+  category_id: number | null;
+  color_id: number | null;
+  gender_id: number | null;
+  season_id: number | null;
+
+  // NEW direct fields
+  color_name: string | null;
+  color_code: string | null;
+  fabric_type_name: string | null;
+  fabric_weight: string | null;
+
+  // Color field - union type for backward compatibility (can be string OR object)
+  color: string | { id: number; name: string; code: string; pantone_code: string | null } | null;
+
+  // Relationships (loaded via eager loading)
+  brand?: { id: number; name: string };
+  buyer?: { id: number; name: string };
+  category?: { id: number; name: string };
+  gender?: { id: number; name: string };
+  season?: { id: number; name: string };
+
   size_breakdown: any;
   description: string | null;
   purchase_order: {
@@ -47,7 +73,7 @@ interface Style {
     po_number: string;
     buyer_name: string | null;
     delivery_date: string;
-  };
+  } | null;
   created_at: string;
   updated_at: string;
 }
@@ -72,6 +98,10 @@ export default function StylesPage() {
     total: 0,
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
+  const [buyerFilter, setBuyerFilter] = useState('');
+  const [brands, setBrands] = useState<any[]>([]);
+  const [buyers, setBuyers] = useState<any[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<number[]>([]);
   const [isSampleProcessModalOpen, setIsSampleProcessModalOpen] = useState(false);
 
@@ -90,6 +120,23 @@ export default function StylesPage() {
     }
   }, [can, router, authLoading]);
 
+  // Fetch brands and buyers for filters
+  useEffect(() => {
+    const fetchFilterData = async () => {
+      try {
+        const [brandsResponse, buyersResponse] = await Promise.all([
+          api.get('/master-data/brands?all=true'),
+          api.get('/master-data/buyers?all=true'),
+        ]);
+        setBrands(brandsResponse.data || []);
+        setBuyers(buyersResponse.data || []);
+      } catch (error) {
+        console.error('Failed to fetch filter data:', error);
+      }
+    };
+    fetchFilterData();
+  }, []);
+
   // Fetch styles
   const fetchStyles = async () => {
     try {
@@ -101,6 +148,14 @@ export default function StylesPage() {
 
       if (searchQuery) {
         params.search = searchQuery;
+      }
+
+      if (brandFilter) {
+        params.brand_id = brandFilter;
+      }
+
+      if (buyerFilter) {
+        params.buyer_id = buyerFilter;
       }
 
       const response = await api.get<PaginatedStyles>('/styles', { params });
@@ -120,7 +175,7 @@ export default function StylesPage() {
 
   useEffect(() => {
     fetchStyles();
-  }, [pagination.currentPage, searchQuery]);
+  }, [pagination.currentPage, searchQuery, brandFilter, buyerFilter]);
 
   // Format currency
   const formatCurrency = (amount: number | null | undefined, currency: string = 'USD') => {
@@ -237,20 +292,69 @@ export default function StylesPage() {
           </Card>
         </div>
 
-        {/* Search */}
+        {/* Search & Filters */}
         <Card>
           <CardHeader>
-            <CardTitle>Search Styles</CardTitle>
+            <CardTitle>Search & Filter Styles</CardTitle>
+            <CardDescription>Search by style number or filter by brand/buyer</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by style number, name, or PO number..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8"
-              />
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by style number, name, or PO number..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="brand-filter">Filter by Brand</Label>
+                  <select
+                    id="brand-filter"
+                    value={brandFilter}
+                    onChange={(e) => setBrandFilter(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">All Brands</option>
+                    {brands.map((brand) => (
+                      <option key={brand.id} value={brand.id}>
+                        {brand.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="buyer-filter">Filter by Buyer</Label>
+                  <select
+                    id="buyer-filter"
+                    value={buyerFilter}
+                    onChange={(e) => setBuyerFilter(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">All Buyers</option>
+                    {buyers.map((buyer) => (
+                      <option key={buyer.id} value={buyer.id}>
+                        {buyer.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {(brandFilter || buyerFilter) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setBrandFilter('');
+                    setBuyerFilter('');
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -277,8 +381,10 @@ export default function StylesPage() {
                     </TableHead>
                     <TableHead>Style Number</TableHead>
                     <TableHead>Style Name</TableHead>
-                    <TableHead>Fabric</TableHead>
+                    <TableHead>Fabric / Weight</TableHead>
                     <TableHead>Color</TableHead>
+                    <TableHead>Buyer</TableHead>
+                    <TableHead>Category</TableHead>
                     <TableHead>Used in POs</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -286,7 +392,7 @@ export default function StylesPage() {
                 <TableBody>
                   {styles.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                         <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
                         <p>No styles found</p>
                         {can('style.create') && (
@@ -317,13 +423,40 @@ export default function StylesPage() {
                               {style.description || '-'}
                             </span>
                           </TableCell>
-                          <TableCell>{style.fabric || '-'}</TableCell>
                           <TableCell>
-                            {style.color ? (
-                              <Badge variant="outline">{style.color}</Badge>
+                            {style.fabric_type_name || style.fabric_weight ? (
+                              <div className="space-y-0.5">
+                                {style.fabric_type_name && <div className="text-sm">{style.fabric_type_name}</div>}
+                                {style.fabric_weight && <div className="text-xs text-muted-foreground">{style.fabric_weight}</div>}
+                              </div>
                             ) : (
-                              <span className="text-muted-foreground">-</span>
+                              style.fabric || '-'
                             )}
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              const colorDisplay = typeof style.color === 'string'
+                                ? style.color
+                                : typeof style.color === 'object' && style.color
+                                  ? style.color.name
+                                  : style.color_name;
+                              const colorCode = typeof style.color === 'object' && style.color?.code;
+
+                              return colorDisplay ? (
+                                <Badge variant="outline">
+                                  {colorDisplay}
+                                  {colorCode && <span className="ml-1 text-xs opacity-70">({colorCode})</span>}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              );
+                            })()}
+                          </TableCell>
+                          <TableCell>
+                            {style.buyer?.name || (style.buyer_id ? `Buyer #${style.buyer_id}` : '-')}
+                          </TableCell>
+                          <TableCell>
+                            {style.category?.name || (style.category_id ? `Category #${style.category_id}` : '-')}
                           </TableCell>
                           <TableCell>
                             {style.purchase_order ? (

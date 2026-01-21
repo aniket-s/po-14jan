@@ -40,14 +40,18 @@ class FileUploadController extends Controller
                 . '-' . time()
                 . '.' . $extension;
 
-            // Determine storage path based on type
-            $path = $file->storeAs(
-                "public/{$folder}/{$type}",
-                $filename
+            // Store file in public disk
+            $storedPath = $file->storeAs(
+                "{$folder}/{$type}",
+                $filename,
+                'public'
             );
 
-            // Get public URL
-            $url = Storage::url($path);
+            // Remove 'public/' prefix if present (Laravel sometimes adds this)
+            $path = str_replace('public/', '', $storedPath);
+
+            // Build absolute URL with request scheme and host
+            $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
             return response()->json([
                 'message' => 'File uploaded successfully',
@@ -101,14 +105,18 @@ class FileUploadController extends Controller
                     . '-' . time() . '-' . Str::random(6)
                     . '.' . $extension;
 
-                // Store file
-                $path = $file->storeAs(
-                    "public/{$folder}/{$type}",
-                    $filename
+                // Store file in public disk
+                $storedPath = $file->storeAs(
+                    "{$folder}/{$type}",
+                    $filename,
+                    'public'
                 );
 
-                // Get public URL
-                $url = Storage::url($path);
+                // Remove 'public/' prefix if present (Laravel sometimes adds this)
+                $path = str_replace('public/', '', $storedPath);
+
+                // Build absolute URL with request scheme and host
+                $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
                 $uploadedFiles[] = [
                     'path' => $path,
@@ -162,14 +170,18 @@ class FileUploadController extends Controller
                     . '-' . time() . '-' . Str::random(6)
                     . '.' . $extension;
 
-                // Store in styles/images directory
-                $path = $image->storeAs(
-                    'public/styles/images',
-                    $filename
+                // Store in styles/images directory on public disk
+                $storedPath = $image->storeAs(
+                    'styles/images',
+                    $filename,
+                    'public'
                 );
 
-                // Get public URL
-                $url = Storage::url($path);
+                // Remove 'public/' prefix if present (Laravel sometimes adds this)
+                $path = str_replace('public/', '', $storedPath);
+
+                // Build absolute URL with request scheme and host
+                $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
                 $uploadedImages[] = [
                     'path' => $path,
@@ -223,14 +235,18 @@ class FileUploadController extends Controller
                     . '-' . time() . '-' . Str::random(6)
                     . '.' . $extension;
 
-                // Store in styles/technical directory
-                $path = $file->storeAs(
-                    'public/styles/technical',
-                    $filename
+                // Store in styles/technical directory on public disk
+                $storedPath = $file->storeAs(
+                    'styles/technical',
+                    $filename,
+                    'public'
                 );
 
-                // Get public URL
-                $url = Storage::url($path);
+                // Remove 'public/' prefix if present (Laravel sometimes adds this)
+                $path = str_replace('public/', '', $storedPath);
+
+                // Build absolute URL with request scheme and host
+                $url = $request->getSchemeAndHttpHost() . '/storage/' . $path;
 
                 $uploadedFiles[] = [
                     'path' => $path,

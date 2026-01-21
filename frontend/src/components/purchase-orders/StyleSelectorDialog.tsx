@@ -303,7 +303,7 @@ export function StyleSelectorDialog({
                           {style.description || '-'}
                         </TableCell>
                         <TableCell>{style.fabric || '-'}</TableCell>
-                        <TableCell>{style.color || '-'}</TableCell>
+                        <TableCell>{style.color?.name || '-'}</TableCell>
                         <TableCell className="text-right">
                           {style.total_quantity?.toLocaleString() || '-'}
                         </TableCell>

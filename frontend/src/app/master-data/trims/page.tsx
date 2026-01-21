@@ -200,7 +200,7 @@ export default function TrimsPage() {
     setIsUploadingImage(true);
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('image', file);
 
       const response = await api.post('/master-data/trims/upload-image', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
