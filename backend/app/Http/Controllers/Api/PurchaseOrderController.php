@@ -386,6 +386,13 @@ class PurchaseOrderController extends Controller
             $retailerName = $retailer ? $retailer->name : null;
         }
 
+        // Get currency code from currency_id if provided
+        $currencyCode = $request->currency; // Default to legacy currency field
+        if ($request->filled('currency_id')) {
+            $currency = \App\Models\Currency::find($request->currency_id);
+            $currencyCode = $currency ? $currency->code : $currencyCode;
+        }
+
         $po = PurchaseOrder::create([
             'po_number' => $request->po_number,
             'headline' => $request->headline,
@@ -395,7 +402,8 @@ class PurchaseOrderController extends Controller
             'retailer' => $retailerName, // Backward compatibility - fetch from retailer_id
             'po_date' => $request->po_date,
             'delivery_date' => $request->delivery_date,
-            'currency' => $request->currency,
+            'currency' => $currencyCode, // Currency code (from currency_id or legacy field)
+            'currency_id' => $request->currency_id, // NEW: Store foreign key
             'exchange_rate' => $request->exchange_rate ?? 1.0,
             'payment_terms' => $request->payment_terms,
             'terms_of_delivery' => $request->terms_of_delivery,
@@ -424,7 +432,8 @@ class PurchaseOrderController extends Controller
             'warehouse_id' => $request->warehouse_id,
             'agent_id' => $request->agent_id,
             'vendor_id' => $request->vendor_id,
-            // NOTE: shipping_term is NOT stored at PO level, only used as default for attached styles
+            // Shipping term (FOB/DDP) - stored at PO level
+            'shipping_term' => $shippingTerm,
             // Additional fields (removed: loading_port)
             'payment_term' => $request->payment_term,
             'country_of_origin' => $request->country_of_origin,
@@ -495,7 +504,8 @@ class PurchaseOrderController extends Controller
             'retailer_id' => 'nullable|exists:retailers,id',
             'po_date' => 'required|date',
             'delivery_date' => 'nullable|date|after:po_date',
-            'currency' => 'required|string|max:3',
+            'currency' => 'nullable|string|max:10',
+            'currency_id' => 'nullable|exists:currencies,id',
             'exchange_rate' => 'nullable|numeric|min:0',
             'payment_terms' => 'nullable|string',
             'terms_of_delivery' => 'nullable|string',
@@ -505,8 +515,9 @@ class PurchaseOrderController extends Controller
             'status' => 'nullable|string|max:50',
             // Enhanced PO fields
             'revision_date' => 'nullable|date',
-            'etd_date' => 'required|date', // REQUIRED
-            'eta_date' => 'nullable|date|after:etd_date',
+            'ex_factory_date' => 'nullable|date', // For FOB shipping term
+            'etd_date' => 'nullable|date', // Auto-calculated based on shipping term
+            'eta_date' => 'nullable|date',
             'in_warehouse_date' => 'nullable|date',
             'ship_to' => 'nullable|string|max:100',
             'ship_to_address' => 'nullable|string',
@@ -565,13 +576,21 @@ class PurchaseOrderController extends Controller
             $retailerName = $retailer ? $retailer->name : $po->retailer;
         }
 
+        // Get currency code from currency_id if provided
+        $currencyCode = $request->currency ?? $po->currency;
+        if ($request->filled('currency_id')) {
+            $currency = \App\Models\Currency::find($request->currency_id);
+            $currencyCode = $currency ? $currency->code : $currencyCode;
+        }
+
         $po->update([
             'po_number' => $request->po_number,
             'headline' => $request->headline,
             'retailer' => $retailerName, // Backward compatibility - fetch from retailer_id if needed
             'po_date' => $request->po_date,
             'delivery_date' => $request->delivery_date,
-            'currency' => $request->currency,
+            'currency' => $currencyCode, // Currency code (from currency_id or legacy field)
+            'currency_id' => $request->currency_id ?? $po->currency_id,
             'exchange_rate' => $request->exchange_rate ?? $po->exchange_rate,
             'payment_terms' => $request->payment_terms,
             'terms_of_delivery' => $request->terms_of_delivery,
@@ -581,6 +600,7 @@ class PurchaseOrderController extends Controller
             'status' => $request->get('status', $po->status),
             // Enhanced PO fields (removed: ship_from, manufacturer)
             'revision_date' => $request->revision_date,
+            'ex_factory_date' => $request->ex_factory_date, // For FOB shipping term
             'etd_date' => $request->etd_date,
             'eta_date' => $request->eta_date,
             'in_warehouse_date' => $request->in_warehouse_date,
@@ -597,7 +617,8 @@ class PurchaseOrderController extends Controller
             'warehouse_id' => $request->warehouse_id,
             'agent_id' => $request->agent_id,
             'vendor_id' => $request->vendor_id,
-            // NOTE: shipping_term is NOT stored at PO level, only used as default for attached styles
+            // Shipping term (FOB/DDP) - stored at PO level
+            'shipping_term' => $request->shipping_term ?? $po->shipping_term,
             // Additional fields (removed: loading_port)
             'payment_term' => $request->payment_term,
             'country_of_origin' => $request->country_of_origin,

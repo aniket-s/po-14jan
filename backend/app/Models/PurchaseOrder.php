@@ -21,6 +21,7 @@ class PurchaseOrder extends Model
         'order_date',
         'expected_delivery_date',
         'currency',
+        'currency_id', // NEW: Foreign key to currencies table
         'total_quantity',
         'total_value',
         'payment_terms',
@@ -34,8 +35,10 @@ class PurchaseOrder extends Model
         // Enhanced PO fields
         'revision_date',
         'etd_date',
+        'ex_factory_date', // NEW: For FOB shipping term calculations
         'eta_date',
         'in_warehouse_date', // New field
+        'shipping_term', // NEW: FOB or DDP at PO level
         'ship_to',
         'ship_to_address',
         'sample_schedule',
@@ -73,6 +76,7 @@ class PurchaseOrder extends Model
         // Enhanced PO field casts
         'revision_date' => 'date',
         'etd_date' => 'date',
+        'ex_factory_date' => 'date', // NEW: For FOB shipping term
         'eta_date' => 'date',
         'in_warehouse_date' => 'date', // New
         'sample_schedule' => 'array',
@@ -116,6 +120,14 @@ class PurchaseOrder extends Model
     public function revisor()
     {
         return $this->belongsTo(User::class, 'revised_by');
+    }
+
+    /**
+     * Get the currency for the PO
+     */
+    public function currency()
+    {
+        return $this->belongsTo(Currency::class);
     }
 
     /**
