@@ -126,7 +126,7 @@ class PurchaseOrderController extends Controller
                     ] : null,
                     'retailer' => $po->retailer,
                     'po_date' => $po->po_date?->format('Y-m-d'),
-                    'delivery_date' => $po->delivery_date?->format('Y-m-d'),
+                    'delivery_date' => $po->delivery_date, // Kept for backward compatibility (no longer used)
                     'currency' => $po->currency,
                     'total_quantity' => $po->total_quantity,
                     'total_value' => $po->total_value,
@@ -182,7 +182,7 @@ class PurchaseOrderController extends Controller
                 'order_date' => $po->order_date?->format('Y-m-d'),
                 'expected_delivery_date' => $po->expected_delivery_date?->format('Y-m-d'),
                 'po_date' => $po->po_date?->format('Y-m-d'),
-                'delivery_date' => $po->delivery_date?->format('Y-m-d'),
+                'delivery_date' => $po->delivery_date, // Kept for backward compatibility (no longer used)
                 'currency' => $po->currency,
                 'exchange_rate' => $po->exchange_rate,
                 'total_quantity' => $po->total_quantity,
