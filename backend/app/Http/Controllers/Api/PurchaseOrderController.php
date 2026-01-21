@@ -265,9 +265,13 @@ class PurchaseOrderController extends Controller
             'retailer_id' => 'nullable|exists:retailers,id',
             'po_date' => 'required|date',
             'delivery_date' => 'nullable|date|after:po_date',
-            'currency' => 'required|string|max:3',
+            'currency' => 'nullable|string|max:10', // Changed from max:3 to support currency_id
+            'currency_id' => 'nullable|exists:currencies,id', // NEW: Currency selection with + button
             'exchange_rate' => 'nullable|numeric|min:0',
             'payment_terms' => 'nullable|string',
+            'payment_terms_structured' => 'nullable|array', // For structured payment terms
+            'payment_terms_structured.term' => 'nullable|string',
+            'payment_terms_structured.percentage' => 'nullable|numeric|min:0|max:100',
             'terms_of_delivery' => 'nullable|string',
             'destination_country' => 'nullable|string|max:100',
             'additional_notes' => 'nullable|string',
@@ -275,9 +279,10 @@ class PurchaseOrderController extends Controller
             'status' => 'nullable|string|max:50',
             // Enhanced PO fields
             'revision_date' => 'nullable|date',
-            'etd_date' => 'required|date', // NOW REQUIRED
-            'eta_date' => 'nullable|date|after:etd_date',
-            'in_warehouse_date' => 'nullable|date',
+            'etd_date' => 'nullable|date', // Calculated based on shipping_term
+            'eta_date' => 'nullable|date',
+            'in_warehouse_date' => 'nullable|date', // Required for DDP
+            'ex_factory_date' => 'nullable|date', // NEW: Required for FOB
             'ship_to' => 'nullable|string|max:100',
             'ship_to_address' => 'nullable|string',
             'sample_schedule' => 'nullable|array',
@@ -295,7 +300,7 @@ class PurchaseOrderController extends Controller
             'warehouse_id' => 'nullable|exists:warehouses,id',
             'agent_id' => 'nullable|exists:agents,id',
             'vendor_id' => 'nullable|exists:vendors,id',
-            // Price term
+            // Price/Shipping term - determines date calculation logic
             'shipping_term' => 'nullable|in:FOB,DDP',
             // Additional fields (removed: manufacturer, ship_from, loading_port)
             'payment_term' => 'nullable|string|max:100',
@@ -315,6 +320,53 @@ class PurchaseOrderController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        // VALIDATION: Either agent_id or vendor_id (factory) must be selected
+        if (empty($request->agent_id) && empty($request->vendor_id)) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => [
+                    'agent_id' => ['Either Agent or Factory (Vendor) must be selected'],
+                    'vendor_id' => ['Either Agent or Factory (Vendor) must be selected'],
+                ]
+            ], 422);
+        }
+
+        // VALIDATION: If payment term is ADVANCE, percentage is compulsory
+        $paymentTermsStructured = $request->payment_terms_structured;
+        if ($paymentTermsStructured &&
+            isset($paymentTermsStructured['term']) &&
+            strtoupper($paymentTermsStructured['term']) === 'ADVANCE') {
+            if (!isset($paymentTermsStructured['percentage']) || $paymentTermsStructured['percentage'] === null) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'payment_terms_structured.percentage' => ['Percentage is required when payment term is ADVANCE'],
+                    ]
+                ], 422);
+            }
+        }
+
+        // DATE CALCULATION BASED ON SHIPPING TERM
+        $etdDate = $request->etd_date;
+        $shippingTerm = $request->shipping_term ?? 'FOB';
+
+        if ($shippingTerm === 'FOB') {
+            // FOB: ETD = ex_factory_date + 7 days
+            if ($request->filled('ex_factory_date') && empty($etdDate)) {
+                $etdDate = \Carbon\Carbon::parse($request->ex_factory_date)->addDays(7)->format('Y-m-d');
+            }
+        } elseif ($shippingTerm === 'DDP') {
+            // DDP: ETD = in_warehouse_date - transit_time - 5 days
+            if ($request->filled('in_warehouse_date') && $request->filled('country_id') && empty($etdDate)) {
+                $country = \App\Models\Country::find($request->country_id);
+                $transitDays = $country ? ($country->sailing_time_days ?? 0) : 0;
+                $etdDate = \Carbon\Carbon::parse($request->in_warehouse_date)
+                    ->subDays($transitDays)
+                    ->subDays(5)
+                    ->format('Y-m-d');
+            }
         }
 
         // Verify agency has Agency role if provided
@@ -355,7 +407,8 @@ class PurchaseOrderController extends Controller
             'total_value' => 0,
             // Enhanced PO fields (removed: ship_from, manufacturer)
             'revision_date' => $request->revision_date,
-            'etd_date' => $request->etd_date,
+            'etd_date' => $etdDate, // Use calculated ETD based on shipping term
+            'ex_factory_date' => $request->ex_factory_date, // NEW: For FOB
             'eta_date' => $request->eta_date,
             'in_warehouse_date' => $request->in_warehouse_date,
             'ship_to' => $request->ship_to,

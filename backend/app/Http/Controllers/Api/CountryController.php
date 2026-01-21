@@ -45,13 +45,15 @@ class CountryController extends Controller
 
     /**
      * Store a newly created country.
+     * Note: code field is now optional (removed from UI)
      */
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'code' => 'required|string|max:3|unique:countries,code',
-            'sailing_time_days' => 'required|integer|min:0|max:365',
+            'name' => 'required|string|max:255|unique:countries,name',
+            'code' => 'nullable|string|max:10', // Made optional - auto-generate if not provided
+            'sailing_time_days' => 'nullable|integer|min:0|max:365',
+            'shipping_days' => 'nullable|integer|min:0|max:365', // Alias for sailing_time_days (frontend uses this)
             'is_active' => 'nullable|boolean',
         ]);
 
@@ -62,7 +64,26 @@ class CountryController extends Controller
             ], 422);
         }
 
-        $country = Country::create($validator->validated());
+        $data = $validator->validated();
+
+        // Handle alias: shipping_days -> sailing_time_days
+        if (isset($data['shipping_days']) && !isset($data['sailing_time_days'])) {
+            $data['sailing_time_days'] = $data['shipping_days'];
+        }
+        unset($data['shipping_days']);
+
+        // Auto-generate code from name if not provided
+        if (empty($data['code'])) {
+            $data['code'] = strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $data['name']), 0, 3));
+            // Ensure uniqueness
+            $baseCode = $data['code'];
+            $counter = 1;
+            while (Country::where('code', $data['code'])->exists()) {
+                $data['code'] = $baseCode . $counter++;
+            }
+        }
+
+        $country = Country::create($data);
 
         return response()->json([
             'message' => 'Country created successfully',

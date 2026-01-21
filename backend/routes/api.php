@@ -373,6 +373,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Categories (NEW - for style product categorization)
         Route::apiResource('categories', \App\Http\Controllers\Api\CategoryController::class);
+
+        // Fabric Types (NEW - for dynamic fabric type selection in styles)
+        Route::apiResource('fabric-types', \App\Http\Controllers\Api\FabricTypeController::class);
+
+        // Fabric Qualities (NEW - for dynamic fabric quality selection in styles)
+        Route::apiResource('fabric-qualities', \App\Http\Controllers\Api\FabricQualityController::class);
+
+        // Currencies (NEW - for dynamic currency selection in POs)
+        Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
+
+        // Trim Types (NEW - for dynamic trim type selection)
+        Route::apiResource('trim-types', \App\Http\Controllers\Api\TrimTypeController::class);
+        Route::post('trim-types/reorder', [\App\Http\Controllers\Api\TrimTypeController::class, 'reorder']);
     });
 
     // Purchase Order Management

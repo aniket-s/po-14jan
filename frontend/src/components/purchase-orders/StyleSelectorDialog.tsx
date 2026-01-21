@@ -37,8 +37,10 @@ import { toast } from 'sonner';
 interface SelectedStyle extends Style {
   quantity_in_po: number;
   unit_price_in_po: number | null;
-  shipping_term: 'FOB' | 'DDP'; // Changed from price_term
+  // shipping_term removed - now set at PO level, not per-style
   size_breakdown: Record<string, number>;
+  packing_method: 'solid' | 'prepack'; // NEW: Solid pack or Prepack
+  ratio: Record<string, number>; // NEW: For prepack ratio
 }
 
 interface StyleSelectorDialogProps {
@@ -118,8 +120,10 @@ export function StyleSelectorDialog({
         ...style,
         quantity_in_po: style.total_quantity || 1, // Default to style's base quantity or 1
         unit_price_in_po: null, // Use style's base price by default
-        shipping_term: 'FOB', // Default to FOB - changed from price_term
+        // shipping_term removed - set at PO level
         size_breakdown: style.size_breakdown || {}, // Use existing or empty
+        packing_method: 'solid', // Default to solid pack
+        ratio: {}, // Empty ratio for prepack
       });
     } else {
       newSelected.delete(style.id);
@@ -149,12 +153,38 @@ export function StyleSelectorDialog({
     }
   };
 
-  // Update shipping term for selected style
-  const updateShippingTerm = (styleId: number, shippingTerm: 'FOB' | 'DDP') => { // Changed from updatePriceTerm
+  // Update packing method for selected style
+  const updatePackingMethod = (styleId: number, packingMethod: 'solid' | 'prepack') => {
     const newSelected = new Map(selectedStyles);
     const style = newSelected.get(styleId);
     if (style) {
-      style.shipping_term = shippingTerm; // Changed from price_term
+      style.packing_method = packingMethod;
+      // Clear ratio if switching to solid pack
+      if (packingMethod === 'solid') {
+        style.ratio = {};
+      }
+      newSelected.set(styleId, style);
+      setSelectedStyles(newSelected);
+    }
+  };
+
+  // Update ratio for prepack
+  const updateRatio = (styleId: number, ratio: Record<string, number>) => {
+    const newSelected = new Map(selectedStyles);
+    const style = newSelected.get(styleId);
+    if (style) {
+      style.ratio = ratio;
+      // Auto-calculate size breakdown from ratio and quantity
+      if (style.packing_method === 'prepack' && Object.keys(ratio).length > 0) {
+        const totalRatio = Object.values(ratio).reduce((sum, r) => sum + r, 0);
+        if (totalRatio > 0) {
+          const sizeBreakdown: Record<string, number> = {};
+          Object.entries(ratio).forEach(([size, r]) => {
+            sizeBreakdown[size] = Math.round((style.quantity_in_po * r) / totalRatio);
+          });
+          style.size_breakdown = sizeBreakdown;
+        }
+      }
       newSelected.set(styleId, style);
       setSelectedStyles(newSelected);
     }
@@ -398,79 +428,137 @@ export function StyleSelectorDialog({
                           />
                         </div>
 
+                        {/* Packing Method - Solid or Prepack */}
                         <div>
-                          <Label className="text-xs">Shipping Term *</Label>
-                          <Select
-                            value={style.shipping_term}
-                            onValueChange={(value) =>
-                              updateShippingTerm(style.id, value as 'FOB' | 'DDP')
-                            }
-                          >
-                            <SelectTrigger className="h-8 text-sm">
-                              <SelectValue placeholder="Select shipping term" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="FOB">FOB (Free On Board)</SelectItem>
-                              <SelectItem value="DDP">DDP (Delivered Duty Paid)</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <Label className="text-xs">Packing Method</Label>
+                          <div className="flex gap-2 mt-1">
+                            <Button
+                              type="button"
+                              variant={style.packing_method === 'solid' ? 'default' : 'outline'}
+                              size="sm"
+                              className="flex-1 h-8 text-xs"
+                              onClick={() => updatePackingMethod(style.id, 'solid')}
+                            >
+                              Solid Pack
+                            </Button>
+                            <Button
+                              type="button"
+                              variant={style.packing_method === 'prepack' ? 'default' : 'outline'}
+                              size="sm"
+                              className="flex-1 h-8 text-xs"
+                              onClick={() => updatePackingMethod(style.id, 'prepack')}
+                            >
+                              Prepack
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {style.packing_method === 'solid'
+                              ? 'All sizes packed together in one box'
+                              : 'Sizes distributed by ratio across boxes'}
+                          </p>
                         </div>
 
+                        {/* Size Breakdown Section */}
                         <div>
-                          <Label className="text-xs">Size Breakdown</Label>
+                          <Label className="text-xs">
+                            {style.packing_method === 'prepack' ? 'Size Ratio' : 'Size Breakdown'}
+                          </Label>
 
-                          {/* Prepack Auto-Fill */}
-                          <div className="mb-3 mt-2">
-                            <Select onValueChange={(value) => autoFillFromPrepack(style.id, parseInt(value))}>
-                              <SelectTrigger className="h-8 text-sm">
-                                <SelectValue placeholder="Use Prepack..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {prepacks.map((prepack) => (
-                                  <SelectItem key={prepack.id} value={prepack.id.toString()}>
-                                    {prepack.code} - {prepack.name} ({prepack.size_range})
-                                  </SelectItem>
+                          {/* Prepack selector - only show for prepack method */}
+                          {style.packing_method === 'prepack' && (
+                            <div className="mb-3 mt-2">
+                              <Select onValueChange={(value) => autoFillFromPrepack(style.id, parseInt(value))}>
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="Use Prepack Code..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {prepacks.map((prepack) => (
+                                    <SelectItem key={prepack.id} value={prepack.id.toString()}>
+                                      {prepack.code} - {prepack.name} ({prepack.size_range})
+                                    </SelectItem>
+                                  ))}
+                                  {prepacks.length === 0 && (
+                                    <SelectItem value="none" disabled>No prepacks available</SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+
+                          {style.packing_method === 'prepack' ? (
+                            /* Prepack: Show ratio inputs */
+                            <div>
+                              <div className="grid grid-cols-4 gap-2 mt-2">
+                                {['S', 'M', 'L', 'XL'].map((size) => (
+                                  <div key={size} className="space-y-1">
+                                    <Label htmlFor={`ratio-${style.id}-${size}`} className="text-xs">
+                                      {size}
+                                    </Label>
+                                    <Input
+                                      id={`ratio-${style.id}-${size}`}
+                                      type="number"
+                                      min="0"
+                                      value={style.ratio?.[size] || ''}
+                                      onChange={(e) => {
+                                        const ratio = parseInt(e.target.value) || 0;
+                                        const newRatio = { ...style.ratio };
+                                        if (ratio === 0) {
+                                          delete newRatio[size];
+                                        } else {
+                                          newRatio[size] = ratio;
+                                        }
+                                        updateRatio(style.id, newRatio);
+                                      }}
+                                      placeholder="0"
+                                      className="h-8 text-sm text-center"
+                                    />
+                                  </div>
                                 ))}
-                                {prepacks.length === 0 && (
-                                  <SelectItem value="none" disabled>No prepacks available</SelectItem>
-                                )}
-                              </SelectContent>
-                            </Select>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Select a prepack to auto-fill size breakdown
-                            </p>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2 mt-2">
-                            {['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'].map((size) => (
-                              <div key={size} className="space-y-1">
-                                <Label htmlFor={`size-${style.id}-${size}`} className="text-xs">
-                                  {size}
-                                </Label>
-                                <Input
-                                  id={`size-${style.id}-${size}`}
-                                  type="number"
-                                  min="0"
-                                  value={style.size_breakdown?.[size] || ''}
-                                  onChange={(e) => {
-                                    const qty = parseInt(e.target.value) || 0;
-                                    const newBreakdown = { ...style.size_breakdown };
-                                    if (qty === 0) {
-                                      delete newBreakdown[size];
-                                    } else {
-                                      newBreakdown[size] = qty;
-                                    }
-                                    updateSizeBreakdown(style.id, newBreakdown);
-                                  }}
-                                  placeholder="0"
-                                  className="h-8 text-sm"
-                                />
                               </div>
-                            ))}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-2">
-                            Total sizes: {Object.values(style.size_breakdown || {}).reduce((sum, qty) => sum + (Number(qty) || 0), 0)}
-                          </div>
+                              <div className="text-xs text-muted-foreground mt-2 p-2 bg-muted/50 rounded">
+                                <strong>Calculated breakdown:</strong>{' '}
+                                {Object.entries(style.size_breakdown || {}).map(([size, qty]) => (
+                                  <span key={size} className="mr-2">{size}: {qty}</span>
+                                ))}
+                                <br />
+                                <span>Total: {Object.values(style.size_breakdown || {}).reduce((sum, qty) => sum + (Number(qty) || 0), 0)}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Solid: Show direct quantity inputs */
+                            <div>
+                              <div className="grid grid-cols-4 gap-2 mt-2">
+                                {['S', 'M', 'L', 'XL'].map((size) => (
+                                  <div key={size} className="space-y-1">
+                                    <Label htmlFor={`size-${style.id}-${size}`} className="text-xs">
+                                      {size}
+                                    </Label>
+                                    <Input
+                                      id={`size-${style.id}-${size}`}
+                                      type="number"
+                                      min="0"
+                                      value={style.size_breakdown?.[size] || ''}
+                                      onChange={(e) => {
+                                        const qty = parseInt(e.target.value) || 0;
+                                        const newBreakdown = { ...style.size_breakdown };
+                                        if (qty === 0) {
+                                          delete newBreakdown[size];
+                                        } else {
+                                          newBreakdown[size] = qty;
+                                        }
+                                        updateSizeBreakdown(style.id, newBreakdown);
+                                      }}
+                                      placeholder="0"
+                                      className="h-8 text-sm text-center"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-2">
+                                Total: {Object.values(style.size_breakdown || {}).reduce((sum, qty) => sum + (Number(qty) || 0), 0)} pcs
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="text-xs text-muted-foreground">
