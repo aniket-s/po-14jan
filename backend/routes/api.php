@@ -787,7 +787,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // Reporting & Analytics System
-    Route::prefix('reports')->middleware('permission:reports.view')->group(function () {
+    Route::prefix('reports')->middleware('permission:reports.view|po.view_all|po.view_own|po.view')->group(function () {
         // Dashboard overview
         Route::get('/dashboard', [ReportController::class, 'dashboard']);
 
