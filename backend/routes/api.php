@@ -572,6 +572,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/factory-assignments', [FactoryAssignmentController::class, 'indexAll']);
     Route::get('/factories', [\App\Http\Controllers\Api\FactoryController::class, 'index']);
 
+    // Aggregate Shipping Approvals (cross-PO, with filters)
+    Route::get('/shipping-approvals', [\App\Http\Controllers\Api\ShippingApprovalController::class, 'indexAll']);
+
     // Ship Options (Monthly Sailing Schedules)
     Route::prefix('ship-options')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\ShipOptionController::class, 'index']);

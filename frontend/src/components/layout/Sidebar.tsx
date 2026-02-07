@@ -34,6 +34,7 @@ import {
   FolderOpen,
   Building2,
   Ship,
+  ShieldCheck,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -184,6 +185,13 @@ const navItems: NavItem[] = [
     href: '/shipments',
     icon: Truck,
     permissions: ['shipment.view', 'shipment.view_all', 'shipment.track'],
+    requireAny: true,
+  },
+  {
+    title: 'Shipping Approvals',
+    href: '/shipping-approvals',
+    icon: ShieldCheck,
+    permissions: ['production.view', 'production.view_all', 'shipment.view', 'shipment.view_all', 'po.view'],
     requireAny: true,
   },
   {
