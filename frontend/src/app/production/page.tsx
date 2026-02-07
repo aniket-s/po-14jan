@@ -29,15 +29,6 @@ import { useAuth } from '@/contexts/AuthContext';
 // Types
 // ---------------------------------------------------------------------------
 
-interface PurchaseOrder {
-  id: number;
-  po_number: string;
-  ex_factory_date: string | null;
-  buyer_name?: string;
-  agency_id?: number | null;
-  agency?: { id: number; name: string } | null;
-}
-
 interface FactoryUser {
   id: number;
   name: string;
@@ -45,24 +36,28 @@ interface FactoryUser {
 }
 
 interface StyleShippingInfo {
-  style_id: number;
-  style_number: string;
-  quantity: number;
-  quantity_in_po?: number;
+  pivot_id: number;
+  purchase_order_id: number;
+  po_number: string | null;
   po_ex_factory_date: string | null;
-  ex_factory_date?: string | null;
-  production_status: string | null;
+  agency_name: string | null;
+  agency_id: number | null;
+  importer_name: string | null;
+  factory_name: string | null;
+  assigned_factory_id: number | null;
+  style_id: number;
+  style_number: string | null;
+  quantity_in_po: number | null;
+  ex_factory_date: string | null;
   estimated_ex_factory_date: string | null;
-  suggested_ship_option: SuggestedShipOption | null;
+  production_status: string | null;
   shipping_approval_status: string | null;
-  agency_approved: boolean;
-  importer_approved: boolean;
-  rejection_reason: string | null;
-  shipping_approval_rejection_reason?: string | null;
-  factory_name?: string | null;
-  assigned_factory_id?: number | null;
-  shipping_approval_agency_at?: string | null;
-  shipping_approval_importer_at?: string | null;
+  shipping_approval_requested_at: string | null;
+  shipping_approval_agency_at: string | null;
+  shipping_approval_importer_at: string | null;
+  shipping_approval_notes: string | null;
+  shipping_approval_rejection_reason: string | null;
+  suggested_ship_option: SuggestedShipOption | null;
 }
 
 interface SuggestedShipOption {
@@ -149,14 +144,12 @@ export default function ProductionPage() {
   const { hasRole } = useAuth();
 
   // --- Data state ---
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [factories, setFactories] = useState<FactoryUser[]>([]);
-  const [selectedPoId, setSelectedPoId] = useState<string>('');
   const [styles, setStyles] = useState<StyleShippingInfo[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingPOs, setLoadingPOs] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   // --- Filters ---
+  const [filterPoNumber, setFilterPoNumber] = useState<string>('');
   const [filterFactory, setFilterFactory] = useState<string>('');
   const [filterStyleNumber, setFilterStyleNumber] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -188,19 +181,6 @@ export default function ProductionPage() {
   // Data fetching
   // ---------------------------------------------------------------------------
 
-  const fetchPurchaseOrders = useCallback(async () => {
-    setLoadingPOs(true);
-    try {
-      const response = await api.get('/purchase-orders');
-      const poList = response.data.purchase_orders || response.data.data || response.data || [];
-      setPurchaseOrders(Array.isArray(poList) ? poList : []);
-    } catch (error) {
-      console.error('Failed to fetch purchase orders:', error);
-    } finally {
-      setLoadingPOs(false);
-    }
-  }, []);
-
   const fetchFactories = useCallback(async () => {
     try {
       const response = await api.get('/factories');
@@ -211,18 +191,22 @@ export default function ProductionPage() {
     }
   }, []);
 
-  const fetchShippingApprovals = useCallback(async (poId: string) => {
-    if (!poId) { setStyles([]); return; }
+  const fetchShippingApprovals = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, string> = {};
-      if (filterFactory) params.factory_id = filterFactory;
+      const params: Record<string, string> = { per_page: '100' };
+      if (filterPoNumber) params.po_number = filterPoNumber;
+      if (filterFactory && filterFactory !== 'all') params.factory_id = filterFactory;
       if (filterStyleNumber) params.style_number = filterStyleNumber;
-      if (filterStatus) params.production_status = filterStatus;
-      if (filterShippingStatus) params.shipping_approval_status = filterShippingStatus;
+      if (filterStatus && filterStatus !== 'all') params.production_status = filterStatus;
+      if (filterShippingStatus && filterShippingStatus !== 'all') params.shipping_approval_status = filterShippingStatus;
+      if (filterExFactoryFrom) params.ex_factory_from = filterExFactoryFrom;
+      if (filterExFactoryTo) params.ex_factory_to = filterExFactoryTo;
+      if (filterEstExFactoryFrom) params.est_ex_factory_from = filterEstExFactoryFrom;
+      if (filterEstExFactoryTo) params.est_ex_factory_to = filterEstExFactoryTo;
 
-      const response = await api.get(`/purchase-orders/${poId}/shipping-approvals`, { params });
-      const data = response.data.styles || response.data.data || response.data || [];
+      const response = await api.get('/shipping-approvals', { params });
+      const data = response.data.data || response.data || [];
       setStyles(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to fetch shipping approvals:', error);
@@ -230,7 +214,7 @@ export default function ProductionPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterFactory, filterStyleNumber, filterStatus, filterShippingStatus]);
+  }, [filterPoNumber, filterFactory, filterStyleNumber, filterStatus, filterShippingStatus, filterExFactoryFrom, filterExFactoryTo, filterEstExFactoryFrom, filterEstExFactoryTo]);
 
   const fetchSuggestedShipOptions = useCallback(async (date: string) => {
     if (!date) { setSuggestedShipOptions([]); return; }
@@ -249,14 +233,12 @@ export default function ProductionPage() {
   }, []);
 
   useEffect(() => {
-    fetchPurchaseOrders();
     fetchFactories();
-  }, [fetchPurchaseOrders, fetchFactories]);
+  }, [fetchFactories]);
 
   useEffect(() => {
-    if (selectedPoId) fetchShippingApprovals(selectedPoId);
-    else setStyles([]);
-  }, [selectedPoId, fetchShippingApprovals]);
+    fetchShippingApprovals();
+  }, [fetchShippingApprovals]);
 
   useEffect(() => {
     if (newEstimatedExFactory && newProductionStatus === 'Estimated Ex-Factory') {
@@ -267,32 +249,11 @@ export default function ProductionPage() {
   }, [newEstimatedExFactory, newProductionStatus, fetchSuggestedShipOptions]);
 
   // ---------------------------------------------------------------------------
-  // Client-side date filters (applied on top of server-side filters)
-  // ---------------------------------------------------------------------------
-
-  const filteredStyles = styles.filter((style) => {
-    if (filterExFactoryFrom) {
-      const d = style.po_ex_factory_date || style.ex_factory_date;
-      if (!d || d < filterExFactoryFrom) return false;
-    }
-    if (filterExFactoryTo) {
-      const d = style.po_ex_factory_date || style.ex_factory_date;
-      if (!d || d > filterExFactoryTo) return false;
-    }
-    if (filterEstExFactoryFrom) {
-      if (!style.estimated_ex_factory_date || style.estimated_ex_factory_date < filterEstExFactoryFrom) return false;
-    }
-    if (filterEstExFactoryTo) {
-      if (!style.estimated_ex_factory_date || style.estimated_ex_factory_date > filterEstExFactoryTo) return false;
-    }
-    return true;
-  });
-
-  // ---------------------------------------------------------------------------
   // Filter helpers
   // ---------------------------------------------------------------------------
 
   const resetFilters = () => {
+    setFilterPoNumber('');
     setFilterFactory('');
     setFilterStyleNumber('');
     setFilterStatus('');
@@ -302,14 +263,6 @@ export default function ProductionPage() {
     setFilterEstExFactoryFrom('');
     setFilterEstExFactoryTo('');
   };
-
-  // Derive unique agencies from loaded POs
-  const agencies = purchaseOrders.reduce<{ id: number; name: string }[]>((acc, po) => {
-    if (po.agency && !acc.find((a) => a.id === po.agency!.id)) {
-      acc.push(po.agency);
-    }
-    return acc;
-  }, []);
 
   // ---------------------------------------------------------------------------
   // Actions
@@ -324,11 +277,11 @@ export default function ProductionPage() {
   };
 
   const handleUpdateProductionStatus = async () => {
-    if (!statusDialogStyle || !selectedPoId || !newProductionStatus) return;
+    if (!statusDialogStyle || !newProductionStatus) return;
     setIsUpdatingStatus(true);
     try {
       await api.post(
-        `/purchase-orders/${selectedPoId}/styles/${statusDialogStyle.style_id}/production-status`,
+        `/purchase-orders/${statusDialogStyle.purchase_order_id}/styles/${statusDialogStyle.style_id}/production-status`,
         {
           production_status: newProductionStatus,
           estimated_ex_factory_date: newProductionStatus === 'Estimated Ex-Factory' ? newEstimatedExFactory : null,
@@ -336,7 +289,7 @@ export default function ProductionPage() {
       );
       setIsStatusDialogOpen(false);
       setStatusDialogStyle(null);
-      fetchShippingApprovals(selectedPoId);
+      fetchShippingApprovals();
     } catch (error) {
       console.error('Failed to update production status:', error);
     } finally {
@@ -345,11 +298,10 @@ export default function ProductionPage() {
   };
 
   const handleRequestShippingApproval = async (style: StyleShippingInfo) => {
-    if (!selectedPoId) return;
     setActionLoadingStyleId(style.style_id);
     try {
-      await api.post(`/purchase-orders/${selectedPoId}/styles/${style.style_id}/request-shipping-approval`);
-      fetchShippingApprovals(selectedPoId);
+      await api.post(`/purchase-orders/${style.purchase_order_id}/styles/${style.style_id}/request-shipping-approval`);
+      fetchShippingApprovals();
     } catch (error) {
       console.error('Failed to request shipping approval:', error);
     } finally {
@@ -358,11 +310,10 @@ export default function ProductionPage() {
   };
 
   const handleAgencyApprove = async (style: StyleShippingInfo) => {
-    if (!selectedPoId) return;
     setActionLoadingStyleId(style.style_id);
     try {
-      await api.post(`/purchase-orders/${selectedPoId}/styles/${style.style_id}/agency-approve-shipping`);
-      fetchShippingApprovals(selectedPoId);
+      await api.post(`/purchase-orders/${style.purchase_order_id}/styles/${style.style_id}/agency-approve-shipping`);
+      fetchShippingApprovals();
     } catch (error) {
       console.error('Failed to approve shipping (agency):', error);
     } finally {
@@ -371,11 +322,10 @@ export default function ProductionPage() {
   };
 
   const handleImporterApprove = async (style: StyleShippingInfo) => {
-    if (!selectedPoId) return;
     setActionLoadingStyleId(style.style_id);
     try {
-      await api.post(`/purchase-orders/${selectedPoId}/styles/${style.style_id}/importer-approve-shipping`);
-      fetchShippingApprovals(selectedPoId);
+      await api.post(`/purchase-orders/${style.purchase_order_id}/styles/${style.style_id}/importer-approve-shipping`);
+      fetchShippingApprovals();
     } catch (error) {
       console.error('Failed to approve shipping (importer):', error);
     } finally {
@@ -390,17 +340,17 @@ export default function ProductionPage() {
   };
 
   const handleRejectShipping = async () => {
-    if (!rejectDialogStyle || !selectedPoId || !rejectReason.trim()) return;
+    if (!rejectDialogStyle || !rejectReason.trim()) return;
     setIsRejecting(true);
     try {
       await api.post(
-        `/purchase-orders/${selectedPoId}/styles/${rejectDialogStyle.style_id}/reject-shipping`,
+        `/purchase-orders/${rejectDialogStyle.purchase_order_id}/styles/${rejectDialogStyle.style_id}/reject-shipping`,
         { reason: rejectReason }
       );
       setIsRejectDialogOpen(false);
       setRejectDialogStyle(null);
       setRejectReason('');
-      fetchShippingApprovals(selectedPoId);
+      fetchShippingApprovals();
     } catch (error) {
       console.error('Failed to reject shipping:', error);
     } finally {
@@ -412,9 +362,9 @@ export default function ProductionPage() {
   // Computed values
   // ---------------------------------------------------------------------------
 
-  const submittedCount = filteredStyles.filter((s) => s.production_status === 'Submitted').length;
-  const inProductionCount = filteredStyles.filter((s) => s.production_status === 'In Production').length;
-  const exFactoryCount = filteredStyles.filter((s) => s.production_status === 'Estimated Ex-Factory').length;
+  const submittedCount = styles.filter((s) => s.production_status === 'Submitted').length;
+  const inProductionCount = styles.filter((s) => s.production_status === 'In Production').length;
+  const exFactoryCount = styles.filter((s) => s.production_status === 'Estimated Ex-Factory').length;
 
   // ---------------------------------------------------------------------------
   // Permission helpers
@@ -463,298 +413,274 @@ export default function ProductionPage() {
           </p>
         </div>
 
-        {/* PO Selector */}
+        {/* Filters */}
         <Card>
-          <CardHeader>
-            <CardTitle>Select Purchase Order</CardTitle>
-            <CardDescription>Choose a PO to view production and shipping status</CardDescription>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Search className="h-4 w-4" /> Filters
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={resetFilters}>
+                <RotateCcw className="mr-1 h-3.5 w-3.5" /> Reset
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            {loadingPOs ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading purchase orders...
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {/* PO Number */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">PO Number</Label>
+                <Input
+                  placeholder="Search PO..."
+                  value={filterPoNumber}
+                  onChange={(e) => setFilterPoNumber(e.target.value)}
+                />
               </div>
-            ) : (
-              <Select value={selectedPoId} onValueChange={setSelectedPoId}>
-                <SelectTrigger className="w-full md:w-[400px]">
-                  <SelectValue placeholder="Select a purchase order" />
-                </SelectTrigger>
-                <SelectContent>
-                  {purchaseOrders.map((po) => (
-                    <SelectItem key={po.id} value={po.id.toString()}>
-                      {po.po_number}
-                      {po.buyer_name ? ` - ${po.buyer_name}` : ''}
-                      {po.ex_factory_date ? ` (Ex-Factory: ${formatDate(po.ex_factory_date)})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+
+              {/* Factory */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Factory</Label>
+                <Select value={filterFactory} onValueChange={setFilterFactory}>
+                  <SelectTrigger><SelectValue placeholder="All Factories" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Factories</SelectItem>
+                    {factories.map((f) => (
+                      <SelectItem key={f.id} value={f.id.toString()}>
+                        {f.company || f.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Style Number */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Style Number</Label>
+                <Input
+                  placeholder="Search style..."
+                  value={filterStyleNumber}
+                  onChange={(e) => setFilterStyleNumber(e.target.value)}
+                />
+              </div>
+
+              {/* Production Status */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Production Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger><SelectValue placeholder="All Statuses" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    {PRODUCTION_STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Shipping Approval Status */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Shipping Status</Label>
+                <Select value={filterShippingStatus} onValueChange={setFilterShippingStatus}>
+                  <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="requested">Requested</SelectItem>
+                    <SelectItem value="agency_approved">Agency Approved</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Ex-Factory Date Range */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">PO Ex-Factory From</Label>
+                <Input type="date" value={filterExFactoryFrom} onChange={(e) => setFilterExFactoryFrom(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">PO Ex-Factory To</Label>
+                <Input type="date" value={filterExFactoryTo} onChange={(e) => setFilterExFactoryTo(e.target.value)} />
+              </div>
+
+              {/* Est. Ex-Factory Date Range */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Est. Ex-Factory From</Label>
+                <Input type="date" value={filterEstExFactoryFrom} onChange={(e) => setFilterEstExFactoryFrom(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Est. Ex-Factory To</Label>
+                <Input type="date" value={filterEstExFactoryTo} onChange={(e) => setFilterEstExFactoryTo(e.target.value)} />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
-        {/* Filters */}
-        {selectedPoId && (
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Search className="h-4 w-4" /> Filters
-                </CardTitle>
-                <Button variant="ghost" size="sm" onClick={resetFilters}>
-                  <RotateCcw className="mr-1 h-3.5 w-3.5" /> Reset
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {/* Factory */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Factory</Label>
-                  <Select value={filterFactory} onValueChange={setFilterFactory}>
-                    <SelectTrigger><SelectValue placeholder="All Factories" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Factories</SelectItem>
-                      {factories.map((f) => (
-                        <SelectItem key={f.id} value={f.id.toString()}>
-                          {f.company || f.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Style Number */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Style Number</Label>
-                  <Input
-                    placeholder="Search style..."
-                    value={filterStyleNumber}
-                    onChange={(e) => setFilterStyleNumber(e.target.value)}
-                  />
-                </div>
-
-                {/* Production Status */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Production Status</Label>
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger><SelectValue placeholder="All Statuses" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      {PRODUCTION_STATUSES.map((s) => (
-                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Shipping Approval Status */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Shipping Status</Label>
-                  <Select value={filterShippingStatus} onValueChange={setFilterShippingStatus}>
-                    <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="requested">Requested</SelectItem>
-                      <SelectItem value="agency_approved">Agency Approved</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="rejected">Rejected</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Ex-Factory Date Range */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">PO Ex-Factory From</Label>
-                  <Input type="date" value={filterExFactoryFrom} onChange={(e) => setFilterExFactoryFrom(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">PO Ex-Factory To</Label>
-                  <Input type="date" value={filterExFactoryTo} onChange={(e) => setFilterExFactoryTo(e.target.value)} />
-                </div>
-
-                {/* Est. Ex-Factory Date Range */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Est. Ex-Factory From</Label>
-                  <Input type="date" value={filterEstExFactoryFrom} onChange={(e) => setFilterEstExFactoryFrom(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Est. Ex-Factory To</Label>
-                  <Input type="date" value={filterEstExFactoryTo} onChange={(e) => setFilterEstExFactoryTo(e.target.value)} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         {/* Status Cards */}
-        {selectedPoId && (
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Submitted</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent><div className="text-2xl font-bold">{submittedCount}</div></CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">In Production</CardTitle>
-                <FactoryIcon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent><div className="text-2xl font-bold">{inProductionCount}</div></CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Estimated Ex-Factory</CardTitle>
-                <CalendarClock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent><div className="text-2xl font-bold">{exFactoryCount}</div></CardContent>
-            </Card>
-          </div>
-        )}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Submitted</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent><div className="text-2xl font-bold">{submittedCount}</div></CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">In Production</CardTitle>
+              <FactoryIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent><div className="text-2xl font-bold">{inProductionCount}</div></CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Estimated Ex-Factory</CardTitle>
+              <CalendarClock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent><div className="text-2xl font-bold">{exFactoryCount}</div></CardContent>
+          </Card>
+        </div>
 
         {/* Styles Table */}
-        {selectedPoId && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Styles &amp; Shipping Status</CardTitle>
-              <CardDescription>
-                {filteredStyles.length} style{filteredStyles.length !== 1 ? 's' : ''} found
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              {loading ? (
-                <div className="flex h-96 items-center justify-center">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
+        <Card>
+          <CardHeader>
+            <CardTitle>Styles &amp; Shipping Status</CardTitle>
+            <CardDescription>
+              {styles.length} style{styles.length !== 1 ? 's' : ''} found
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="flex h-96 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>PO Number</TableHead>
+                    <TableHead>Style</TableHead>
+                    <TableHead>Factory</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead>PO Ex-Factory</TableHead>
+                    <TableHead>Est. Ex-Factory</TableHead>
+                    <TableHead>Production Status</TableHead>
+                    <TableHead>Ship Option</TableHead>
+                    <TableHead>Shipping Approval</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {styles.length === 0 ? (
                     <TableRow>
-                      <TableHead>Style</TableHead>
-                      <TableHead>Factory</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead>PO Ex-Factory</TableHead>
-                      <TableHead>Est. Ex-Factory</TableHead>
-                      <TableHead>Production Status</TableHead>
-                      <TableHead>Ship Option</TableHead>
-                      <TableHead>Shipping Approval</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableCell colSpan={10} className="text-center text-muted-foreground">
+                        No styles found
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredStyles.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={9} className="text-center text-muted-foreground">
-                          No styles found
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredStyles.map((style) => {
-                        const withinWindow = isWithinShippingWindow(style.po_ex_factory_date || style.ex_factory_date);
-                        const isActionLoading = actionLoadingStyleId === style.style_id;
+                  ) : (
+                    styles.map((style) => {
+                      const withinWindow = isWithinShippingWindow(style.po_ex_factory_date || style.ex_factory_date);
+                      const isActionLoading = actionLoadingStyleId === style.style_id;
 
-                        return (
-                          <TableRow key={style.style_id}>
-                            <TableCell className="font-medium">{style.style_number}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">{style.factory_name || '-'}</TableCell>
-                            <TableCell className="text-right">
-                              {(style.quantity_in_po || style.quantity)?.toLocaleString() ?? '-'}
-                            </TableCell>
-                            <TableCell>{formatDate(style.po_ex_factory_date || style.ex_factory_date)}</TableCell>
-                            <TableCell>
-                              {style.estimated_ex_factory_date ? (
-                                <span className="flex items-center gap-1">
-                                  <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
-                                  {formatDate(style.estimated_ex_factory_date)}
-                                </span>
-                              ) : '-'}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={getProductionStatusBadgeVariant(style.production_status)}>
-                                {style.production_status || 'Not Set'}
+                      return (
+                        <TableRow key={style.pivot_id}>
+                          <TableCell className="font-medium text-sm">{style.po_number || '-'}</TableCell>
+                          <TableCell className="font-medium">{style.style_number || '-'}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{style.factory_name || '-'}</TableCell>
+                          <TableCell className="text-right">
+                            {style.quantity_in_po?.toLocaleString() ?? '-'}
+                          </TableCell>
+                          <TableCell>{formatDate(style.po_ex_factory_date || style.ex_factory_date)}</TableCell>
+                          <TableCell>
+                            {style.estimated_ex_factory_date ? (
+                              <span className="flex items-center gap-1">
+                                <CalendarClock className="h-3.5 w-3.5 text-muted-foreground" />
+                                {formatDate(style.estimated_ex_factory_date)}
+                              </span>
+                            ) : '-'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={getProductionStatusBadgeVariant(style.production_status)}>
+                              {style.production_status || 'Not Set'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {style.suggested_ship_option ? (
+                              <div className="flex items-center gap-1 text-sm">
+                                <Ship className="h-3.5 w-3.5 text-muted-foreground" />
+                                {style.suggested_ship_option.name}
+                                {style.suggested_ship_option.etd && (
+                                  <span className="text-xs text-muted-foreground ml-1">
+                                    ETD: {formatDate(style.suggested_ship_option.etd)}
+                                  </span>
+                                )}
+                              </div>
+                            ) : '-'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              <Badge variant={getShippingApprovalBadgeVariant(style.shipping_approval_status)}>
+                                {getShippingApprovalLabel(style.shipping_approval_status)}
                               </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {style.suggested_ship_option ? (
-                                <div className="flex items-center gap-1 text-sm">
-                                  <Ship className="h-3.5 w-3.5 text-muted-foreground" />
-                                  {style.suggested_ship_option.name}
-                                  {style.suggested_ship_option.etd && (
-                                    <span className="text-xs text-muted-foreground ml-1">
-                                      ETD: {formatDate(style.suggested_ship_option.etd)}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : '-'}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-col gap-1">
-                                <Badge variant={getShippingApprovalBadgeVariant(style.shipping_approval_status)}>
-                                  {getShippingApprovalLabel(style.shipping_approval_status)}
-                                </Badge>
-                                {style.shipping_approval_status === 'rejected' && (style.rejection_reason || style.shipping_approval_rejection_reason) && (
-                                  <p className="text-xs text-destructive">
-                                    {style.rejection_reason || style.shipping_approval_rejection_reason}
-                                  </p>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex flex-wrap justify-end gap-1">
-                                {canFactoryUpdateStatus && (
-                                  <Button variant="outline" size="sm" onClick={() => openStatusDialog(style)}>
-                                    <Package className="mr-1 h-4 w-4" /> Update
-                                  </Button>
-                                )}
-                                {canFactoryRequestShipping(style) && (
-                                  <Button
-                                    variant="outline" size="sm"
-                                    onClick={() => handleRequestShippingApproval(style)}
-                                    disabled={isActionLoading || !withinWindow}
-                                    title={!withinWindow ? `Only within ${SHIPPING_APPROVAL_WINDOW_DAYS} days of PO ex-factory` : undefined}
-                                  >
-                                    {isActionLoading ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />}
-                                    Request
-                                  </Button>
-                                )}
-                                {canAgencyApproveShipping(style) && (
-                                  <Button
-                                    variant="ghost" size="sm" className="text-green-600 hover:text-green-700"
-                                    onClick={() => handleAgencyApprove(style)} disabled={isActionLoading}
-                                  >
-                                    <CheckCircle className="mr-1 h-4 w-4" /> Approve
-                                  </Button>
-                                )}
-                                {canImporterApproveShipping(style) && (
-                                  <Button
-                                    variant="ghost" size="sm" className="text-green-600 hover:text-green-700"
-                                    onClick={() => handleImporterApprove(style)} disabled={isActionLoading}
-                                  >
-                                    <ShieldCheck className="mr-1 h-4 w-4" /> Final Approve
-                                  </Button>
-                                )}
-                                {canRejectShipping(style) && (
-                                  <Button
-                                    variant="ghost" size="sm" className="text-red-600 hover:text-red-700"
-                                    onClick={() => openRejectDialog(style)} disabled={isActionLoading}
-                                  >
-                                    <XCircle className="mr-1 h-4 w-4" /> Reject
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        )}
+                              {style.shipping_approval_status === 'rejected' && style.shipping_approval_rejection_reason && (
+                                <p className="text-xs text-destructive">
+                                  {style.shipping_approval_rejection_reason}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex flex-wrap justify-end gap-1">
+                              {canFactoryUpdateStatus && (
+                                <Button variant="outline" size="sm" onClick={() => openStatusDialog(style)}>
+                                  <Package className="mr-1 h-4 w-4" /> Update
+                                </Button>
+                              )}
+                              {canFactoryRequestShipping(style) && (
+                                <Button
+                                  variant="outline" size="sm"
+                                  onClick={() => handleRequestShippingApproval(style)}
+                                  disabled={isActionLoading || !withinWindow}
+                                  title={!withinWindow ? `Only within ${SHIPPING_APPROVAL_WINDOW_DAYS} days of PO ex-factory` : undefined}
+                                >
+                                  {isActionLoading ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Send className="mr-1 h-4 w-4" />}
+                                  Request
+                                </Button>
+                              )}
+                              {canAgencyApproveShipping(style) && (
+                                <Button
+                                  variant="ghost" size="sm" className="text-green-600 hover:text-green-700"
+                                  onClick={() => handleAgencyApprove(style)} disabled={isActionLoading}
+                                >
+                                  <CheckCircle className="mr-1 h-4 w-4" /> Approve
+                                </Button>
+                              )}
+                              {canImporterApproveShipping(style) && (
+                                <Button
+                                  variant="ghost" size="sm" className="text-green-600 hover:text-green-700"
+                                  onClick={() => handleImporterApprove(style)} disabled={isActionLoading}
+                                >
+                                  <ShieldCheck className="mr-1 h-4 w-4" /> Final Approve
+                                </Button>
+                              )}
+                              {canRejectShipping(style) && (
+                                <Button
+                                  variant="ghost" size="sm" className="text-red-600 hover:text-red-700"
+                                  onClick={() => openRejectDialog(style)} disabled={isActionLoading}
+                                >
+                                  <XCircle className="mr-1 h-4 w-4" /> Reject
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Dialog: Update Production Status */}
         <Dialog open={isStatusDialogOpen} onOpenChange={setIsStatusDialogOpen}>

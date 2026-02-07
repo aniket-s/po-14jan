@@ -401,7 +401,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/sample-schedule', [PurchaseOrderController::class, 'getSampleSchedule']);
 
         // View POs
-        Route::middleware('permission:po.view')->group(function () {
+        Route::middleware('permission:po.view|po.view_all|po.view_own')->group(function () {
             Route::get('/', [PurchaseOrderController::class, 'index']);
             Route::get('/{id}', [PurchaseOrderController::class, 'show']);
             Route::get('/statistics/overview', [PurchaseOrderController::class, 'statistics']);

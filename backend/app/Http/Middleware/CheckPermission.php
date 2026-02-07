@@ -19,7 +19,18 @@ class CheckPermission
             ], 401);
         }
 
-        if (!$request->user()->hasPermissionTo($permission)) {
+        // Support pipe-separated permissions (any-of check)
+        $permissions = explode('|', $permission);
+
+        $hasAny = false;
+        foreach ($permissions as $perm) {
+            if ($request->user()->hasPermissionTo(trim($perm))) {
+                $hasAny = true;
+                break;
+            }
+        }
+
+        if (!$hasAny) {
             return response()->json([
                 'message' => 'You do not have permission to perform this action',
                 'required_permission' => $permission,
