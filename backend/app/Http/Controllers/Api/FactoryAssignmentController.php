@@ -356,7 +356,7 @@ class FactoryAssignmentController extends Controller
 
         $query = \App\Models\FactoryAssignment::with([
             'purchaseOrder:id,po_number',
-            'factory:id,name,company_name',
+            'factory:id,name,company',
             'assignedBy:id,name'
         ]);
 
@@ -387,7 +387,7 @@ class FactoryAssignmentController extends Controller
                     $pq->where('po_number', 'like', "%{$search}%");
                 })->orWhereHas('factory', function($fq) use ($search) {
                     $fq->where('name', 'like', "%{$search}%")
-                       ->orWhere('company_name', 'like', "%{$search}%");
+                       ->orWhere('company', 'like', "%{$search}%");
                 });
             });
         }

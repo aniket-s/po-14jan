@@ -14,8 +14,8 @@ class FactoryController extends Controller
     public function index(Request $request)
     {
         $query = User::role('Factory')
-            ->where('is_active', true)
-            ->select('id', 'name', 'email', 'company_name', 'phone', 'country');
+            ->where('status', 'active')
+            ->select('id', 'name', 'email', 'company', 'phone', 'country');
 
         // Optional search
         if ($request->has('search')) {
@@ -23,7 +23,7 @@ class FactoryController extends Controller
             $query->where(function($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('company_name', 'like', "%{$search}%");
+                  ->orWhere('company', 'like', "%{$search}%");
             });
         }
 

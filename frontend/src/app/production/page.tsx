@@ -41,7 +41,7 @@ interface PurchaseOrder {
 interface FactoryUser {
   id: number;
   name: string;
-  company_name?: string;
+  company?: string;
 }
 
 interface StyleShippingInfo {
@@ -517,7 +517,7 @@ export default function ProductionPage() {
                       <SelectItem value="all">All Factories</SelectItem>
                       {factories.map((f) => (
                         <SelectItem key={f.id} value={f.id.toString()}>
-                          {f.company_name || f.name}
+                          {f.company || f.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

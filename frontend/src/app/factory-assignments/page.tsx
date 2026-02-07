@@ -74,7 +74,7 @@ interface Factory {
   id: number;
   name: string;
   email: string;
-  company_name: string | null;
+  company: string | null;
   phone: string | null;
   country: string | null;
 }

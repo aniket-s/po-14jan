@@ -66,7 +66,7 @@ interface SuggestedShipOption {
 interface FactoryUser {
   id: number;
   name: string;
-  company_name?: string;
+  company?: string;
 }
 
 interface AgencyOption {
@@ -508,7 +508,7 @@ export default function ShippingApprovalsPage() {
                   <SelectContent>
                     <SelectItem value="all">All Factories</SelectItem>
                     {factories.map((f) => (
-                      <SelectItem key={f.id} value={f.id.toString()}>{f.company_name || f.name}</SelectItem>
+                      <SelectItem key={f.id} value={f.id.toString()}>{f.company || f.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
