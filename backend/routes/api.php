@@ -558,12 +558,33 @@ Route::middleware('auth:sanctum')->group(function () {
     // Aggregate Endpoints - Cross-PO Data Access
     Route::get('/samples', [SampleController::class, 'indexAll']);
     Route::post('/samples', [SampleController::class, 'storeAll']);
+    Route::post('/samples/bulk-approve-excel', [SampleController::class, 'bulkApproveExcel']);
     Route::get('/production-tracking', [ProductionTrackingController::class, 'indexAll']);
     Route::get('/quality-inspections', [QualityInspectionController::class, 'indexAll']);
     Route::get('/shipments', [ShipmentController::class, 'indexAll']);
     Route::get('/invitations', [InvitationController::class, 'indexAll']);
     Route::get('/factory-assignments', [FactoryAssignmentController::class, 'indexAll']);
     Route::get('/factories', [\App\Http\Controllers\Api\FactoryController::class, 'index']);
+
+    // Ship Options (Monthly Sailing Schedules)
+    Route::prefix('ship-options')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\ShipOptionController::class, 'index']);
+        Route::get('/suggest', [\App\Http\Controllers\Api\ShipOptionController::class, 'suggest']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\ShipOptionController::class, 'show']);
+        Route::post('/', [\App\Http\Controllers\Api\ShipOptionController::class, 'store']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\ShipOptionController::class, 'update']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\ShipOptionController::class, 'destroy']);
+    });
+
+    // Shipping Approval Workflow
+    Route::prefix('purchase-orders/{poId}')->group(function () {
+        Route::get('/shipping-approvals', [\App\Http\Controllers\Api\ShippingApprovalController::class, 'index']);
+        Route::post('/styles/{styleId}/production-status', [\App\Http\Controllers\Api\ShippingApprovalController::class, 'updateProductionStatus']);
+        Route::post('/styles/{styleId}/request-shipping-approval', [\App\Http\Controllers\Api\ShippingApprovalController::class, 'requestApproval']);
+        Route::post('/styles/{styleId}/agency-approve-shipping', [\App\Http\Controllers\Api\ShippingApprovalController::class, 'agencyApprove']);
+        Route::post('/styles/{styleId}/importer-approve-shipping', [\App\Http\Controllers\Api\ShippingApprovalController::class, 'importerApprove']);
+        Route::post('/styles/{styleId}/reject-shipping', [\App\Http\Controllers\Api\ShippingApprovalController::class, 'reject']);
+    });
 
     // File Upload (authenticated users)
     Route::post('/upload/file', [FileUploadController::class, 'upload']);
@@ -656,10 +677,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/', [SampleController::class, 'store']);
         });
 
-        // Factory approval
+        // Agency approval
         Route::middleware('permission:sample.factory_approve')->group(function () {
-            Route::post('/{id}/factory-approve', [SampleController::class, 'factoryApprove']);
-            Route::post('/{id}/factory-reject', [SampleController::class, 'factoryReject']);
+            Route::post('/{id}/agency-approve', [SampleController::class, 'agencyApprove']);
+            Route::post('/{id}/agency-reject', [SampleController::class, 'agencyReject']);
         });
 
         // Importer approval

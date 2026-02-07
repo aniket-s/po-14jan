@@ -3,7 +3,7 @@
 // Disable static generation for this authenticated page
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Loader2, CheckCircle, XCircle, Clock, PackageCheck, AlertCircle } from 'lucide-react';
+import { Plus, Search, Loader2, CheckCircle, XCircle, Clock, PackageCheck, AlertCircle, Upload } from 'lucide-react';
 import api from '@/lib/api';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -48,10 +48,10 @@ interface Sample {
   style_id: number;
   sample_type_id: number;
   submission_date: string;
-  factory_status: string;
-  factory_approved_by: number | null;
-  factory_approval_date: string | null;
-  factory_comments: string | null;
+  agency_status: string;
+  agency_approved_by: number | null;
+  agency_approval_date: string | null;
+  agency_comments: string | null;
   importer_status: string;
   importer_approved_by: number | null;
   importer_approval_date: string | null;
@@ -67,6 +67,7 @@ interface Sample {
   };
   sample_type?: {
     name: string;
+    display_name?: string;
     display_order: number;
   };
   submitted_by?: {
@@ -122,11 +123,14 @@ export default function SamplesPage() {
   const [isSubmitDialogOpen, setIsSubmitDialogOpen] = useState(false);
   const [isApprovalDialogOpen, setIsApprovalDialogOpen] = useState(false);
   const [selectedSample, setSelectedSample] = useState<Sample | null>(null);
-  const [approvalType, setApprovalType] = useState<'factory' | 'importer'>('factory');
+  const [approvalType, setApprovalType] = useState<'agency' | 'importer'>('agency');
   const [approvalAction, setApprovalAction] = useState<'approve' | 'reject'>('approve');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imageFiles, setImageFiles] = useState<UploadedFile[]>([]);
   const [documentFiles, setDocumentFiles] = useState<UploadedFile[]>([]);
+  const [isUploadingExcel, setIsUploadingExcel] = useState(false);
+  const [excelResult, setExcelResult] = useState<any>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register: registerSample,
@@ -255,11 +259,9 @@ export default function SamplesPage() {
   const onSubmitSample = async (data: SampleFormData) => {
     setIsSubmitting(true);
     try {
-      // Upload all files
       const imageUrls = await uploadFiles(imageFiles, 'image');
       const documentUrls = await uploadFiles(documentFiles, 'document');
 
-      // Submit sample with file URLs
       await api.post('/samples', {
         ...data,
         images: imageUrls,
@@ -278,7 +280,7 @@ export default function SamplesPage() {
     }
   };
 
-  const openApprovalDialog = (sample: Sample, type: 'factory' | 'importer', action: 'approve' | 'reject') => {
+  const openApprovalDialog = (sample: Sample, type: 'agency' | 'importer', action: 'approve' | 'reject') => {
     setSelectedSample(sample);
     setApprovalType(type);
     setApprovalAction(action);
@@ -290,11 +292,14 @@ export default function SamplesPage() {
 
     setIsSubmitting(true);
     try {
-      const endpoint = approvalType === 'factory'
-        ? `/samples/${selectedSample.id}/factory-${approvalAction}`
+      const endpoint = approvalType === 'agency'
+        ? `/samples/${selectedSample.id}/agency-${approvalAction}`
         : `/samples/${selectedSample.id}/importer-${approvalAction}`;
 
-      await api.post(endpoint, { comments: data.comments });
+      await api.post(endpoint, {
+        reason: data.comments,
+        comments: data.comments,
+      });
       setIsApprovalDialogOpen(false);
       resetApproval();
       setSelectedSample(null);
@@ -303,6 +308,37 @@ export default function SamplesPage() {
       console.error('Failed to process approval:', error);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingExcel(true);
+    setExcelResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await api.post('/samples/bulk-approve-excel', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      setExcelResult(response.data.result);
+      fetchSamples();
+    } catch (error: any) {
+      console.error('Failed to process Excel:', error);
+      setExcelResult({
+        processed: 0,
+        errors: [error.response?.data?.message || 'Upload failed'],
+      });
+    } finally {
+      setIsUploadingExcel(false);
+      if (excelInputRef.current) {
+        excelInputRef.current.value = '';
+      }
     }
   };
 
@@ -336,24 +372,22 @@ export default function SamplesPage() {
     });
   };
 
-  const canApproveAsFactory = (sample: Sample) => {
-    return hasRole('Factory') && sample.factory_status === 'pending';
+  const canApproveAsAgency = (sample: Sample) => {
+    return hasRole('Agency') && sample.agency_status === 'pending';
   };
 
   const canApproveAsImporter = (sample: Sample) => {
-    return hasRole('Importer') && sample.factory_status === 'approved' && sample.importer_status === 'pending';
+    return hasRole('Importer') && sample.agency_status === 'approved' && sample.importer_status === 'pending';
   };
 
   const getSampleTypeInfo = (sampleTypeId: number) => {
     const sampleType = sampleTypes.find(st => st.id === sampleTypeId);
     if (!sampleType) return { canSubmit: true, reason: '' };
 
-    // Check if parallel submission is allowed
     if (sampleType.allows_parallel_submission) {
       return { canSubmit: true, reason: '' };
     }
 
-    // Check if all prerequisites are approved
     if (sampleType.prerequisites && sampleType.prerequisites.length > 0) {
       for (const prereqName of sampleType.prerequisites) {
         const prereqType = sampleTypes.find(st => st.name === prereqName);
@@ -384,160 +418,213 @@ export default function SamplesPage() {
             <h1 className="text-3xl font-bold tracking-tight">Samples</h1>
             <p className="text-muted-foreground">Manage sample submissions and approvals</p>
           </div>
-          {can('sample.create') && (
-            <Dialog open={isSubmitDialogOpen} onOpenChange={setIsSubmitDialogOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Submit Sample
+          <div className="flex gap-2">
+            {/* Agency Excel Upload */}
+            {hasRole('Agency') && (
+              <>
+                <input
+                  ref={excelInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleExcelUpload}
+                  className="hidden"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => excelInputRef.current?.click()}
+                  disabled={isUploadingExcel}
+                >
+                  {isUploadingExcel ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Bulk Approve (Excel)
                 </Button>
-              </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <form onSubmit={handleSubmitSample(onSubmitSample)}>
-                <DialogHeader>
-                  <DialogTitle>Submit Sample</DialogTitle>
-                  <DialogDescription>
-                    Submit a new sample for approval
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="style_id">Style *</Label>
-                    <Select onValueChange={(value) => setSampleValue('style_id', parseInt(value))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select style" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {styles.map((style) => (
-                          <SelectItem key={style.id} value={style.id.toString()}>
-                            {style.style_number} - {style.purchase_order?.po_number}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {sampleErrors.style_id && (
-                      <p className="text-sm text-destructive">{sampleErrors.style_id.message}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="sample_type_id">Sample Type *</Label>
-                    <Select onValueChange={(value) => {
-                      const typeId = parseInt(value);
-                      setSampleValue('sample_type_id', typeId);
-                      const info = getSampleTypeInfo(typeId);
-                      if (!info.canSubmit) {
-                        alert(info.reason);
-                      }
-                    }}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select sample type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {sampleTypes.filter(st => st.is_active).map((sampleType) => {
-                          const info = getSampleTypeInfo(sampleType.id);
-                          return (
-                            <SelectItem
-                              key={sampleType.id}
-                              value={sampleType.id.toString()}
-                              disabled={!info.canSubmit}
-                            >
-                              {sampleType.name}
-                              {sampleType.display_order <= 5 && ' (Can submit in parallel)'}
-                              {!info.canSubmit && ` - ${info.reason}`}
+              </>
+            )}
+            {can('sample.create') && (
+              <Dialog open={isSubmitDialogOpen} onOpenChange={setIsSubmitDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Submit Sample
+                  </Button>
+                </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <form onSubmit={handleSubmitSample(onSubmitSample)}>
+                  <DialogHeader>
+                    <DialogTitle>Submit Sample</DialogTitle>
+                    <DialogDescription>
+                      Submit a new sample for approval
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="style_id">Style *</Label>
+                      <Select onValueChange={(value) => setSampleValue('style_id', parseInt(value))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select style" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {styles.map((style) => (
+                            <SelectItem key={style.id} value={style.id.toString()}>
+                              {style.style_number} - {style.purchase_order?.po_number}
                             </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                    {sampleErrors.sample_type_id && (
-                      <p className="text-sm text-destructive">{sampleErrors.sample_type_id.message}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">Notes</Label>
-                    <textarea
-                      id="notes"
-                      className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      placeholder="Sample details, specifications, etc..."
-                      {...registerSample('notes')}
-                    />
-                  </div>
-
-                  {/* File Uploads with Tabs */}
-                  <Tabs defaultValue="images" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="images">
-                        Images ({imageFiles.length})
-                      </TabsTrigger>
-                      <TabsTrigger value="documents">
-                        Documents ({documentFiles.length})
-                      </TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="images" className="space-y-4">
-                      <MultiFileUpload
-                        files={imageFiles}
-                        onChange={setImageFiles}
-                        accept="image/*"
-                        maxFiles={10}
-                        label="Sample Images"
-                        description="Upload photos of the sample"
-                        disabled={isSubmitting}
-                        showRemarks={true}
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {sampleErrors.style_id && (
+                        <p className="text-sm text-destructive">{sampleErrors.style_id.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="sample_type_id">Sample Type *</Label>
+                      <Select onValueChange={(value) => {
+                        const typeId = parseInt(value);
+                        setSampleValue('sample_type_id', typeId);
+                        const info = getSampleTypeInfo(typeId);
+                        if (!info.canSubmit) {
+                          alert(info.reason);
+                        }
+                      }}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select sample type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sampleTypes.filter(st => st.is_active).map((sampleType) => {
+                            const info = getSampleTypeInfo(sampleType.id);
+                            return (
+                              <SelectItem
+                                key={sampleType.id}
+                                value={sampleType.id.toString()}
+                                disabled={!info.canSubmit}
+                              >
+                                {sampleType.display_name || sampleType.name}
+                                {sampleType.allows_parallel_submission && ' (Can submit in parallel)'}
+                                {!info.canSubmit && ` - ${info.reason}`}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      {sampleErrors.sample_type_id && (
+                        <p className="text-sm text-destructive">{sampleErrors.sample_type_id.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="notes">Notes</Label>
+                      <textarea
+                        id="notes"
+                        className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        placeholder="Sample details, specifications, etc..."
+                        {...registerSample('notes')}
                       />
-                    </TabsContent>
+                    </div>
 
-                    <TabsContent value="documents" className="space-y-4">
-                      <MultiFileUpload
-                        files={documentFiles}
-                        onChange={setDocumentFiles}
-                        accept=".pdf,.xlsx,.xls,.csv,.doc,.docx"
-                        maxFiles={5}
-                        label="Sample Documents"
-                        description="Upload PDFs, Excel files, or other documents"
-                        disabled={isSubmitting}
-                        showRemarks={true}
-                      />
-                    </TabsContent>
-                  </Tabs>
+                    {/* File Uploads with Tabs */}
+                    <Tabs defaultValue="images" className="w-full">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="images">
+                          Images ({imageFiles.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="documents">
+                          Documents ({documentFiles.length})
+                        </TabsTrigger>
+                      </TabsList>
 
-                  <div className="rounded-lg bg-muted p-3 text-sm">
-                    <p className="font-medium flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4" />
-                      Dual Approval Workflow
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Samples require approval from both factory and importer. Factory must approve first, then importer can review.
-                    </p>
+                      <TabsContent value="images" className="space-y-4">
+                        <MultiFileUpload
+                          files={imageFiles}
+                          onChange={setImageFiles}
+                          accept="image/*"
+                          maxFiles={10}
+                          label="Sample Images"
+                          description="Upload photos of the sample"
+                          disabled={isSubmitting}
+                          showRemarks={true}
+                        />
+                      </TabsContent>
+
+                      <TabsContent value="documents" className="space-y-4">
+                        <MultiFileUpload
+                          files={documentFiles}
+                          onChange={setDocumentFiles}
+                          accept=".pdf,.xlsx,.xls,.csv,.doc,.docx"
+                          maxFiles={5}
+                          label="Sample Documents"
+                          description="Upload PDFs, Excel files, or other documents"
+                          disabled={isSubmitting}
+                          showRemarks={true}
+                        />
+                      </TabsContent>
+                    </Tabs>
+
+                    <div className="rounded-lg bg-muted p-3 text-sm">
+                      <p className="font-medium flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4" />
+                        Approval Workflow
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Factory submits samples. Agency reviews and approves/rejects first, then importer gives final approval.
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsSubmitDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Submitting...
-                      </>
-                    ) : (
-                      <>
-                        <PackageCheck className="mr-2 h-4 w-4" />
-                        Submit Sample
-                      </>
-                    )}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-          )}
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsSubmitDialogOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={isSubmitting}>
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        <>
+                          <PackageCheck className="mr-2 h-4 w-4" />
+                          Submit Sample
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+            )}
+          </div>
         </div>
+
+        {/* Excel Upload Result */}
+        {excelResult && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Excel Upload Result</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4 text-sm">
+                <span>Processed: <strong>{excelResult.processed}</strong></span>
+                <span className="text-green-600">Approved: <strong>{excelResult.approved}</strong></span>
+                <span className="text-red-600">Rejected: <strong>{excelResult.rejected}</strong></span>
+              </div>
+              {excelResult.errors?.length > 0 && (
+                <div className="mt-2 text-xs text-destructive">
+                  {excelResult.errors.map((err: string, i: number) => (
+                    <p key={i}>{err}</p>
+                  ))}
+                </div>
+              )}
+              <Button variant="ghost" size="sm" className="mt-2" onClick={() => setExcelResult(null)}>
+                Dismiss
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Info Cards */}
         <div className="grid gap-4 md:grid-cols-4">
@@ -634,7 +721,7 @@ export default function SamplesPage() {
                     <TableHead>Style</TableHead>
                     <TableHead>PO Number</TableHead>
                     <TableHead>Submitted By</TableHead>
-                    <TableHead>Factory Status</TableHead>
+                    <TableHead>Agency Status</TableHead>
                     <TableHead>Importer Status</TableHead>
                     <TableHead>Final Status</TableHead>
                     <TableHead>Date</TableHead>
@@ -652,7 +739,7 @@ export default function SamplesPage() {
                     samples.map((sample) => (
                       <TableRow key={sample.id}>
                         <TableCell className="font-medium">
-                          {sample.sample_type?.name}
+                          {sample.sample_type?.display_name || sample.sample_type?.name}
                           {sample.sample_type && sample.sample_type.display_order <= 5 && (
                             <Badge variant="outline" className="ml-2 text-xs">
                               Parallel
@@ -663,8 +750,8 @@ export default function SamplesPage() {
                         <TableCell>{sample.style?.purchase_order?.po_number || 'N/A'}</TableCell>
                         <TableCell>{sample.submitted_by?.name || 'N/A'}</TableCell>
                         <TableCell>
-                          <Badge variant={getStatusColor(sample.factory_status) as any}>
-                            {sample.factory_status}
+                          <Badge variant={getStatusColor(sample.agency_status) as any}>
+                            {sample.agency_status}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -683,12 +770,12 @@ export default function SamplesPage() {
                         <TableCell>{formatDate(sample.submission_date)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            {canApproveAsFactory(sample) && (
+                            {canApproveAsAgency(sample) && (
                               <>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => openApprovalDialog(sample, 'factory', 'approve')}
+                                  onClick={() => openApprovalDialog(sample, 'agency', 'approve')}
                                   className="text-green-600 hover:text-green-700"
                                 >
                                   <CheckCircle className="mr-1 h-4 w-4" />
@@ -697,7 +784,7 @@ export default function SamplesPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => openApprovalDialog(sample, 'factory', 'reject')}
+                                  onClick={() => openApprovalDialog(sample, 'agency', 'reject')}
                                   className="text-red-600 hover:text-red-700"
                                 >
                                   <XCircle className="mr-1 h-4 w-4" />
@@ -745,7 +832,7 @@ export default function SamplesPage() {
               <DialogHeader>
                 <DialogTitle>
                   {approvalAction === 'approve' ? 'Approve' : 'Reject'} Sample as{' '}
-                  {approvalType === 'factory' ? 'Factory' : 'Importer'}
+                  {approvalType === 'agency' ? 'Agency' : 'Importer'}
                 </DialogTitle>
                 <DialogDescription>
                   Provide comments for this {approvalAction === 'approve' ? 'approval' : 'rejection'}
@@ -753,7 +840,9 @@ export default function SamplesPage() {
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="comments">Comments (Optional)</Label>
+                  <Label htmlFor="comments">
+                    {approvalAction === 'reject' ? 'Reason (Required)' : 'Comments (Optional)'}
+                  </Label>
                   <textarea
                     id="comments"
                     className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
