@@ -258,7 +258,7 @@ class SampleController extends Controller
     /**
      * Agency approves sample
      */
-    public function agencyApprove(Request $request, $poId, $styleId, $id)
+    public function agencyApprove(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
         $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
@@ -303,7 +303,7 @@ class SampleController extends Controller
     /**
      * Agency rejects sample
      */
-    public function agencyReject(Request $request, $poId, $styleId, $id)
+    public function agencyReject(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
         $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
@@ -359,7 +359,7 @@ class SampleController extends Controller
     /**
      * Importer approves sample
      */
-    public function importerApprove(Request $request, $poId, $styleId, $id)
+    public function importerApprove(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
         $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
@@ -410,7 +410,7 @@ class SampleController extends Controller
     /**
      * Importer rejects sample
      */
-    public function importerReject(Request $request, $poId, $styleId, $id)
+    public function importerReject(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
         $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
@@ -600,7 +600,7 @@ class SampleController extends Controller
             $agency = User::find($po->agency_id);
             if ($agency) {
                 $this->emailService->sendFromTemplate(
-                    'sample_submitted_to_factory',
+                    'sample_submitted',
                     $agency->email,
                     [
                         'factory_name' => $agency->name,
@@ -640,7 +640,7 @@ class SampleController extends Controller
         }
 
         $this->emailService->sendFromTemplate(
-            'sample_factory_approved',
+            'sample_approved_by_agency',
             $po->importer->email,
             [
                 'importer_name' => $po->importer->name,

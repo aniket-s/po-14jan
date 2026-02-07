@@ -559,6 +559,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/samples', [SampleController::class, 'indexAll']);
     Route::post('/samples', [SampleController::class, 'storeAll']);
     Route::post('/samples/bulk-approve-excel', [SampleController::class, 'bulkApproveExcel']);
+
+    // Flat aggregate sample approval routes (used by frontend samples list page)
+    Route::post('/samples/{id}/agency-approve', [SampleController::class, 'agencyApprove']);
+    Route::post('/samples/{id}/agency-reject', [SampleController::class, 'agencyReject']);
+    Route::post('/samples/{id}/importer-approve', [SampleController::class, 'importerApprove']);
+    Route::post('/samples/{id}/importer-reject', [SampleController::class, 'importerReject']);
     Route::get('/production-tracking', [ProductionTrackingController::class, 'indexAll']);
     Route::get('/quality-inspections', [QualityInspectionController::class, 'indexAll']);
     Route::get('/shipments', [ShipmentController::class, 'indexAll']);
@@ -678,7 +684,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // Agency approval
-        Route::middleware('permission:sample.factory_approve')->group(function () {
+        Route::middleware('permission:sample.agency_approve')->group(function () {
             Route::post('/{id}/agency-approve', [SampleController::class, 'agencyApprove']);
             Route::post('/{id}/agency-reject', [SampleController::class, 'agencyReject']);
         });
