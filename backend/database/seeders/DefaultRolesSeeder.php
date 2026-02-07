@@ -54,6 +54,9 @@ class DefaultRolesSeeder extends Seeder
             // Shipment Permissions
             'shipment.view_all',
             'shipment.track',
+            // Report Permissions
+            'reports.view',
+            'reports.export',
         ]);
 
         // Agency - Manage POs, assign factories, review samples
