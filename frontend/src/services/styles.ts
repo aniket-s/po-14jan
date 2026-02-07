@@ -93,6 +93,8 @@ export interface CreateStyleData {
   description?: string;
   fabric?: string; // Deprecated - use fabric_type_name
   fabric_type_name?: string; // Combined fabric type and name
+  fabric_type_id?: number; // Foreign key to fabric_types table
+  fabric_quality_id?: number; // Foreign key to fabric_qualities table
   fabric_weight?: string;
   color?: string; // Deprecated - use color_id
   color_id?: number; // NEW: Foreign key to colors table
@@ -108,6 +110,7 @@ export interface CreateStyleData {
   // Master data
   brand_id?: number;
   buyer_id?: number; // NEW: Buyer categorization
+  retailer_id?: number; // NEW: Retailer (replaces buyer in some flows)
   category_id?: number; // NEW: Product category
   season_id?: number; // NEW: Season/collection
   gender_id?: number; // REQUIRED for size management
