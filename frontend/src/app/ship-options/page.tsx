@@ -446,7 +446,7 @@ export default function ShipOptionsPage() {
               {formatDate(getCutoffDate(watchedEtd).toISOString())}
             </p>
             <p className="mt-0.5 text-xs text-orange-700">
-              All cargo must be ready at port by this date.
+              All cargo must leave factory by this date.
             </p>
           </div>
         )}
