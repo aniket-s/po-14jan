@@ -73,31 +73,21 @@ class SamplePolicy
     }
 
     /**
-     * Determine whether the user can approve sample as factory.
-     */
-    public function factoryApprove(User $user, Sample $sample): bool
-    {
-        if (!$user->can('sample.factory_approve')) {
-            return false;
-        }
-
-        // Factory can only approve samples for their assigned styles
-        return $user->hasRole('Factory') &&
-               $sample->style->assigned_factory_id === $user->id;
-    }
-
-    /**
      * Determine whether the user can approve sample as agency.
      */
     public function agencyApprove(User $user, Sample $sample): bool
     {
-        if (!$user->can('sample.approve_agency')) {
+        if (!$user->can('sample.agency_approve') && !$user->can('sample.factory_approve')) {
             return false;
         }
 
-        // Agency can only approve samples for styles they manage
-        return $user->hasRole('Agency') &&
-               $sample->style->assigned_agency_id === $user->id;
+        // Agency can only approve samples for POs where they are the assigned agency
+        if ($user->hasRole('Agency')) {
+            $po = $sample->style->purchaseOrder;
+            return $po && $po->agency_id === $user->id;
+        }
+
+        return $user->hasRole('Super Admin');
     }
 
     /**

@@ -50,12 +50,12 @@ interface Sample {
   submission_date: string;
   agency_status: string;
   agency_approved_by: number | null;
-  agency_approval_date: string | null;
-  agency_comments: string | null;
+  agency_approved_at: string | null;
+  agency_rejection_reason: string | null;
   importer_status: string;
   importer_approved_by: number | null;
-  importer_approval_date: string | null;
-  importer_comments: string | null;
+  importer_approved_at: string | null;
+  importer_rejection_reason: string | null;
   final_status: string;
   notes: string | null;
   created_at: string;
@@ -410,7 +410,7 @@ export default function SamplesPage() {
   };
 
   return (
-    <DashboardLayout requiredPermissions={['sample.view', 'sample.create', 'sample.approve_final', 'sample.factory_approve']} requireAll={false}>
+    <DashboardLayout requiredPermissions={['sample.view', 'sample.create', 'sample.approve_final', 'sample.agency_approve']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

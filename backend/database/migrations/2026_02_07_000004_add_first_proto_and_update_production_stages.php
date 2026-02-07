@@ -95,10 +95,10 @@ return new class extends Migration
             ->whereIn('name', ['sampling', 'cutting', 'stitching', 'finishing', 'packing', 'dispatch'])
             ->update(['is_active' => true]);
 
-        // Deactivate new stages
+        // Delete new stages
         DB::table('production_stages')
             ->whereIn('name', ['submitted', 'in_production', 'estimated_ex_factory'])
-            ->update(['is_active' => false]);
+            ->delete();
 
         // Remove first_proto sample type
         DB::table('sample_types')->where('name', 'first_proto')->delete();
