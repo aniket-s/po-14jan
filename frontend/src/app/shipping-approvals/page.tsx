@@ -414,13 +414,15 @@ export default function ShippingApprovalsPage() {
   // Permission helpers
   // ---------------------------------------------------------------------------
 
+  const isSuperOrAdmin = hasRole('Super Admin') || hasRole('Admin');
+
   const canSetEstDate = (row: ShippingApprovalRow): boolean => {
-    if (!hasRole('Factory')) return false;
+    if (!isSuperOrAdmin && !hasRole('Factory')) return false;
     return !row.shipping_approval_status || row.shipping_approval_status === 'rejected';
   };
 
   const canRequestApproval = (row: ShippingApprovalRow): boolean => {
-    if (!hasRole('Factory')) return false;
+    if (!isSuperOrAdmin && !hasRole('Factory')) return false;
     if (row.production_status !== 'Estimated Ex-Factory') return false;
     if (!row.estimated_ex_factory_date) return false;
     if (row.shipping_approval_status && row.shipping_approval_status !== 'rejected') return false;
@@ -428,16 +430,17 @@ export default function ShippingApprovalsPage() {
   };
 
   const canAgencyApprove = (row: ShippingApprovalRow): boolean => {
-    if (!hasRole('Agency')) return false;
+    if (!isSuperOrAdmin && !hasRole('Agency')) return false;
     return row.shipping_approval_status === 'requested';
   };
 
   const canImporterApprove = (row: ShippingApprovalRow): boolean => {
-    if (!hasRole('Importer')) return false;
+    if (!isSuperOrAdmin && !hasRole('Importer')) return false;
     return row.shipping_approval_status === 'agency_approved';
   };
 
   const canReject = (row: ShippingApprovalRow): boolean => {
+    if (isSuperOrAdmin && (row.shipping_approval_status === 'requested' || row.shipping_approval_status === 'agency_approved')) return true;
     if (hasRole('Agency') && row.shipping_approval_status === 'requested') return true;
     if (hasRole('Importer') && row.shipping_approval_status === 'agency_approved') return true;
     return false;
