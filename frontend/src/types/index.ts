@@ -133,6 +133,9 @@ export interface Style {
     target_production_date?: string;
     target_shipment_date?: string;
     ex_factory_date?: string;
+    estimated_ex_factory_date?: string;
+    production_status?: string;
+    shipping_approval_status?: string;
     status?: string;
     notes?: string;
   };
@@ -163,10 +166,10 @@ export interface Sample {
   images: string[] | null;
   attachment_paths: string[] | null;
   notes: string | null;
-  factory_status: string;
-  factory_approved_by: number | null;
-  factory_approved_at: string | null;
-  factory_rejection_reason: string | null;
+  agency_status: string;
+  agency_approved_by: number | null;
+  agency_approved_at: string | null;
+  agency_rejection_reason: string | null;
   importer_status: string;
   importer_approved_by: number | null;
   importer_approved_at: string | null;
@@ -178,7 +181,7 @@ export interface Sample {
   style?: Style;
   sample_type?: SampleType;
   submittedBy?: User;
-  factoryApprovedBy?: User;
+  agencyApprovedBy?: User;
   importerApprovedBy?: User;
 }
 

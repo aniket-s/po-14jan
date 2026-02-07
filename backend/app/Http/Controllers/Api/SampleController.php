@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\EmailService;
 use App\Services\PermissionService;
+use App\Services\SampleExcelApprovalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -38,29 +39,25 @@ class SampleController extends Controller
         $user = $request->user();
         $style = Style::with('purchaseOrder')->findOrFail($styleId);
 
-        // Verify style belongs to PO
         if ($style->po_id != $poId) {
             return response()->json([
                 'message' => 'Style does not belong to this purchase order',
             ], 404);
         }
 
-        // Check permission
         if (!$this->permissionService->canAccessStyle($user, $style)) {
             return response()->json([
                 'message' => 'You do not have permission to view samples for this style',
             ], 403);
         }
 
-        $query = Sample::with(['sampleType', 'submittedBy', 'factoryApprovedBy', 'importerApprovedBy'])
+        $query = Sample::with(['sampleType', 'submittedBy', 'agencyApprovedBy', 'importerApprovedBy'])
             ->where('style_id', $styleId);
 
-        // Status filter
         if ($request->has('final_status')) {
             $query->where('final_status', $request->final_status);
         }
 
-        // Sample type filter
         if ($request->has('sample_type_id')) {
             $query->where('sample_type_id', $request->sample_type_id);
         }
@@ -83,7 +80,7 @@ class SampleController extends Controller
                         'name' => $sample->submittedBy->name,
                     ],
                     'quantity' => $sample->quantity,
-                    'factory_status' => $sample->factory_status,
+                    'agency_status' => $sample->agency_status,
                     'importer_status' => $sample->importer_status,
                     'final_status' => $sample->final_status,
                     'images' => $sample->images,
@@ -99,17 +96,15 @@ class SampleController extends Controller
     public function show(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
-        $sample = Sample::with(['style.purchaseOrder', 'sampleType', 'submittedBy', 'factoryApprovedBy', 'importerApprovedBy'])
+        $sample = Sample::with(['style.purchaseOrder', 'sampleType', 'submittedBy', 'agencyApprovedBy', 'importerApprovedBy'])
             ->findOrFail($id);
 
-        // Verify sample belongs to style and PO
         if ($sample->style_id != $styleId || $sample->style->po_id != $poId) {
             return response()->json([
                 'message' => 'Sample does not belong to this style/purchase order',
             ], 404);
         }
 
-        // Check permission
         if (!$this->permissionService->canAccessStyle($user, $sample->style)) {
             return response()->json([
                 'message' => 'You do not have permission to view this sample',
@@ -140,13 +135,13 @@ class SampleController extends Controller
                 'notes' => $sample->notes,
                 'attachment_paths' => $sample->attachment_paths,
                 'images' => $sample->images,
-                'factory_status' => $sample->factory_status,
-                'factory_approved_by' => $sample->factoryApprovedBy ? [
-                    'id' => $sample->factoryApprovedBy->id,
-                    'name' => $sample->factoryApprovedBy->name,
+                'agency_status' => $sample->agency_status,
+                'agency_approved_by' => $sample->agencyApprovedBy ? [
+                    'id' => $sample->agencyApprovedBy->id,
+                    'name' => $sample->agencyApprovedBy->name,
                 ] : null,
-                'factory_approved_at' => $sample->factory_approved_at,
-                'factory_rejection_reason' => $sample->factory_rejection_reason,
+                'agency_approved_at' => $sample->agency_approved_at,
+                'agency_rejection_reason' => $sample->agency_rejection_reason,
                 'importer_status' => $sample->importer_status,
                 'importer_approved_by' => $sample->importerApprovedBy ? [
                     'id' => $sample->importerApprovedBy->id,
@@ -163,21 +158,19 @@ class SampleController extends Controller
     }
 
     /**
-     * Submit new sample
+     * Submit new sample (factory submits)
      */
     public function store(Request $request, $poId, $styleId)
     {
         $user = $request->user();
         $style = Style::with('purchaseOrder')->findOrFail($styleId);
 
-        // Verify style belongs to PO
         if ($style->po_id != $poId) {
             return response()->json([
                 'message' => 'Style does not belong to this purchase order',
             ], 404);
         }
 
-        // Check permission (factory can submit)
         if (!$user->hasPermissionTo('sample.create')) {
             return response()->json([
                 'message' => 'You do not have permission to submit samples',
@@ -205,7 +198,6 @@ class SampleController extends Controller
 
         $sampleType = SampleType::findOrFail($request->sample_type_id);
 
-        // Check if sample of this type already exists for this style
         $existingSample = Sample::where('style_id', $styleId)
             ->where('sample_type_id', $request->sample_type_id)
             ->first();
@@ -217,7 +209,6 @@ class SampleController extends Controller
             ], 422);
         }
 
-        // Check prerequisites for types that don't allow parallel submission
         if (!$sampleType->allowsParallelSubmission()) {
             if (!$sampleType->prerequisitesMet($styleId)) {
                 return response()->json([
@@ -237,15 +228,13 @@ class SampleController extends Controller
             'notes' => $request->notes,
             'images' => $request->images,
             'attachment_paths' => $request->attachment_paths,
-            'factory_status' => 'pending',
+            'agency_status' => 'pending',
             'importer_status' => 'pending',
             'final_status' => 'pending',
         ]);
 
-        // Send notification to factory and importer
         $this->sendSampleSubmittedNotifications($sample, $style);
 
-        // Log submission
         $this->activityLog->logCreated('Sample', $sample->id, [
             'sample_type' => $sampleType->name,
             'style_number' => $style->style_number,
@@ -267,37 +256,34 @@ class SampleController extends Controller
     }
 
     /**
-     * Factory approves sample
+     * Agency approves sample
      */
-    public function factoryApprove(Request $request, $poId, $styleId, $id)
+    public function agencyApprove(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
         $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
 
-        // Verify permissions
-        if (!$this->canFactoryApprove($user, $sample)) {
+        if (!$this->canAgencyApprove($user, $sample)) {
             return response()->json([
                 'message' => 'You do not have permission to approve this sample',
             ], 403);
         }
 
-        if ($sample->factory_status !== 'pending') {
+        if ($sample->agency_status !== 'pending') {
             return response()->json([
-                'message' => 'Sample has already been reviewed by factory',
+                'message' => 'Sample has already been reviewed by agency',
             ], 422);
         }
 
-        $sample->factoryApprove($user->id);
+        $sample->agencyApprove($user->id);
 
-        // Send notification to importer
-        $this->sendFactoryApprovedNotification($sample);
+        $this->sendAgencyApprovedNotification($sample);
 
-        // Log approval
         $this->activityLog->log(
-            'sample_factory_approved',
+            'sample_agency_approved',
             'Sample',
             $sample->id,
-            "Factory approved sample {$sample->sample_reference}",
+            "Agency approved sample {$sample->sample_reference}",
             [
                 'sample_type' => $sample->sampleType->name,
                 'style_number' => $sample->style->style_number,
@@ -305,33 +291,32 @@ class SampleController extends Controller
         );
 
         return response()->json([
-            'message' => 'Sample approved by factory successfully',
+            'message' => 'Sample approved by agency successfully',
             'sample' => [
                 'id' => $sample->id,
-                'factory_status' => $sample->factory_status,
+                'agency_status' => $sample->agency_status,
                 'final_status' => $sample->final_status,
             ],
         ]);
     }
 
     /**
-     * Factory rejects sample
+     * Agency rejects sample
      */
-    public function factoryReject(Request $request, $poId, $styleId, $id)
+    public function agencyReject(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
         $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
 
-        // Verify permissions
-        if (!$this->canFactoryApprove($user, $sample)) {
+        if (!$this->canAgencyApprove($user, $sample)) {
             return response()->json([
                 'message' => 'You do not have permission to reject this sample',
             ], 403);
         }
 
-        if ($sample->factory_status !== 'pending') {
+        if ($sample->agency_status !== 'pending') {
             return response()->json([
-                'message' => 'Sample has already been reviewed by factory',
+                'message' => 'Sample has already been reviewed by agency',
             ], 422);
         }
 
@@ -346,17 +331,15 @@ class SampleController extends Controller
             ], 422);
         }
 
-        $sample->factoryReject($user->id, $request->reason);
+        $sample->agencyReject($user->id, $request->reason);
 
-        // Send notification
-        $this->sendFactoryRejectedNotification($sample);
+        $this->sendAgencyRejectedNotification($sample);
 
-        // Log rejection
         $this->activityLog->log(
-            'sample_factory_rejected',
+            'sample_agency_rejected',
             'Sample',
             $sample->id,
-            "Factory rejected sample {$sample->sample_reference}",
+            "Agency rejected sample {$sample->sample_reference}",
             [
                 'sample_type' => $sample->sampleType->name,
                 'reason' => $request->reason,
@@ -364,10 +347,10 @@ class SampleController extends Controller
         );
 
         return response()->json([
-            'message' => 'Sample rejected by factory',
+            'message' => 'Sample rejected by agency',
             'sample' => [
                 'id' => $sample->id,
-                'factory_status' => $sample->factory_status,
+                'agency_status' => $sample->agency_status,
                 'final_status' => $sample->final_status,
             ],
         ]);
@@ -381,16 +364,15 @@ class SampleController extends Controller
         $user = $request->user();
         $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
 
-        // Verify permissions
         if (!$this->canImporterApprove($user, $sample)) {
             return response()->json([
                 'message' => 'You do not have permission to approve this sample',
             ], 403);
         }
 
-        if ($sample->factory_status !== 'approved') {
+        if ($sample->agency_status !== 'approved') {
             return response()->json([
-                'message' => 'Sample must be approved by factory first',
+                'message' => 'Sample must be approved by agency first',
             ], 422);
         }
 
@@ -402,10 +384,8 @@ class SampleController extends Controller
 
         $sample->importerApprove($user->id);
 
-        // Send notification
         $this->sendImporterApprovedNotification($sample);
 
-        // Log approval
         $this->activityLog->log(
             'sample_importer_approved',
             'Sample',
@@ -435,16 +415,15 @@ class SampleController extends Controller
         $user = $request->user();
         $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
 
-        // Verify permissions
         if (!$this->canImporterApprove($user, $sample)) {
             return response()->json([
                 'message' => 'You do not have permission to reject this sample',
             ], 403);
         }
 
-        if ($sample->factory_status !== 'approved') {
+        if ($sample->agency_status !== 'approved') {
             return response()->json([
-                'message' => 'Sample must be approved by factory first',
+                'message' => 'Sample must be approved by agency first',
             ], 422);
         }
 
@@ -467,10 +446,8 @@ class SampleController extends Controller
 
         $sample->importerReject($user->id, $request->reason);
 
-        // Send notification
         $this->sendImporterRejectedNotification($sample);
 
-        // Log rejection
         $this->activityLog->log(
             'sample_importer_rejected',
             'Sample',
@@ -493,6 +470,47 @@ class SampleController extends Controller
     }
 
     /**
+     * Agency bulk approve/reject samples via Excel upload
+     */
+    public function bulkApproveExcel(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user->hasRole('Agency') && !$user->hasRole('Super Admin') && !$user->hasRole('Admin')) {
+            return response()->json([
+                'message' => 'Only agency users can bulk update sample approvals via Excel',
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $service = app(SampleExcelApprovalService::class);
+        $result = $service->processApprovals($request->file('file'), $user);
+
+        $this->activityLog->log(
+            'sample_bulk_approval_excel',
+            'Sample',
+            null,
+            "Agency bulk updated {$result['processed']} sample approvals via Excel",
+            ['result' => $result]
+        );
+
+        return response()->json([
+            'message' => "Processed {$result['processed']} samples",
+            'result' => $result,
+        ]);
+    }
+
+    /**
      * Get available sample types for a style
      */
     public function availableSampleTypes(Request $request, $poId, $styleId)
@@ -500,7 +518,6 @@ class SampleController extends Controller
         $user = $request->user();
         $style = Style::with('purchaseOrder')->findOrFail($styleId);
 
-        // Check permission
         if (!$this->permissionService->canAccessStyle($user, $style)) {
             return response()->json([
                 'message' => 'You do not have permission to view sample types for this style',
@@ -515,7 +532,6 @@ class SampleController extends Controller
 
             $canSubmit = !$existingSample;
 
-            // Check prerequisites for non-parallel types
             if ($canSubmit && !$type->allowsParallelSubmission()) {
                 $canSubmit = $type->prerequisitesMet($styleId);
             }
@@ -543,25 +559,21 @@ class SampleController extends Controller
     }
 
     /**
-     * Check if user can factory approve
+     * Check if user can agency approve (agency role + linked to PO)
      */
-    private function canFactoryApprove(User $user, Sample $sample): bool
+    private function canAgencyApprove(User $user, Sample $sample): bool
     {
-        if (!$user->hasPermissionTo('sample.factory_approve')) {
+        if (!$user->hasPermissionTo('sample.agency_approve') && !$user->hasPermissionTo('sample.factory_approve')) {
             return false;
         }
 
-        // Get assigned factory from pivot table
         $po = $sample->style->purchaseOrder;
         if (!$po) {
             return false;
         }
 
-        $pivot = $sample->style->purchaseOrders()
-            ->where('purchase_orders.id', $po->id)
-            ->first()?->pivot;
-
-        return $pivot && $pivot->assigned_factory_id === $user->id;
+        // Agency must be the agency assigned to the PO
+        return $po->agency_id === $user->id || $user->hasRole('Super Admin');
     }
 
     /**
@@ -569,44 +581,40 @@ class SampleController extends Controller
      */
     private function canImporterApprove(User $user, Sample $sample): bool
     {
-        // Must be the importer of the PO
         return $sample->style->purchaseOrder->importer_id === $user->id &&
                $user->hasPermissionTo('sample.approve_final');
     }
 
     /**
-     * Send sample submitted notifications
+     * Send sample submitted notifications (to agency and importer)
      */
     private function sendSampleSubmittedNotifications(Sample $sample, Style $style): void
     {
         $po = $style->purchaseOrder;
+        if (!$po) {
+            return;
+        }
 
-        // Notify factory - get from pivot table
-        if ($po) {
-            $pivot = $style->purchaseOrders()
-                ->where('purchase_orders.id', $po->id)
-                ->first()?->pivot;
-
-            if ($pivot && $pivot->assigned_factory_id) {
-                $factory = User::find($pivot->assigned_factory_id);
-                if ($factory) {
-                    $this->emailService->sendFromTemplate(
-                        'sample_submitted_to_factory',
-                        $factory->email,
-                        [
-                            'factory_name' => $factory->name,
-                            'po_number' => $po->po_number,
-                            'style_number' => $style->style_number,
-                            'sample_type' => $sample->sampleType->name,
-                            'sample_reference' => $sample->sample_reference,
-                        ]
-                    );
-                }
+        // Notify agency
+        if ($po->agency_id) {
+            $agency = User::find($po->agency_id);
+            if ($agency) {
+                $this->emailService->sendFromTemplate(
+                    'sample_submitted_to_factory',
+                    $agency->email,
+                    [
+                        'factory_name' => $agency->name,
+                        'po_number' => $po->po_number,
+                        'style_number' => $style->style_number,
+                        'sample_type' => $sample->sampleType->name,
+                        'sample_reference' => $sample->sample_reference,
+                    ]
+                );
             }
         }
 
-        // Notify importer - only if PO and importer exist
-        if ($po && $po->importer) {
+        // Notify importer
+        if ($po->importer) {
             $this->emailService->sendFromTemplate(
                 'sample_submitted_to_importer',
                 $po->importer->email,
@@ -622,11 +630,14 @@ class SampleController extends Controller
     }
 
     /**
-     * Send factory approved notification
+     * Send agency approved notification to importer
      */
-    private function sendFactoryApprovedNotification(Sample $sample): void
+    private function sendAgencyApprovedNotification(Sample $sample): void
     {
         $po = $sample->style->purchaseOrder;
+        if (!$po || !$po->importer) {
+            return;
+        }
 
         $this->emailService->sendFromTemplate(
             'sample_factory_approved',
@@ -642,9 +653,9 @@ class SampleController extends Controller
     }
 
     /**
-     * Send factory rejected notification
+     * Send agency rejected notification to factory (submitter)
      */
-    private function sendFactoryRejectedNotification(Sample $sample): void
+    private function sendAgencyRejectedNotification(Sample $sample): void
     {
         $this->emailService->sendFromTemplate(
             'sample_factory_rejected',
@@ -653,13 +664,13 @@ class SampleController extends Controller
                 'factory_name' => $sample->submittedBy->name,
                 'po_number' => $sample->style->purchaseOrder->po_number,
                 'sample_type' => $sample->sampleType->name,
-                'rejection_reason' => $sample->factory_rejection_reason,
+                'rejection_reason' => $sample->agency_rejection_reason,
             ]
         );
     }
 
     /**
-     * Send importer approved notification
+     * Send importer approved notification to factory
      */
     private function sendImporterApprovedNotification(Sample $sample): void
     {
@@ -668,29 +679,23 @@ class SampleController extends Controller
             return;
         }
 
-        $pivot = $sample->style->purchaseOrders()
-            ->where('purchase_orders.id', $po->id)
-            ->first()?->pivot;
-
-        if ($pivot && $pivot->assigned_factory_id) {
-            $factory = User::find($pivot->assigned_factory_id);
-            if ($factory) {
-                $this->emailService->sendFromTemplate(
-                    'sample_fully_approved',
-                    $factory->email,
-                    [
-                        'factory_name' => $factory->name,
-                        'po_number' => $po->po_number,
-                        'style_number' => $sample->style->style_number,
-                        'sample_type' => $sample->sampleType->name,
-                    ]
-                );
-            }
+        // Notify the factory who submitted the sample
+        if ($sample->submittedBy) {
+            $this->emailService->sendFromTemplate(
+                'sample_fully_approved',
+                $sample->submittedBy->email,
+                [
+                    'factory_name' => $sample->submittedBy->name,
+                    'po_number' => $po->po_number,
+                    'style_number' => $sample->style->style_number,
+                    'sample_type' => $sample->sampleType->name,
+                ]
+            );
         }
     }
 
     /**
-     * Send importer rejected notification
+     * Send importer rejected notification to factory
      */
     private function sendImporterRejectedNotification(Sample $sample): void
     {
@@ -699,24 +704,17 @@ class SampleController extends Controller
             return;
         }
 
-        $pivot = $sample->style->purchaseOrders()
-            ->where('purchase_orders.id', $po->id)
-            ->first()?->pivot;
-
-        if ($pivot && $pivot->assigned_factory_id) {
-            $factory = User::find($pivot->assigned_factory_id);
-            if ($factory) {
-                $this->emailService->sendFromTemplate(
-                    'sample_importer_rejected',
-                    $factory->email,
-                    [
-                        'factory_name' => $factory->name,
-                        'po_number' => $po->po_number,
-                        'sample_type' => $sample->sampleType->name,
-                        'rejection_reason' => $sample->importer_rejection_reason,
-                    ]
-                );
-            }
+        if ($sample->submittedBy) {
+            $this->emailService->sendFromTemplate(
+                'sample_importer_rejected',
+                $sample->submittedBy->email,
+                [
+                    'factory_name' => $sample->submittedBy->name,
+                    'po_number' => $po->po_number,
+                    'sample_type' => $sample->sampleType->name,
+                    'rejection_reason' => $sample->importer_rejection_reason,
+                ]
+            );
         }
     }
 
@@ -727,12 +725,12 @@ class SampleController extends Controller
     {
         $user = $request->user();
 
-        $query = \App\Models\Sample::with([
+        $query = Sample::with([
             'style.purchaseOrder:id,po_number',
             'style:id,po_id,style_number',
             'sampleType:id,name,display_name',
             'submittedBy:id,name,email',
-            'factoryApprovedBy:id,name',
+            'agencyApprovedBy:id,name',
             'importerApprovedBy:id,name'
         ]);
 
@@ -747,11 +745,15 @@ class SampleController extends Controller
             $query->whereHas('style.purchaseOrder', function($q) use ($user) {
                 $q->where('created_by', $user->id);
             });
+        } elseif ($user->hasRole('Agency')) {
+            $query->whereHas('style.purchaseOrder', function($q) use ($user) {
+                $q->where('agency_id', $user->id);
+            });
         }
 
         // Status filter
         if ($request->has('status')) {
-            $query->where('status', $request->status);
+            $query->where('final_status', $request->status);
         }
 
         // Search
@@ -776,7 +778,6 @@ class SampleController extends Controller
     {
         $user = $request->user();
 
-        // Validate style_id is provided
         $validator = Validator::make($request->all(), [
             'style_id' => 'required|exists:styles,id',
             'sample_type_id' => 'required|exists:sample_types,id',
@@ -799,14 +800,12 @@ class SampleController extends Controller
 
         $style = Style::with('purchaseOrder')->findOrFail($request->style_id);
 
-        // Check permission (factory can submit)
         if (!$user->hasPermissionTo('sample.create')) {
             return response()->json([
                 'message' => 'You do not have permission to submit samples',
             ], 403);
         }
 
-        // Check if user can access this style
         if (!$this->permissionService->canAccessStyle($user, $style)) {
             return response()->json([
                 'message' => 'You do not have permission to submit samples for this style',
@@ -815,7 +814,6 @@ class SampleController extends Controller
 
         $sampleType = SampleType::findOrFail($request->sample_type_id);
 
-        // Check if sample of this type already exists for this style
         $existingSample = Sample::where('style_id', $request->style_id)
             ->where('sample_type_id', $request->sample_type_id)
             ->first();
@@ -827,7 +825,6 @@ class SampleController extends Controller
             ], 422);
         }
 
-        // Check prerequisites for types that don't allow parallel submission
         if (!$sampleType->allowsParallelSubmission()) {
             if (!$sampleType->prerequisitesMet($request->style_id)) {
                 return response()->json([
@@ -837,13 +834,11 @@ class SampleController extends Controller
             }
         }
 
-        // Auto-generate sample reference if not provided
         $sampleReference = $request->sample_reference;
         if (!$sampleReference) {
             $sampleReference = $style->style_number . '-ST' . $sampleType->id . '-' . date('YmdHis');
         }
 
-        // Use current date if submission_date not provided
         $submissionDate = $request->submission_date ?? now();
 
         $sample = Sample::create([
@@ -856,15 +851,13 @@ class SampleController extends Controller
             'notes' => $request->notes,
             'images' => $request->images,
             'attachment_paths' => $request->attachment_paths,
-            'factory_status' => 'pending',
+            'agency_status' => 'pending',
             'importer_status' => 'pending',
             'final_status' => 'pending',
         ]);
 
-        // Send notification to factory and importer
         $this->sendSampleSubmittedNotifications($sample, $style);
 
-        // Log submission
         $this->activityLog->logCreated('Sample', $sample->id, [
             'sample_type' => $sampleType->name,
             'style_number' => $style->style_number,

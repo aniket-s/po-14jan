@@ -33,6 +33,7 @@ import {
   Palette,
   FolderOpen,
   Building2,
+  Ship,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -183,6 +184,13 @@ const navItems: NavItem[] = [
     href: '/shipments',
     icon: Truck,
     permissions: ['shipment.view', 'shipment.view_all', 'shipment.track'],
+    requireAny: true,
+  },
+  {
+    title: 'Ship Options',
+    href: '/ship-options',
+    icon: Ship,
+    permissions: ['shipment.view', 'shipment.view_all', 'shipment.create', 'po.view'],
     requireAny: true,
   },
   {

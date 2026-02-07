@@ -19,10 +19,10 @@ class Sample extends Model
         'attachment_paths',
         'images',
         'notes',
-        'factory_status',
-        'factory_approved_by',
-        'factory_approved_at',
-        'factory_rejection_reason',
+        'agency_status',
+        'agency_approved_by',
+        'agency_approved_at',
+        'agency_rejection_reason',
         'importer_status',
         'importer_approved_by',
         'importer_approved_at',
@@ -33,7 +33,7 @@ class Sample extends Model
 
     protected $casts = [
         'submission_date' => 'date',
-        'factory_approved_at' => 'datetime',
+        'agency_approved_at' => 'datetime',
         'importer_approved_at' => 'datetime',
         'attachment_paths' => 'array',
         'images' => 'array',
@@ -65,11 +65,11 @@ class Sample extends Model
     }
 
     /**
-     * Get the factory approver
+     * Get the agency approver
      */
-    public function factoryApprovedBy()
+    public function agencyApprovedBy()
     {
-        return $this->belongsTo(User::class, 'factory_approved_by');
+        return $this->belongsTo(User::class, 'agency_approved_by');
     }
 
     /**
@@ -105,11 +105,11 @@ class Sample extends Model
     }
 
     /**
-     * Check if sample is pending factory approval
+     * Check if sample is pending agency approval
      */
-    public function isPendingFactoryApproval(): bool
+    public function isPendingAgencyApproval(): bool
     {
-        return $this->factory_status === 'pending';
+        return $this->agency_status === 'pending';
     }
 
     /**
@@ -117,7 +117,7 @@ class Sample extends Model
      */
     public function isPendingImporterApproval(): bool
     {
-        return $this->factory_status === 'approved' && $this->importer_status === 'pending';
+        return $this->agency_status === 'approved' && $this->importer_status === 'pending';
     }
 
     /**
@@ -125,7 +125,7 @@ class Sample extends Model
      */
     public function isFullyApproved(): bool
     {
-        return $this->factory_status === 'approved' &&
+        return $this->agency_status === 'approved' &&
                $this->importer_status === 'approved' &&
                $this->final_status === 'approved';
     }
@@ -139,29 +139,28 @@ class Sample extends Model
     }
 
     /**
-     * Factory approves sample
+     * Agency approves sample
      */
-    public function factoryApprove(int $userId): void
+    public function agencyApprove(int $userId): void
     {
-        $this->factory_status = 'approved';
-        $this->factory_approved_by = $userId;
-        $this->factory_approved_at = now();
-        $this->factory_rejection_reason = null;
+        $this->agency_status = 'approved';
+        $this->agency_approved_by = $userId;
+        $this->agency_approved_at = now();
+        $this->agency_rejection_reason = null;
 
-        // Check if this completes the approval process
         $this->updateFinalStatus();
         $this->save();
     }
 
     /**
-     * Factory rejects sample
+     * Agency rejects sample
      */
-    public function factoryReject(int $userId, ?string $reason = null): void
+    public function agencyReject(int $userId, ?string $reason = null): void
     {
-        $this->factory_status = 'rejected';
-        $this->factory_approved_by = $userId;
-        $this->factory_approved_at = now();
-        $this->factory_rejection_reason = $reason;
+        $this->agency_status = 'rejected';
+        $this->agency_approved_by = $userId;
+        $this->agency_approved_at = now();
+        $this->agency_rejection_reason = $reason;
         $this->final_status = 'rejected';
         $this->save();
     }
@@ -176,7 +175,6 @@ class Sample extends Model
         $this->importer_approved_at = now();
         $this->importer_rejection_reason = null;
 
-        // Check if this completes the approval process
         $this->updateFinalStatus();
         $this->save();
     }
@@ -195,13 +193,13 @@ class Sample extends Model
     }
 
     /**
-     * Update final status based on both approvals
+     * Update final status based on agency + importer approvals
      */
     private function updateFinalStatus(): void
     {
-        if ($this->factory_status === 'approved' && $this->importer_status === 'approved') {
+        if ($this->agency_status === 'approved' && $this->importer_status === 'approved') {
             $this->final_status = 'approved';
-        } elseif ($this->factory_status === 'rejected' || $this->importer_status === 'rejected') {
+        } elseif ($this->agency_status === 'rejected' || $this->importer_status === 'rejected') {
             $this->final_status = 'rejected';
         } else {
             $this->final_status = 'pending';
@@ -229,15 +227,13 @@ class Sample extends Model
      */
     public function prerequisitesMet(): bool
     {
-        // First 5 types have no prerequisites
         if ($this->canSubmitInParallel()) {
             return true;
         }
 
-        // Check if prerequisite sample is approved
         $prerequisiteType = $this->getPrerequisiteSampleType();
         if (!$prerequisiteType) {
-            return true; // No prerequisite required
+            return true;
         }
 
         $prerequisiteSample = Sample::where('style_id', $this->style_id)
