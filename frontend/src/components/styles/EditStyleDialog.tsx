@@ -35,26 +35,19 @@ import { FileDropzone } from '@/components/ui/file-dropzone';
 const styleSchema = z.object({
   style_number: z.string().min(1, 'Style number is required'),
   description: z.string().optional(),
-  fabric_type_name: z.string().optional(), // Combined fabric type and name
-  fabric_weight: z.string().optional(), // NEW: Fabric weight
-  color: z.string().optional(), // Kept for backward compatibility
-  color_id: z.coerce.number().optional(), // NEW: Foreign key to colors table
-  size: z.string().optional(),
+  fabric_type_name: z.string().optional(),
+  fabric_weight: z.string().optional(),
+  color_id: z.coerce.number().optional(),
   fit: z.string().optional(),
-  images: z.string().optional(), // Comma-separated URLs
-  technical_file_paths: z.array(z.string()).optional(), // Changed to array for multiple files
-  // Master data
+  technical_file_paths: z.array(z.string()).optional(),
   brand_id: z.coerce.number().optional(),
-  buyer_id: z.coerce.number().optional(), // NEW: Buyer
-  category_id: z.coerce.number().optional(), // NEW: Category
-  season_id: z.coerce.number().optional(), // NEW: Season
-  gender_id: z.coerce.number().min(1, 'Gender is required'), // REQUIRED: Gender for size management
-  // Pricing fields
-  msrp: z.coerce.number().optional(), // NEW: MSRP
-  wholesale_price: z.coerce.number().optional(), // NEW: Wholesale price
-  // Status
-  is_active: z.boolean().optional(), // NEW: Active/Inactive
-  // Trims (array of trim IDs)
+  retailer_id: z.coerce.number().optional(),
+  category_id: z.coerce.number().optional(),
+  season_id: z.coerce.number().optional(),
+  gender_id: z.coerce.number().min(1, 'Gender is required'),
+  msrp: z.coerce.number().optional(),
+  wholesale_price: z.coerce.number().optional(),
+  is_active: z.boolean().optional(),
   trims: z.array(z.number()).optional(),
 });
 
@@ -81,11 +74,11 @@ export function EditStyleDialog({
   const [selectedTrims, setSelectedTrims] = useState<number[]>([]);
   const [trims, setTrims] = useState<any[]>([]);
   const [genders, setGenders] = useState<any[]>([]);
-  const [brands, setBrands] = useState<any[]>([]); // NEW: Brands list
-  const [buyers, setBuyers] = useState<any[]>([]); // NEW: Buyers list
-  const [categories, setCategories] = useState<any[]>([]); // NEW: Categories list
-  const [seasons, setSeasons] = useState<any[]>([]); // NEW: Seasons list
-  const [colors, setColors] = useState<any[]>([]); // NEW: Colors list
+  const [brands, setBrands] = useState<any[]>([]);
+  const [retailers, setRetailers] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [seasons, setSeasons] = useState<any[]>([]);
+  const [colors, setColors] = useState<any[]>([]);
   const [trimOptions, setTrimOptions] = useState<MultiSelectOption[]>([]);
   const [sizes, setSizes] = useState<any[]>([]); // Sizes based on selected gender
   const [selectedGender, setSelectedGender] = useState<number | undefined>();
@@ -97,14 +90,11 @@ export function EditStyleDialog({
       description: '',
       fabric_type_name: '',
       fabric_weight: '',
-      color: '',
       color_id: undefined,
-      size: '',
       fit: '',
-      images: '',
       technical_file_paths: [],
       brand_id: undefined,
-      buyer_id: undefined,
+      retailer_id: undefined,
       category_id: undefined,
       season_id: undefined,
       gender_id: undefined,
@@ -124,7 +114,7 @@ export function EditStyleDialog({
           trimsResponse,
           gendersResponse,
           brandsResponse,
-          buyersResponse,
+          retailersResponse,
           categoriesResponse,
           seasonsResponse,
           colorsResponse,
@@ -132,7 +122,7 @@ export function EditStyleDialog({
           api.get('/master-data/trims?all=true'),
           api.get('/master-data/genders?active_only=true&all=true'),
           api.get('/master-data/brands?all=true'),
-          api.get('/master-data/buyers?all=true'),
+          api.get('/master-data/retailers?all=true'),
           api.get('/master-data/categories?all=true'),
           api.get('/master-data/seasons?all=true'),
           api.get('/master-data/colors?all=true'),
@@ -141,7 +131,7 @@ export function EditStyleDialog({
         setTrims(fetchedTrims);
         setGenders(gendersResponse.data || []);
         setBrands(brandsResponse.data || []);
-        setBuyers(buyersResponse.data || []);
+        setRetailers(retailersResponse.data || []);
         setCategories(categoriesResponse.data || []);
         setSeasons(seasonsResponse.data || []);
         setColors(colorsResponse.data || []);
@@ -194,14 +184,11 @@ export function EditStyleDialog({
         description: style.description || '',
         fabric_type_name: style.fabric_type_name || '',
         fabric_weight: (style as any).fabric_weight || '',
-        color: typeof style.color === 'string' ? style.color : '',
         color_id: (style as any).color_id || undefined,
-        size: (style as any).size || '',
         fit: style.fit || '',
-        images: style.images ? style.images.join(', ') : '',
         technical_file_paths: (style as any).technical_file_paths || [],
         brand_id: (style as any).brand_id || undefined,
-        buyer_id: (style as any).buyer_id || undefined,
+        retailer_id: (style as any).retailer_id || undefined,
         category_id: (style as any).category_id || undefined,
         season_id: (style as any).season_id || undefined,
         gender_id: genderId,
@@ -264,14 +251,12 @@ export function EditStyleDialog({
         description: data.description || undefined,
         fabric_type_name: data.fabric_type_name || undefined,
         fabric_weight: data.fabric_weight || undefined,
-        color: data.color || undefined,
         color_id: data.color_id || undefined,
         fit: data.fit || undefined,
         images: parsedImages,
         technical_file_paths: uploadedTechPacks.length > 0 ? uploadedTechPacks : undefined,
-        // Master data
         brand_id: data.brand_id || undefined,
-        buyer_id: data.buyer_id || undefined,
+        retailer_id: data.retailer_id || undefined,
         category_id: data.category_id || undefined,
         season_id: data.season_id || undefined,
         gender_id: data.gender_id || undefined,
@@ -591,10 +576,10 @@ export function EditStyleDialog({
                 />
                 <FormField
                   control={form.control}
-                  name="buyer_id"
+                  name="retailer_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Buyer</FormLabel>
+                      <FormLabel>Retailer</FormLabel>
                       <FormControl>
                         <select
                           {...field}
@@ -605,10 +590,10 @@ export function EditStyleDialog({
                           }}
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          <option value="">Select buyer...</option>
-                          {buyers.map((buyer: any) => (
-                            <option key={buyer.id} value={buyer.id}>
-                              {buyer.name}
+                          <option value="">Select retailer...</option>
+                          {retailers.map((retailer: any) => (
+                            <option key={retailer.id} value={retailer.id}>
+                              {retailer.name}
                             </option>
                           ))}
                         </select>

@@ -25,7 +25,6 @@ export interface Style {
   id: number;
   style_number: string;
   description: string | null;
-  fabric: string | null;
   color: ColorObject | null;
   fit: string | null;
   size_breakup: Record<string, number>;
@@ -41,37 +40,37 @@ export interface Style {
   brand_id: number | null;
   season_id: number | null;
   gender_id: number | null;
-  division_id: number | null;
-  customer_id: number | null;
-  agent_id: number | null;
-  vendor_id: number | null;
+  retailer_id: number | null;
+  category_id: number | null;
+  color_id: number | null;
+  fabric_type_id: number | null;
+  fabric_quality_id: number | null;
 
   // Enhanced fields
   color_code: string | null;
   color_name: string | null;
   fabric_name: string | null;
   fabric_type: string | null;
-  fabric_type_name: string | null; // NEW: Combined fabric type and name
+  fabric_type_name: string | null;
   fabric_weight: string | null;
   country_of_origin: string | null;
-  loading_port: string | null;
   item_description: string | null;
-  packing_method: string | null;
+  msrp: number | null;
+  wholesale_price: number | null;
+  is_active: boolean;
 
   created_by: number | null;
   tp_date: string | null;
-  shipping_term: string | null; // Changed from price_term
-  payment_term: string | null;
-  current_milestone: string | null;
 
   // Relationships (loaded when needed)
   brand?: any;
   season?: any;
   gender?: GenderObject; // Gender with active_sizes for size management
-  division?: any;
-  customer?: any;
-  agent?: any;
-  vendor?: any;
+  retailer?: any;
+  category?: any;
+  color?: any;
+  fabric_type?: any;
+  fabric_quality?: any;
   purchase_orders?: any[];
 
   created_at: string;
@@ -91,13 +90,11 @@ export interface PaginatedStyles {
 export interface CreateStyleData {
   style_number: string;
   description?: string;
-  fabric?: string; // Deprecated - use fabric_type_name
-  fabric_type_name?: string; // Combined fabric type and name
-  fabric_type_id?: number; // Foreign key to fabric_types table
-  fabric_quality_id?: number; // Foreign key to fabric_qualities table
+  fabric_type_name?: string;
+  fabric_type_id?: number;
+  fabric_quality_id?: number;
   fabric_weight?: string;
-  color?: string; // Deprecated - use color_id
-  color_id?: number; // NEW: Foreign key to colors table
+  color_id?: number;
   fit?: string;
   size_breakup?: Record<string, number>;
   total_quantity?: number;
@@ -109,31 +106,21 @@ export interface CreateStyleData {
 
   // Master data
   brand_id?: number;
-  buyer_id?: number; // NEW: Buyer categorization
-  retailer_id?: number; // NEW: Retailer (replaces buyer in some flows)
-  category_id?: number; // NEW: Product category
-  season_id?: number; // NEW: Season/collection
-  gender_id?: number; // REQUIRED for size management
+  retailer_id?: number;
+  category_id?: number;
+  season_id?: number;
+  gender_id?: number;
 
   // Enhanced fields
-  color_code?: string; // Pantone code (optional)
-  color_name?: string;
-  fabric_name?: string; // Deprecated - use fabric_type_name
-  fabric_type?: string; // Deprecated - use fabric_type_name
   country_of_origin?: string;
 
   // Pricing
-  msrp?: number; // NEW: MSRP
-  wholesale_price?: number; // NEW: Wholesale price
+  msrp?: number;
+  wholesale_price?: number;
 
   // Status
-  is_active?: boolean; // NEW: Active/Inactive
+  is_active?: boolean;
   item_description?: string;
-  // REMOVED (PO-level fields):
-  // - loading_port
-  // - packing_method
-  // - shipping_term (moved to PO pivot table)
-  // - payment_term
 
   trims?: Array<{
     trim_id: number;
@@ -154,14 +141,12 @@ export interface StyleFilters {
   search?: string;
   brand_id?: number;
   season_id?: number;
-  division_id?: number;
-  customer_id?: number;
   page?: number;
   per_page?: number;
 }
 
 // ========================================
-// STANDALONE STYLE MANAGEMENT (NEW)
+// STANDALONE STYLE MANAGEMENT
 // ========================================
 
 /**
@@ -220,14 +205,14 @@ export const getAvailableStylesForPO = async (poId: number, filters?: StyleFilte
 };
 
 // ========================================
-// PO-STYLE ASSOCIATIONS (NEW)
+// PO-STYLE ASSOCIATIONS
 // ========================================
 
 export interface POStyleData {
   style_id: number;
   quantity_in_po: number;
   unit_price_in_po?: number;
-  shipping_term?: 'FOB' | 'DDP'; // Changed from price_term
+  shipping_term?: 'FOB' | 'DDP';
   size_breakdown?: Record<string, number>;
   assigned_factory_id?: number;
   assigned_agency_id?: number;
@@ -402,31 +387,4 @@ export const executeStandaloneStylesImport = async (data: ExcelImportRequest): P
 export const downloadStylesTemplate = async (): Promise<Blob> => {
   const response = await api.get('/styles/template/download', { responseType: 'blob' });
   return response.data;
-};
-
-// ========================================
-// LEGACY ENDPOINTS (for backward compatibility)
-// ========================================
-
-/**
- * Create style within PO context (DEPRECATED - use attachStylesToPO instead)
- */
-export const createStyleInPO = async (poId: number, data: CreateStyleData): Promise<Style> => {
-  const response = await api.post(`/purchase-orders/${poId}/styles`, data);
-  return response.data;
-};
-
-/**
- * Update style in PO context (DEPRECATED - use updatePOStyleData instead)
- */
-export const updateStyleInPO = async (poId: number, styleId: number, data: UpdateStyleData): Promise<Style> => {
-  const response = await api.put(`/purchase-orders/${poId}/styles/${styleId}`, data);
-  return response.data;
-};
-
-/**
- * Delete style from PO (DEPRECATED - use detachStyleFromPO instead)
- */
-export const deleteStyleFromPO = async (poId: number, styleId: number): Promise<void> => {
-  await api.delete(`/purchase-orders/${poId}/styles/${styleId}`);
 };

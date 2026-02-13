@@ -48,46 +48,34 @@ import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialo
 import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
 import { CreatePaymentTermDialog } from '@/components/master-data/CreatePaymentTermDialog';
 import { useAuth } from '@/contexts/AuthContext';
-import { RatioInput } from '@/components/purchase-orders/RatioInput';
 
 const poSchema = z.object({
-  auto_generate_po_number: z.boolean().optional(),
   po_number: z.string().min(1, 'PO number is required'),
-  headline: z.string().optional(), // NEW: PO headline/title
+  headline: z.string().optional(),
   retailer_id: z.string().min(1, 'Retailer is required'),
   po_date: z.string().min(1, 'PO date is required'),
-  // status removed from creation - auto-set to draft on backend
   currency_id: z.string().min(1, 'Currency is required'),
   shipping_method: z.string().optional(),
   notes: z.string().optional(),
-  // Master data foreign keys (division_id, customer_id, and brand_id removed - brand already in Style)
   season_id: z.string().optional(),
   agent_id: z.string().optional(),
   vendor_id: z.string().optional(),
   warehouse_id: z.string().optional(),
-  // NEW: Country of origin for shipping calculations
   country_id: z.string().optional(),
-  // NEW: Shipping term (FOB or DDP) - determines shipping date fields visibility
   shipping_term: z.enum(['FOB', 'DDP']).optional(),
-  // Payment terms (structured)
   payment_terms_structured: z.object({
     term: z.string(),
     percentage: z.number().min(0, 'Percentage must be at least 0').max(100, 'Percentage cannot exceed 100').optional(),
   }).optional(),
-  // Additional fields (removed: loading_port)
   packing_method: z.string().optional(),
   other_terms: z.string().optional(),
-  // Enhanced PO fields (ship_from and manufacturer removed)
   revision_date: z.string().optional(),
-  // FOB: ex_factory_date required, ETD auto-calculated (ex_factory + 7 days)
-  // DDP: in_warehouse_date required, ETD auto-calculated (in_warehouse - transit - 5 days)
   ex_factory_date: z.string().optional(),
-  etd_date: z.string().optional(), // Auto-calculated based on shipping term
+  etd_date: z.string().optional(),
   eta_date: z.string().optional(),
   in_warehouse_date: z.string().optional(),
   ship_to: z.string().optional(),
   ship_to_address: z.string().optional(),
-  // Sample schedule (will be auto-generated)
   sample_schedule: z.object({
     lab_dip_submission: z.string().optional(),
     fit_sample_submission: z.string().optional(),
@@ -98,7 +86,6 @@ const poSchema = z.object({
     production_start: z.string().optional(),
     top_approval: z.string().optional(),
   }).optional(),
-  // REMOVED: buyer_details fields - buyer/trim details removed per requirements
   packing_guidelines: z.string().optional(),
 });
 
@@ -109,7 +96,6 @@ export default function PurchaseOrdersPage() {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -126,7 +112,6 @@ export default function PurchaseOrdersPage() {
   const [isCreateCurrencyDialogOpen, setIsCreateCurrencyDialogOpen] = useState(false);
   const [isCreatePaymentTermDialogOpen, setIsCreatePaymentTermDialogOpen] = useState(false);
 
-  // Master data state (brands removed - brand is in Style)
   const [currencies, setCurrencies] = useState<any[]>([]);
   const [paymentTerms, setPaymentTerms] = useState<any[]>([]);
   const [seasons, setSeasons] = useState<any[]>([]);
@@ -135,12 +120,9 @@ export default function PurchaseOrdersPage() {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [vendors, setVendors] = useState<any[]>([]);
-  const [styles, setStyles] = useState<any[]>([]);
 
-  // Auto-generation states
   const [autoGeneratePO, setAutoGeneratePO] = useState(true);
   const [isGeneratingPO, setIsGeneratingPO] = useState(false);
-  const [isCalculatingDates, setIsCalculatingDates] = useState(false);
 
   // Payment terms state
   const [paymentTerm, setPaymentTerm] = useState<string>('');
@@ -151,14 +133,6 @@ export default function PurchaseOrdersPage() {
   // Selected country ID for DDP date calculations
   const [selectedCountryId, setSelectedCountryId] = useState<string>('');
 
-  // Selected styles with quantity, ratio, and price
-  const [selectedStyles, setSelectedStyles] = useState<Array<{
-    style_id: number;
-    quantity: number;
-    ratio: any;
-    unit_price_in_po?: number | null;
-  }>>([]);
-
   const {
     register,
     handleSubmit,
@@ -167,14 +141,11 @@ export default function PurchaseOrdersPage() {
     setValue,
   } = useForm<POFormData>({
     resolver: zodResolver(poSchema),
-    defaultValues: {
-      // status removed - auto-set to draft on backend
-    },
   });
 
   useEffect(() => {
     fetchPurchaseOrders();
-  }, [currentPage, searchTerm, statusFilter]);
+  }, [currentPage, searchTerm]);
 
   // Fetch master data on mount
   useEffect(() => {
@@ -198,14 +169,13 @@ export default function PurchaseOrdersPage() {
 
   const fetchMasterData = async () => {
     try {
-      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, stylesRes, currenciesRes, paymentTermsRes] = await Promise.all([
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, currenciesRes, paymentTermsRes] = await Promise.all([
         api.get('/master-data/seasons?all=true'),
         api.get('/master-data/retailers?all=true'),
         api.get('/master-data/countries?all=true'),
         api.get('/master-data/warehouses?all=true'),
         api.get('/master-data/agents?all=true'),
         api.get('/master-data/vendors?all=true'),
-        api.get('/styles?all=true'),
         api.get('/master-data/currencies?all=true'),
         api.get('/master-data/payment-terms?all=true'),
       ]);
@@ -216,8 +186,6 @@ export default function PurchaseOrdersPage() {
       setWarehouses(warehousesRes.data || []);
       setAgents(agentsRes.data || []);
       setVendors(vendorsRes.data || []);
-      // Handle paginated response from /styles endpoint
-      setStyles(stylesRes.data?.data || stylesRes.data || []);
       setCurrencies(currenciesRes.data || []);
       setPaymentTerms(paymentTermsRes.data || []);
     } catch (error) {
@@ -232,7 +200,6 @@ export default function PurchaseOrdersPage() {
         page: number;
         per_page: number;
         search?: string;
-        status?: string;
       } = {
         page: currentPage,
         per_page: 10,
@@ -240,10 +207,6 @@ export default function PurchaseOrdersPage() {
 
       if (searchTerm) {
         params.search = searchTerm;
-      }
-
-      if (statusFilter !== 'all') {
-        params.status = statusFilter;
       }
 
       const response = await api.get<PaginatedResponse<PurchaseOrder>>('/purchase-orders', {
@@ -275,30 +238,6 @@ export default function PurchaseOrdersPage() {
       console.error('Failed to generate PO number:', error);
     } finally {
       setIsGeneratingPO(false);
-    }
-  };
-
-  // Auto-calculate dates based on ETD and country
-  const calculateDates = async (etdDate: string, countryId: string) => {
-    if (!etdDate || !countryId) return;
-
-    setIsCalculatingDates(true);
-    try {
-      const response = await api.post('/purchase-orders/calculate-dates', {
-        etd_date: etdDate,
-        country_id: parseInt(countryId),
-      });
-
-      if (response.data?.eta) {
-        setValue('eta_date', response.data.eta);
-      }
-      if (response.data?.in_warehouse) {
-        setValue('in_warehouse_date', response.data.in_warehouse);
-      }
-    } catch (error) {
-      console.error('Failed to calculate dates:', error);
-    } finally {
-      setIsCalculatingDates(false);
     }
   };
 
@@ -340,30 +279,23 @@ export default function PurchaseOrdersPage() {
   const onSubmit = async (data: POFormData) => {
     setIsSubmitting(true);
     try {
-      // REMOVED: buyer_details building logic - buyer/trim details removed per requirements
-
       const requestData = {
         po_number: data.po_number,
-        headline: data.headline || null, // NEW: PO headline
+        headline: data.headline || null,
         retailer_id: data.retailer_id ? parseInt(data.retailer_id) : null,
         po_date: data.po_date,
-        // status removed - auto-set to 'draft' on backend
         currency_id: data.currency_id ? parseInt(data.currency_id) : null,
         shipping_method: data.shipping_method,
         notes: data.notes,
-        // Master data (division_id, customer_id, and brand_id removed - brand is in Style)
         season_id: data.season_id ? parseInt(data.season_id) : null,
         agent_id: data.agent_id ? parseInt(data.agent_id) : null,
         vendor_id: data.vendor_id ? parseInt(data.vendor_id) : null,
         warehouse_id: data.warehouse_id ? parseInt(data.warehouse_id) : null,
         country_id: data.country_id ? parseInt(data.country_id) : null,
-        shipping_term: shippingTerm || null, // FOB or DDP
-        // Payment terms (structured)
+        shipping_term: shippingTerm || null,
         payment_terms_structured: data.payment_terms_structured || null,
-        // Additional fields (removed: loading_port)
         packing_method: data.packing_method || null,
         other_terms: data.other_terms || null,
-        // Enhanced fields (ship_from and manufacturer removed)
         revision_date: data.revision_date,
         ex_factory_date: data.ex_factory_date,
         etd_date: data.etd_date,
@@ -371,19 +303,14 @@ export default function PurchaseOrdersPage() {
         in_warehouse_date: data.in_warehouse_date,
         ship_to: data.ship_to,
         ship_to_address: data.ship_to_address,
-        // Sample schedule
         sample_schedule: data.sample_schedule || undefined,
-        // REMOVED: buyer_details - buyer/trim details removed per requirements
         packing_guidelines: data.packing_guidelines,
-        // Styles with quantity and ratio
-        styles: selectedStyles.length > 0 ? selectedStyles : undefined,
       };
 
       await api.post('/purchase-orders', requestData);
       setIsCreateDialogOpen(false);
       reset();
       setAutoGeneratePO(true);
-      setSelectedStyles([]);
       setPaymentTerm('');
       setPaymentPercentage('');
       setSelectedCountryId('');
@@ -408,17 +335,6 @@ export default function PurchaseOrdersPage() {
     } catch (error) {
       console.error('Failed to delete purchase order:', error);
     }
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      draft: 'secondary',
-      confirmed: 'default',
-      in_production: 'default',
-      completed: 'secondary',
-      cancelled: 'destructive',
-    };
-    return colors[status] || 'secondary';
   };
 
   const formatCurrency = (value: number, currency: string) => {
@@ -477,7 +393,7 @@ export default function PurchaseOrdersPage() {
                   <DialogHeader>
                     <DialogTitle>Create Purchase Order</DialogTitle>
                     <DialogDescription>
-                      Create a new purchase order. Optionally add styles during creation.
+                      Create a new purchase order.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-6 py-4">
@@ -573,7 +489,6 @@ export default function PurchaseOrdersPage() {
                           )}
                         </div>
                       </div>
-                      {/* Status removed from creation - auto-set to draft on backend */}
                       <div className="space-y-2">
                         <Label htmlFor="currency_id">Currency *</Label>
                         <div className="flex gap-2">
@@ -608,7 +523,6 @@ export default function PurchaseOrdersPage() {
                     <div className="space-y-4">
                       <h3 className="text-sm font-semibold">Master Data</h3>
                       <div className="grid grid-cols-3 gap-4">
-                        {/* REMOVED: brand_id - Brand is already in Style */}
                         <div className="space-y-2">
                           <Label htmlFor="season_id">Production Season</Label>
                           <div className="flex gap-2">
@@ -1005,8 +919,7 @@ export default function PurchaseOrdersPage() {
                               disabled
                               className="bg-muted"
                             />
-                            {isCalculatingDates && <p className="text-xs text-muted-foreground">Calculating...</p>}
-                          </div>
+                                          </div>
                         </div>
                       )}
                     </div>
@@ -1125,134 +1038,6 @@ export default function PurchaseOrdersPage() {
                       </div>
                     </div>
 
-                    {/* REMOVED: Buyer/Trim Details section - buyer/trim details removed per requirements */}
-
-                    {/* Styles Selection */}
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold">Styles (Optional)</h3>
-                      <div className="text-xs text-muted-foreground">
-                        Add styles to this PO with quantity and ratio
-                      </div>
-                      <div className="space-y-4">
-                        {/* Style Selection Dropdown */}
-                        <div className="space-y-2">
-                          <Label>Select Styles</Label>
-                          <Select
-                            onValueChange={(value) => {
-                              const styleId = parseInt(value);
-                              if (!selectedStyles.find(s => s.style_id === styleId)) {
-                                const style = styles.find(s => s.id === styleId);
-                                setSelectedStyles([...selectedStyles, {
-                                  style_id: styleId,
-                                  quantity: 100,
-                                  ratio: null,
-                                  unit_price_in_po: style?.unit_price || null,
-                                }]);
-                              }
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a style to add" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {styles
-                                .filter(style => !selectedStyles.find(s => s.style_id === style.id))
-                                .map((style) => (
-                                  <SelectItem key={style.id} value={style.id.toString()}>
-                                    {style.style_number}{style.description ? ` - ${style.description}` : ''}
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        {/* Selected Styles with Quantity and Ratio */}
-                        {selectedStyles.length > 0 && (
-                          <div className="space-y-3">
-                            <Label>Selected Styles</Label>
-                            {selectedStyles.map((selectedStyle, index) => {
-                              const style = styles.find(s => s.id === selectedStyle.style_id);
-                              if (!style) return null;
-
-                              return (
-                                <Card key={selectedStyle.style_id} className="p-4">
-                                  <div className="space-y-3">
-                                    <div className="flex items-center justify-between">
-                                      <div className="font-medium">
-                                        {style.style_number}{style.description ? ` - ${style.description}` : ''}
-                                      </div>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => {
-                                          setSelectedStyles(selectedStyles.filter((_, i) => i !== index));
-                                        }}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                    <div className="space-y-3">
-                                      <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                          <Label htmlFor={`style-quantity-${index}`} className="text-xs">
-                                            Quantity *
-                                          </Label>
-                                          <Input
-                                            id={`style-quantity-${index}`}
-                                            type="number"
-                                            min="1"
-                                            value={selectedStyle.quantity}
-                                            onChange={(e) => {
-                                              const newStyles = [...selectedStyles];
-                                              newStyles[index].quantity = parseInt(e.target.value) || 0;
-                                              setSelectedStyles(newStyles);
-                                            }}
-                                          />
-                                        </div>
-                                        <div className="space-y-1">
-                                          <Label htmlFor={`style-price-${index}`} className="text-xs">
-                                            Unit Price (Optional)
-                                          </Label>
-                                          <Input
-                                            id={`style-price-${index}`}
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            placeholder={style.unit_price ? `Default: ${style.unit_price}` : 'Enter price'}
-                                            value={selectedStyle.unit_price_in_po || ''}
-                                            onChange={(e) => {
-                                              const newStyles = [...selectedStyles];
-                                              newStyles[index].unit_price_in_po = e.target.value ? parseFloat(e.target.value) : null;
-                                              setSelectedStyles(newStyles);
-                                            }}
-                                          />
-                                          {style.unit_price && (
-                                            <p className="text-xs text-muted-foreground">
-                                              Style default: ${style.unit_price}
-                                            </p>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <RatioInput
-                                        value={selectedStyle.ratio}
-                                        onChange={(ratio) => {
-                                          const newStyles = [...selectedStyles];
-                                          newStyles[index].ratio = ratio;
-                                          setSelectedStyles(newStyles);
-                                        }}
-                                        styleGenderId={style.gender_id}
-                                      />
-                                    </div>
-                                  </div>
-                                </Card>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
                     {/* Additional Information */}
                     <div className="space-y-4">
                       <h3 className="text-sm font-semibold">Additional Information</h3>
@@ -1339,7 +1124,6 @@ export default function PurchaseOrdersPage() {
                   />
                 </div>
               </div>
-              {/* Status filter removed - status is no longer shown in creation */}
             </div>
           </CardContent>
         </Card>
@@ -1357,7 +1141,6 @@ export default function PurchaseOrdersPage() {
                   <TableRow>
                     <TableHead>PO Number</TableHead>
                     <TableHead>Date</TableHead>
-                    {/* Status column removed from creation - still shown in list for existing POs */}
                     <TableHead className="text-right">Quantity</TableHead>
                     <TableHead className="text-right">Value</TableHead>
                     <TableHead>Styles</TableHead>
@@ -1367,7 +1150,7 @@ export default function PurchaseOrdersPage() {
                 <TableBody>
                   {purchaseOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
                         No purchase orders found
                       </TableCell>
                     </TableRow>
@@ -1385,7 +1168,6 @@ export default function PurchaseOrdersPage() {
                           </div>
                         </TableCell>
                         <TableCell>{formatDate(po.po_date)}</TableCell>
-                        {/* Status cell removed */}
                         <TableCell className="text-right">
                           {po.total_quantity.toLocaleString()}
                         </TableCell>

@@ -19,14 +19,6 @@ export interface SampleSchedule {
   bulk_fabric_inhouse?: string;
 }
 
-export interface BuyerDetails {
-  buyer?: string;
-  label_hangtags?: string;
-  price_ticket?: string;
-  spec?: string;
-  carton_marking?: string;
-}
-
 export interface PurchaseOrder {
   id: number;
   po_number: string;
@@ -34,7 +26,6 @@ export interface PurchaseOrder {
   importer_id: number;
   agency_id: number | null;
   po_date: string;
-  delivery_date?: string | null;
   status: string;
   total_quantity: number;
   total_value: number;
@@ -56,30 +47,23 @@ export interface PurchaseOrder {
   etd_date?: string;
   eta_date?: string;
   in_warehouse_date?: string;
-  ship_from?: string;
   ship_to?: string;
-  manufacturer?: string;
   ship_to_address?: string;
   sample_schedule?: SampleSchedule;
-  buyer_details?: BuyerDetails;
   packing_guidelines?: string;
   // Master data foreign keys
-  brand_id?: number | null;
   season_id?: number | null;
   retailer_id?: number | null;
-  retailer?: string | null;
   country_id?: number | null;
   warehouse_id?: number | null;
   agent_id?: number | null;
   vendor_id?: number | null;
-  // Shipping term and additional fields - changed from price_term
+  // Shipping term and additional fields
   shipping_term?: 'FOB' | 'DDP' | null;
   payment_term?: string | null;
   country_of_origin?: string | null;
   packing_method?: string | null;
   other_terms?: string | null;
-  terms_of_delivery?: string | null;
-  destination_country?: string | null;
 }
 
 export interface PackDetail {
@@ -99,23 +83,18 @@ export interface PackingDetails {
 
 export interface Style {
   id: number;
-  purchase_order_id: number;
   style_number: string;
   description: string | null;
   quantity: number;
   unit_price: number;
   total_price: number;
-  fabric_type: string | null;
   color: ColorObject | null;
   size_breakdown: Record<string, number> | null;
   packing_details?: PackingDetails | null;
-  assignment_type: 'direct_to_factory' | 'via_agency' | null;
-  assigned_factory_id: number | null;
-  assigned_agency_id: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
-  purchase_order?: PurchaseOrder;
+  purchase_orders?: PurchaseOrder[];
   factory_assignments?: FactoryAssignment[];
   samples?: Sample[];
   assignedFactory?: User;
@@ -124,7 +103,7 @@ export interface Style {
   pivot?: {
     quantity_in_po?: number;
     unit_price_in_po?: number;
-    shipping_term?: 'FOB' | 'DDP'; // Changed from price_term
+    shipping_term?: 'FOB' | 'DDP';
     size_breakdown?: Record<string, number>;
     assigned_factory_id?: number;
     assigned_agency_id?: number;
@@ -252,8 +231,6 @@ export interface CreatePurchaseOrderData {
   importer_id?: number;
   agency_id?: number | null;
   po_date: string;
-  delivery_date?: string | null;
-  status: string;
   currency: string;
   payment_terms?: string;
   shipping_method?: string;
@@ -263,12 +240,9 @@ export interface CreatePurchaseOrderData {
   etd_date?: string;
   eta_date?: string;
   in_warehouse_date?: string;
-  ship_from?: string;
   ship_to?: string;
-  manufacturer?: string;
   ship_to_address?: string;
   sample_schedule?: SampleSchedule;
-  buyer_details?: BuyerDetails;
   packing_guidelines?: string;
 }
 

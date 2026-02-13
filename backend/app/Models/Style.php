@@ -10,76 +10,49 @@ class Style extends Model
     use HasFactory;
 
     protected $fillable = [
-        'po_id', // Kept for backward compatibility (nullable)
-        'purchase_order_id', // Alias for po_id
-        'style_number', // Now unique globally
+        'po_id',
+        'style_number',
         'description',
         'fabric',
         'color',
         'size_breakdown',
         'size_breakup',
         'quantity',
-        'total_quantity',  // Base/reference quantity
-        'unit_price', // Base price (nullable, set at PO level now)
+        'total_quantity',
+        'unit_price',
         'total_price',
-        'fob_price', // Nullable
-        'technical_file_paths', // Changed from technical_file_path to support multiple files
+        'fob_price',
+        'technical_file_paths',
         'images',
         'packing_details',
         'metadata',
         'fit',
-        // destination_port - REMOVED (not for styles)
         // Master data foreign keys
         'brand_id',
-        'retailer_id', // CHANGED: Replaced buyer_id with retailer_id
-        'category_id', // Product category
-        'season_id', // Season/collection - "Styles Created for Season"
-        'gender_id', // Gender for size management
-        'color_id', // Foreign key to colors table
-        'fabric_type_id', // NEW: Foreign key to fabric_types table
-        'fabric_quality_id', // NEW: Foreign key to fabric_qualities table
-        // division_id - REMOVED
-        // customer_id - REMOVED
-        // buyer_id - REMOVED (replaced by retailer_id)
-        // agent_id - REMOVED (not for styles)
-        // vendor_id - REMOVED (not for styles)
+        'retailer_id',
+        'category_id',
+        'season_id',
+        'gender_id',
+        'color_id',
+        'fabric_type_id',
+        'fabric_quality_id',
         // Enhanced fields
-        'color_code', // Pantone number
+        'color_code',
         'color_name',
         'fabric_name',
         'fabric_type',
-        'fabric_type_name', // New field - combined fabric type and name
+        'fabric_type_name',
         'fabric_weight',
         'country_of_origin',
         'item_description',
         'created_by',
-        'updated_by', // NEW: User who last updated
+        'updated_by',
         'tp_date',
         // Pricing fields
-        'msrp', // NEW: Manufacturer Suggested Retail Price
-        'wholesale_price', // NEW: Wholesale price for bulk customers
+        'msrp',
+        'wholesale_price',
         // Status
-        'is_active', // NEW: Active/Inactive flag
-        // loading_port - REMOVED (not for styles)
-        // packing_method - REMOVED (not for styles)
-        // shipping_term - REMOVED (not for styles)
-        // payment_term - REMOVED (not for styles)
-        // current_milestone - REMOVED (not for styles)
-        // REMOVED buyer/trim detail fields:
-        // - price_ticket_spec
-        // - labels_hangtags
-        // - price_ticket_info
-        // NOTE: PO-specific fields moved to pivot table:
-        // - assigned_factory_id
-        // - assigned_agency_id
-        // - assignment_type
-        // - assigned_at
-        // - target_production_date
-        // - target_shipment_date
-        // - ex_factory_date
-        // - status
-        // - shipping_term (per PO) - changed from price_term
-        // - size_breakdown (per PO)
+        'is_active',
     ];
 
     protected $casts = [
@@ -94,34 +67,17 @@ class Style extends Model
         'wholesale_price' => 'decimal:2',
         'tp_date' => 'date',
         'images' => 'array',
-        'technical_file_paths' => 'array', // NEW: Support multiple technical files
+        'technical_file_paths' => 'array',
         'packing_details' => 'array',
         'metadata' => 'array',
         'is_active' => 'boolean',
-        // NOTE: PO-specific field casts moved to pivot model:
-        // - assigned_at
-        // - target_production_date
-        // - target_shipment_date
-        // - ex_factory_date
     ];
 
     protected $appends = ['quantity'];
 
-    /**
-     * Fields hidden from JSON responses (removed from styles, moved to PO-pivot table)
-     */
     protected $hidden = [
         'season_id',
-        'agent_id',
-        'vendor_id',
-        'loading_port',
-        'destination_port',
-        'shipping_term',
-        'payment_term',
-        'packing_method',
-        'current_milestone',
     ];
-
 
     /**
      * Accessor for quantity (aliases total_quantity for backwards compatibility)
@@ -195,9 +151,9 @@ class Style extends Model
             ->withPivot([
                 'quantity_in_po',
                 'unit_price_in_po',
-                'shipping_term', // FOB or DDP - changed from price_term
-                'size_breakdown', // Size quantities for this style in this PO
-                'ratio', // NEW: Size ratio for this style in PO
+                'shipping_term',
+                'size_breakdown',
+                'ratio',
                 'assigned_factory_id',
                 'assigned_agency_id',
                 'assignment_type',
@@ -209,15 +165,6 @@ class Style extends Model
                 'notes',
             ])
             ->withTimestamps();
-    }
-
-    /**
-     * Get the purchase order that owns the style (DEPRECATED - kept for backward compatibility)
-     * Use purchaseOrders() for the new many-to-many relationship
-     */
-    public function purchaseOrder()
-    {
-        return $this->belongsTo(PurchaseOrder::class, 'po_id');
     }
 
     /**
@@ -237,7 +184,7 @@ class Style extends Model
     }
 
     /**
-     * Get the retailer for the style (replaced buyer)
+     * Get the retailer for the style
      */
     public function retailer()
     {
@@ -311,42 +258,6 @@ class Style extends Model
     }
 
     /**
-     * Get the agent for the style
-     */
-    public function agent()
-    {
-        return $this->belongsTo(Agent::class);
-    }
-
-    /**
-     * Get the vendor for the style
-     */
-    public function vendor()
-    {
-        return $this->belongsTo(Vendor::class);
-    }
-
-    /**
-     * Get the assigned factory (DEPRECATED - for backward compatibility only)
-     * For new code, use purchaseOrders()->wherePivot('assigned_factory_id', ...)
-     * This relationship exists for legacy po_id-based styles
-     */
-    public function assignedFactory()
-    {
-        return $this->belongsTo(User::class, 'assigned_factory_id');
-    }
-
-    /**
-     * Get the assigned agency (DEPRECATED - for backward compatibility only)
-     * For new code, use purchaseOrders()->wherePivot('assigned_agency_id', ...)
-     * This relationship exists for legacy po_id-based styles
-     */
-    public function assignedAgency()
-    {
-        return $this->belongsTo(User::class, 'assigned_agency_id');
-    }
-
-    /**
      * Get the prepacks for the style
      */
     public function prepacks()
@@ -395,14 +306,6 @@ class Style extends Model
     }
 
     /**
-     * Scope to filter by purchase order
-     */
-    public function scopeByPurchaseOrder($query, $purchaseOrderId)
-    {
-        return $query->where('po_id', $purchaseOrderId);
-    }
-
-    /**
      * Check if style is used in any purchase orders
      */
     public function isUsedInPurchaseOrders(): bool
@@ -416,38 +319,6 @@ class Style extends Model
     public function getPurchaseOrdersCountAttribute(): int
     {
         return $this->purchaseOrders()->count();
-    }
-
-    /**
-     * NOTE: The following methods are DEPRECATED as factory assignment
-     * is now PO-specific (stored in pivot table):
-     * - scopeByFactory()
-     * - scopeByStatus()
-     * - scopeByAssignmentType()
-     * - isAssigned()
-     * - isDirectAssignment()
-     * - isAgencyAssignment()
-     *
-     * Access these via the pivot relationship instead:
-     * $po->styles()->wherePivot('assigned_factory_id', $factoryId)
-     * $style->purchaseOrders()->wherePivot('status', 'approved')
-     */
-
-    /**
-     * Calculate total price from quantity and unit price
-     */
-    public function calculateTotalPrice(): float
-    {
-        return $this->quantity * $this->unit_price;
-    }
-
-    /**
-     * Update total price
-     */
-    public function updateTotalPrice(): void
-    {
-        $this->total_price = $this->calculateTotalPrice();
-        $this->save();
     }
 
     /**

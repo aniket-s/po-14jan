@@ -7,7 +7,7 @@ use App\Models\PurchaseOrder;
 use App\Models\Style;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\ValidationException;
+
 
 class PurchaseOrderStyleController extends Controller
 {
@@ -30,9 +30,7 @@ class PurchaseOrderStyleController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('style_number', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhere('fabric', 'like', "%{$search}%")
-                  ->orWhere('color', 'like', "%{$search}%");
+                  ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
@@ -48,12 +46,9 @@ class PurchaseOrderStyleController extends Controller
             $query->wherePivot('assignment_type', $request->assignment_type);
         }
 
-        // Load relationships
         $query->with([
             'brand',
             'season',
-            'agent',
-            'vendor',
             'prepacks',
             'sampleProcesses',
         ]);
@@ -86,7 +81,7 @@ class PurchaseOrderStyleController extends Controller
             'styles.*.style_id' => 'required|exists:styles,id',
             'styles.*.quantity_in_po' => 'required|integer|min:1',
             'styles.*.unit_price_in_po' => 'nullable|numeric|min:0',
-            'styles.*.shipping_term' => 'nullable|in:FOB,DDP', // Changed from price_term
+            'styles.*.shipping_term' => 'nullable|in:FOB,DDP',
             'styles.*.size_breakdown' => 'nullable|array',
             'styles.*.assigned_factory_id' => 'nullable|exists:users,id',
             'styles.*.assigned_agency_id' => 'nullable|exists:users,id',
@@ -118,7 +113,7 @@ class PurchaseOrderStyleController extends Controller
             $pivotData = [
                 'quantity_in_po' => $styleData['quantity_in_po'],
                 'unit_price_in_po' => $styleData['unit_price_in_po'] ?? null,
-                'shipping_term' => $styleData['shipping_term'] ?? null, // Changed from price_term
+                'shipping_term' => $styleData['shipping_term'] ?? null,
                 'size_breakdown' => isset($styleData['size_breakdown']) ? json_encode($styleData['size_breakdown']) : null,
                 'assigned_factory_id' => $styleData['assigned_factory_id'] ?? null,
                 'assigned_agency_id' => $styleData['assigned_agency_id'] ?? null,
@@ -138,9 +133,6 @@ class PurchaseOrderStyleController extends Controller
 
         // Update PO totals
         $po->updateTotals();
-
-        // Log activity
-        // ActivityLogService::log('styles_attached_to_po', $po, ['count' => $attachedCount]);
 
         return response()->json([
             'message' => "Successfully attached {$attachedCount} style(s) to purchase order",
@@ -162,7 +154,6 @@ class PurchaseOrderStyleController extends Controller
     public function detachStyle($poId, $styleId)
     {
         $po = PurchaseOrder::findOrFail($poId);
-        $style = Style::findOrFail($styleId);
 
         // Check if style is attached to this PO
         if (!$po->styles()->where('style_id', $styleId)->exists()) {
@@ -174,9 +165,6 @@ class PurchaseOrderStyleController extends Controller
 
         // Update PO totals
         $po->updateTotals();
-
-        // Log activity
-        // ActivityLogService::log('style_detached_from_po', $po, ['style_id' => $styleId]);
 
         return response()->json([
             'message' => 'Style successfully removed from purchase order',
@@ -206,7 +194,7 @@ class PurchaseOrderStyleController extends Controller
         $validator = Validator::make($request->all(), [
             'quantity_in_po' => 'sometimes|required|integer|min:1',
             'unit_price_in_po' => 'nullable|numeric|min:0',
-            'shipping_term' => 'nullable|in:FOB,DDP', // Changed from price_term
+            'shipping_term' => 'nullable|in:FOB,DDP',
             'size_breakdown' => 'nullable|array',
             'assigned_factory_id' => 'nullable|exists:users,id',
             'assigned_agency_id' => 'nullable|exists:users,id',
@@ -226,7 +214,7 @@ class PurchaseOrderStyleController extends Controller
         $updateData = $request->only([
             'quantity_in_po',
             'unit_price_in_po',
-            'shipping_term', // Changed from price_term
+            'shipping_term',
             'size_breakdown',
             'assigned_factory_id',
             'assigned_agency_id',
@@ -255,9 +243,6 @@ class PurchaseOrderStyleController extends Controller
         if (isset($updateData['quantity_in_po']) || isset($updateData['unit_price_in_po'])) {
             $po->updateTotals();
         }
-
-        // Log activity
-        // ActivityLogService::log('po_style_updated', $po, ['style_id' => $styleId, 'updates' => $updateData]);
 
         return response()->json([
             'message' => 'Style data updated successfully',
@@ -301,13 +286,6 @@ class PurchaseOrderStyleController extends Controller
             'assigned_agency_id' => $request->assigned_agency_id,
             'assigned_at' => now(),
         ]);
-
-        // Log activity
-        // ActivityLogService::log('factory_assigned_to_style_in_po', $po, [
-        //     'style_id' => $styleId,
-        //     'factory_id' => $request->assigned_factory_id,
-        //     'agency_id' => $request->assigned_agency_id,
-        // ]);
 
         return response()->json(['message' => 'Factory assigned successfully']);
     }
