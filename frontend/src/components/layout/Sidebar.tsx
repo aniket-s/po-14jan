@@ -58,14 +58,14 @@ const navItems: NavItem[] = [
     title: 'Purchase Orders',
     href: '/purchase-orders',
     icon: ShoppingCart,
-    permissions: ['po.view', 'po.view_all', 'po.create'],
+    permissions: ['po.view', 'po.view_all', 'po.view_own', 'po.create', 'po.edit', 'po.export'],
     requireAny: true,
   },
   {
     title: 'Styles',
     href: '/styles',
     icon: Package,
-    permissions: ['style.view', 'style.create'],
+    permissions: ['style.view', 'style.view_own', 'style.create', 'style.edit'],
     requireAny: true,
   },
   {
@@ -149,7 +149,7 @@ const navItems: NavItem[] = [
     title: 'Invitations',
     href: '/invitations',
     icon: Mail,
-    permissions: ['invitation.send', 'invitation.view_all'],
+    permissions: ['invitation.send', 'invitation.view_all', 'invitation.respond'],
     requireAny: true,
   },
   {
@@ -191,14 +191,14 @@ const navItems: NavItem[] = [
     title: 'Shipping Approvals',
     href: '/shipping-approvals',
     icon: ShieldCheck,
-    permissions: ['production.view', 'production.view_all', 'shipment.view', 'shipment.view_all', 'po.view'],
+    permissions: ['production.view', 'production.view_all', 'production.view_own', 'shipment.view', 'shipment.view_all', 'shipment.view_own', 'shipment.create', 'po.view', 'po.view_own'],
     requireAny: true,
   },
   {
     title: 'Ship Options',
     href: '/ship-options',
     icon: Ship,
-    permissions: ['shipment.view', 'shipment.view_all', 'shipment.create', 'po.view'],
+    permissions: ['shipment.view', 'shipment.view_all', 'shipment.view_own', 'shipment.create', 'po.view', 'po.view_own'],
     requireAny: true,
   },
   {
