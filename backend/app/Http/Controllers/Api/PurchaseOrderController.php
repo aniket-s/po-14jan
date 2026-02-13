@@ -252,11 +252,6 @@ class PurchaseOrderController extends Controller
             'country_of_origin' => 'nullable|string|max:100',
             'packing_method' => 'nullable|string',
             'other_terms' => 'nullable|string',
-            'styles' => 'nullable|array',
-            'styles.*.style_id' => 'required|exists:styles,id',
-            'styles.*.quantity' => 'required|integer|min:1',
-            'styles.*.ratio' => 'nullable|array',
-            'styles.*.unit_price_in_po' => 'nullable|numeric|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -389,21 +384,6 @@ class PurchaseOrderController extends Controller
             'packing_method' => $request->packing_method,
             'other_terms' => $request->other_terms,
         ]);
-
-        // Attach styles if provided
-        if ($request->has('styles') && is_array($request->styles)) {
-            foreach ($request->styles as $styleData) {
-                $po->styles()->attach($styleData['style_id'], [
-                    'quantity_in_po' => $styleData['quantity'],
-                    'ratio' => $styleData['ratio'] ?? null,
-                    'unit_price_in_po' => $styleData['unit_price_in_po'] ?? null,
-                    'shipping_term' => $request->shipping_term ?? 'FOB',
-                ]);
-            }
-
-            // Recalculate PO totals after adding styles
-            $po->updateTotals();
-        }
 
         // Log creation
         $this->activityLog->logCreated('PurchaseOrder', $po->id, [
