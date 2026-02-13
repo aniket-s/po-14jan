@@ -163,10 +163,11 @@ class DefaultPermissionsSeeder extends Seeder
         ];
 
         foreach ($permissions as $permission) {
-            Permission::firstOrCreate(
-                ['name' => $permission['name'], 'guard_name' => 'web'],
-                $permission
-            );
+            // Spatie's Permission::create() throws if the permission already exists,
+            // so we must check manually instead of using firstOrCreate().
+            if (!Permission::where('name', $permission['name'])->where('guard_name', 'web')->exists()) {
+                Permission::create(array_merge($permission, ['guard_name' => 'web']));
+            }
         }
     }
 }
