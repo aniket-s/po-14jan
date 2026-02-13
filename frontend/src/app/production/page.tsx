@@ -401,7 +401,7 @@ export default function ProductionPage() {
 
   return (
     <DashboardLayout
-      requiredPermissions={['production.view', 'production.view_all', 'production.submit', 'production.update']}
+      requiredPermissions={['production.view', 'production.view_own', 'production.view_all', 'production.initialize', 'production.update', 'production.submit']}
       requireAll={false}
     >
       <div className="space-y-6">

@@ -215,7 +215,7 @@ export default function ShipmentsPage() {
   const shippingMethods = ['Air Freight', 'Sea Freight', 'Express', 'Ground', 'Rail'];
 
   return (
-    <DashboardLayout requiredPermissions={['shipment.view', 'shipment.view_all', 'shipment.track']} requireAll={false}>
+    <DashboardLayout requiredPermissions={['shipment.view', 'shipment.view_own', 'shipment.view_all', 'shipment.create', 'shipment.update', 'shipment.track']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
