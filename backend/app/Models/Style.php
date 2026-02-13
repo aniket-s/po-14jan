@@ -141,6 +141,14 @@ class Style extends Model
     }
 
     /**
+     * Get the primary purchase order this style belongs to (via po_id foreign key)
+     */
+    public function purchaseOrder()
+    {
+        return $this->belongsTo(PurchaseOrder::class, 'po_id');
+    }
+
+    /**
      * Get all purchase orders that use this style (Many-to-Many)
      */
     public function purchaseOrders()
