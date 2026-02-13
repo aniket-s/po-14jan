@@ -7,7 +7,7 @@ use App\Models\PurchaseOrder;
 use App\Models\Style;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\ValidationException;
+
 
 class PurchaseOrderStyleController extends Controller
 {
@@ -46,12 +46,9 @@ class PurchaseOrderStyleController extends Controller
             $query->wherePivot('assignment_type', $request->assignment_type);
         }
 
-        // Load relationships
         $query->with([
             'brand',
             'season',
-            'agent',
-            'vendor',
             'prepacks',
             'sampleProcesses',
         ]);

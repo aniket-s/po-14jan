@@ -165,7 +165,6 @@ class PurchaseOrderController extends Controller
                 'total_value' => $po->total_value,
                 'payment_terms' => $po->payment_terms,
                 'payment_terms_structured' => $po->payment_terms_structured,
-                'destination_country' => $po->destination_country,
                 'additional_notes' => $po->additional_notes,
                 'status' => $po->status,
                 'metadata' => $po->metadata,
