@@ -176,25 +176,25 @@ export function EditStyleDialog({
   // Populate form when style changes
   useEffect(() => {
     if (style && open) {
-      const genderId = (style as any).gender_id || undefined;
+      const genderId = style.gender_id || undefined;
       setSelectedGender(genderId);
 
       form.reset({
         style_number: style.style_number || '',
         description: style.description || '',
         fabric_type_name: style.fabric_type_name || '',
-        fabric_weight: (style as any).fabric_weight || '',
-        color_id: (style as any).color_id || undefined,
+        fabric_weight: style.fabric_weight || '',
+        color_id: style.color_id || undefined,
         fit: style.fit || '',
-        technical_file_paths: (style as any).technical_file_paths || [],
-        brand_id: (style as any).brand_id || undefined,
-        retailer_id: (style as any).retailer_id || undefined,
-        category_id: (style as any).category_id || undefined,
-        season_id: (style as any).season_id || undefined,
+        technical_file_paths: style.technical_file_paths || [],
+        brand_id: style.brand_id || undefined,
+        retailer_id: style.retailer_id || undefined,
+        category_id: style.category_id || undefined,
+        season_id: style.season_id || undefined,
         gender_id: genderId,
-        msrp: (style as any).msrp || undefined,
-        wholesale_price: (style as any).wholesale_price || undefined,
-        is_active: (style as any).is_active !== undefined ? (style as any).is_active : true,
+        msrp: style.msrp || undefined,
+        wholesale_price: style.wholesale_price || undefined,
+        is_active: style.is_active !== undefined ? style.is_active : true,
         trims: [],
       });
 
@@ -208,11 +208,11 @@ export function EditStyleDialog({
       } else {
         setUploadedImages([]);
       }
-      setUploadedTechPacks((style as any).technical_file_paths || []);
+      setUploadedTechPacks(style.technical_file_paths || []);
 
       // Populate trims if style has associated trims
-      if ((style as any).trims && Array.isArray((style as any).trims)) {
-        const trimIds = (style as any).trims.map((t: any) => t.id || t);
+      if (style.trims && Array.isArray(style.trims)) {
+        const trimIds = style.trims.map((t: any) => t.id || t);
         setSelectedTrims(trimIds);
       } else {
         setSelectedTrims([]);
@@ -783,7 +783,7 @@ export function EditStyleDialog({
             </div>
 
             {/* Audit Information */}
-            {style && (style as any).creator && (
+            {style && style.creator && (
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold border-b pb-2 flex items-center gap-2">
                   <Info className="h-4 w-4" />
@@ -792,17 +792,17 @@ export function EditStyleDialog({
                 <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">Created By</p>
-                    <p className="text-sm font-medium">{(style as any).creator?.name || 'Unknown'}</p>
+                    <p className="text-sm font-medium">{style.creator?.name || 'Unknown'}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date((style as any).created_at).toLocaleString()}
+                      {new Date(style.created_at).toLocaleString()}
                     </p>
                   </div>
-                  {(style as any).updated_by && (
+                  {style.updated_by && (
                     <div className="space-y-1">
                       <p className="text-xs font-medium text-muted-foreground">Last Updated By</p>
-                      <p className="text-sm font-medium">{(style as any).updatedBy?.name || 'Unknown'}</p>
+                      <p className="text-sm font-medium">{style.updatedBy?.name || 'Unknown'}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date((style as any).updated_at).toLocaleString()}
+                        {new Date(style.updated_at).toLocaleString()}
                       </p>
                     </div>
                   )}

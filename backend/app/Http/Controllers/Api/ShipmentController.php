@@ -721,7 +721,7 @@ class ShipmentController extends Controller
     {
         $user = $request->user();
 
-        $query = \App\Models\Shipment::with(['purchaseOrder:id,po_number,customer_id']);
+        $query = \App\Models\Shipment::with(['purchaseOrder:id,po_number,importer_id']);
 
         // Apply role-based filtering
         if ($user->hasRole('Factory')) {

@@ -61,6 +61,7 @@ export interface Style {
   is_active: boolean;
 
   created_by: number | null;
+  updated_by: number | null;
   tp_date: string | null;
 
   // Relationships (loaded when needed)
@@ -71,6 +72,9 @@ export interface Style {
   category?: any;
   fabric_quality?: any;
   purchase_orders?: any[];
+  trims?: any[];
+  creator?: { id: number; name: string; email?: string };
+  updatedBy?: { id: number; name: string; email?: string };
 
   created_at: string;
   updated_at: string;

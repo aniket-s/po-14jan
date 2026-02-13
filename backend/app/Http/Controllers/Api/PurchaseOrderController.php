@@ -200,13 +200,14 @@ class PurchaseOrderController extends Controller
                         'total_price' => $style->total_price,
                         'size_breakdown' => $style->size_breakdown,
                         'packing_details' => $style->packing_details,
-                        'assigned_factory' => $style->assignedFactory ? [
-                            'id' => $style->assignedFactory->id,
-                            'name' => $style->assignedFactory->name,
-                            'company' => $style->assignedFactory->company,
-                        ] : null,
-                        'assignment_type' => $style->assignment_type,
-                        'status' => $style->status,
+                        'pivot' => [
+                            'assigned_factory_id' => $style->pivot->assigned_factory_id,
+                            'assigned_agency_id' => $style->pivot->assigned_agency_id,
+                            'assignment_type' => $style->pivot->assignment_type,
+                            'status' => $style->pivot->status,
+                            'quantity_in_po' => $style->pivot->quantity_in_po,
+                            'unit_price_in_po' => $style->pivot->unit_price_in_po,
+                        ],
                     ];
                 }),
                 'created_at' => $po->created_at,
