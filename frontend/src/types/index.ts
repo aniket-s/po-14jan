@@ -85,7 +85,9 @@ export interface Style {
   id: number;
   style_number: string;
   description: string | null;
+  fabric?: string | null;
   quantity: number;
+  total_quantity?: number;
   unit_price: number;
   total_price: number;
   color: ColorObject | null;

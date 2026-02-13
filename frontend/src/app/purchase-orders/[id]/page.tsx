@@ -141,9 +141,9 @@ export default function PurchaseOrderDetailPage() {
 
   const handleOpenAssignFactory = (style: Style) => {
     setSelectedStyleForAssignment(style);
-    setAssignmentTypeForDialog(style.assignment_type);
-    setAssignedFactoryIdForDialog(style.assigned_factory_id || (style.pivot?.assigned_factory_id ?? null));
-    setAssignedAgencyIdForDialog(style.assigned_agency_id || (style.pivot?.assigned_agency_id ?? null));
+    setAssignmentTypeForDialog(style.pivot?.assignment_type ?? null);
+    setAssignedFactoryIdForDialog(style.pivot?.assigned_factory_id ?? null);
+    setAssignedAgencyIdForDialog(style.pivot?.assigned_agency_id ?? null);
     setIsAssignFactoryDialogOpen(true);
   };
 
@@ -729,9 +729,9 @@ export default function PurchaseOrderDetailPage() {
                           <TableCell className="font-medium">{style.style_number}</TableCell>
                           <TableCell>{style.description || '-'}</TableCell>
                           <TableCell>
-                            {style.assignment_type ? (
+                            {style.pivot?.assignment_type ? (
                               <Badge variant="outline">
-                                {style.assignment_type === 'direct_to_factory' ? 'Direct to Factory' : 'Via Agency'}
+                                {style.pivot.assignment_type === 'direct_to_factory' ? 'Direct to Factory' : 'Via Agency'}
                               </Badge>
                             ) : (
                               <span className="text-muted-foreground text-sm">Not assigned</span>
@@ -761,7 +761,7 @@ export default function PurchaseOrderDetailPage() {
                               onClick={() => handleOpenAssignFactory(style)}
                             >
                               <Factory className="mr-2 h-4 w-4" />
-                              {style.assignment_type ? 'Edit' : 'Assign'}
+                              {style.pivot?.assignment_type ? 'Edit' : 'Assign'}
                             </Button>
                           </TableCell>
                         </TableRow>

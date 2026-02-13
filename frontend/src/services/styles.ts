@@ -25,6 +25,7 @@ export interface Style {
   id: number;
   style_number: string;
   description: string | null;
+  fabric: string | null;
   color: ColorObject | null;
   fit: string | null;
   size_breakup: Record<string, number>;
@@ -68,8 +69,6 @@ export interface Style {
   gender?: GenderObject; // Gender with active_sizes for size management
   retailer?: any;
   category?: any;
-  color?: any;
-  fabric_type?: any;
   fabric_quality?: any;
   purchase_orders?: any[];
 
