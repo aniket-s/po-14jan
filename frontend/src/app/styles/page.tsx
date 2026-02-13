@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Package, Search, ExternalLink, ShoppingCart, ListChecks, Plus, Edit, Trash2, FileUp } from 'lucide-react';
+import { Package, Search, ListChecks, Plus, Edit, Trash2, FileUp } from 'lucide-react';
 import api from '@/lib/api';
 import { BulkSampleProcessModal } from '@/components/styles/BulkSampleProcessModal';
 import { CreateStyleDialog } from '@/components/styles/CreateStyleDialog';
@@ -29,62 +29,7 @@ import { EditStyleDialog } from '@/components/styles/EditStyleDialog';
 import { DeleteStyleConfirmation } from '@/components/styles/DeleteStyleConfirmation';
 import { ExcelImportDialog } from '@/components/styles/ExcelImportDialog';
 
-import { Style as ServiceStyle } from '@/services/styles';
-
-interface Style {
-  id: number;
-  purchase_order_id: number;
-  style_number: string;
-  quantity: number | null;
-  unit_price: number | null;
-  total_price: number;
-
-  // OLD fields (for backward compatibility)
-  fabric: string | null;
-
-  // NEW relational field IDs
-  brand_id: number | null;
-  buyer_id: number | null;
-  category_id: number | null;
-  color_id: number | null;
-  gender_id: number | null;
-  season_id: number | null;
-
-  // NEW direct fields
-  color_name: string | null;
-  color_code: string | null;
-  fabric_type_name: string | null;
-  fabric_weight: string | null;
-
-  // Color field - union type for backward compatibility (can be string OR object)
-  color: string | { id: number; name: string; code: string; pantone_code: string | null } | null;
-
-  // Relationships (loaded via eager loading)
-  brand?: { id: number; name: string };
-  buyer?: { id: number; name: string };
-  category?: { id: number; name: string };
-  gender?: { id: number; name: string };
-  season?: { id: number; name: string };
-
-  size_breakdown: any;
-  description: string | null;
-  purchase_order: {
-    id: number;
-    po_number: string;
-    buyer_name: string | null;
-    delivery_date?: string | null;
-  } | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface PaginatedStyles {
-  data: Style[];
-  current_page: number;
-  last_page: number;
-  per_page: number;
-  total: number;
-}
+import { Style, PaginatedStyles } from '@/services/styles';
 
 export default function StylesPage() {
   const { user, can, loading: authLoading } = useAuth();
@@ -99,37 +44,34 @@ export default function StylesPage() {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
-  const [buyerFilter, setBuyerFilter] = useState('');
+  const [retailerFilter, setRetailerFilter] = useState('');
   const [brands, setBrands] = useState<any[]>([]);
-  const [buyers, setBuyers] = useState<any[]>([]);
+  const [retailers, setRetailers] = useState<any[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<number[]>([]);
   const [isSampleProcessModalOpen, setIsSampleProcessModalOpen] = useState(false);
 
-  // CRUD dialog states
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [selectedStyle, setSelectedStyle] = useState<ServiceStyle | null>(null);
+  const [selectedStyle, setSelectedStyle] = useState<Style | null>(null);
 
-  // Check permissions only after auth is loaded
   useEffect(() => {
-    if (authLoading) return; // Wait for auth to finish loading
+    if (authLoading) return;
     if (!can('style.view') && !can('style.create')) {
       router.push('/dashboard');
     }
   }, [can, router, authLoading]);
 
-  // Fetch brands and buyers for filters
   useEffect(() => {
     const fetchFilterData = async () => {
       try {
-        const [brandsResponse, buyersResponse] = await Promise.all([
+        const [brandsResponse, retailersResponse] = await Promise.all([
           api.get('/master-data/brands?all=true'),
-          api.get('/master-data/buyers?all=true'),
+          api.get('/master-data/retailers?all=true'),
         ]);
         setBrands(brandsResponse.data || []);
-        setBuyers(buyersResponse.data || []);
+        setRetailers(retailersResponse.data || []);
       } catch (error) {
         console.error('Failed to fetch filter data:', error);
       }
@@ -137,7 +79,6 @@ export default function StylesPage() {
     fetchFilterData();
   }, []);
 
-  // Fetch styles
   const fetchStyles = async () => {
     try {
       setLoading(true);
@@ -154,8 +95,8 @@ export default function StylesPage() {
         params.brand_id = brandFilter;
       }
 
-      if (buyerFilter) {
-        params.buyer_id = buyerFilter;
+      if (retailerFilter) {
+        params.retailer_id = retailerFilter;
       }
 
       const response = await api.get<PaginatedStyles>('/styles', { params });
@@ -175,9 +116,8 @@ export default function StylesPage() {
 
   useEffect(() => {
     fetchStyles();
-  }, [pagination.currentPage, searchQuery, brandFilter, buyerFilter]);
+  }, [pagination.currentPage, searchQuery, brandFilter, retailerFilter]);
 
-  // Format currency
   const formatCurrency = (amount: number | null | undefined, currency: string = 'USD') => {
     if (amount === null || amount === undefined) {
       return '-';
@@ -188,7 +128,6 @@ export default function StylesPage() {
     }).format(amount);
   };
 
-  // Format date
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -197,7 +136,6 @@ export default function StylesPage() {
     });
   };
 
-  // Selection handlers
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedStyles(styles.map(s => s.id));
@@ -216,15 +154,13 @@ export default function StylesPage() {
 
   const isAllSelected = styles.length > 0 && selectedStyles.length === styles.length;
 
-  // Handle edit
   const handleEdit = (style: Style) => {
-    setSelectedStyle(style as any as ServiceStyle);
+    setSelectedStyle(style);
     setIsEditDialogOpen(true);
   };
 
-  // Handle delete
   const handleDelete = (style: Style) => {
-    setSelectedStyle(style as any as ServiceStyle);
+    setSelectedStyle(style);
     setIsDeleteDialogOpen(true);
   };
 
@@ -296,7 +232,7 @@ export default function StylesPage() {
         <Card>
           <CardHeader>
             <CardTitle>Search & Filter Styles</CardTitle>
-            <CardDescription>Search by style number or filter by brand/buyer</CardDescription>
+            <CardDescription>Search by style number or filter by brand/retailer</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -327,29 +263,29 @@ export default function StylesPage() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="buyer-filter">Filter by Buyer</Label>
+                  <Label htmlFor="retailer-filter">Filter by Retailer</Label>
                   <select
-                    id="buyer-filter"
-                    value={buyerFilter}
-                    onChange={(e) => setBuyerFilter(e.target.value)}
+                    id="retailer-filter"
+                    value={retailerFilter}
+                    onChange={(e) => setRetailerFilter(e.target.value)}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <option value="">All Buyers</option>
-                    {buyers.map((buyer) => (
-                      <option key={buyer.id} value={buyer.id}>
-                        {buyer.name}
+                    <option value="">All Retailers</option>
+                    {retailers.map((retailer) => (
+                      <option key={retailer.id} value={retailer.id}>
+                        {retailer.name}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
-              {(brandFilter || buyerFilter) && (
+              {(brandFilter || retailerFilter) && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => {
                     setBrandFilter('');
-                    setBuyerFilter('');
+                    setRetailerFilter('');
                   }}
                 >
                   Clear Filters
@@ -383,7 +319,7 @@ export default function StylesPage() {
                     <TableHead>Style Name</TableHead>
                     <TableHead>Fabric / Weight</TableHead>
                     <TableHead>Color</TableHead>
-                    <TableHead>Buyer</TableHead>
+                    <TableHead>Retailer</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Used in POs</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -430,44 +366,40 @@ export default function StylesPage() {
                                 {style.fabric_weight && <div className="text-xs text-muted-foreground">{style.fabric_weight}</div>}
                               </div>
                             ) : (
-                              style.fabric || '-'
+                              '-'
                             )}
                           </TableCell>
                           <TableCell>
-                            {(() => {
-                              const colorDisplay = typeof style.color === 'string'
-                                ? style.color
-                                : typeof style.color === 'object' && style.color
-                                  ? style.color.name
-                                  : style.color_name;
-                              const colorCode = typeof style.color === 'object' && style.color?.code;
-
-                              return colorDisplay ? (
-                                <Badge variant="outline">
-                                  {colorDisplay}
-                                  {colorCode && <span className="ml-1 text-xs opacity-70">({colorCode})</span>}
-                                </Badge>
-                              ) : (
-                                <span className="text-muted-foreground">-</span>
-                              );
-                            })()}
+                            {style.color?.name ? (
+                              <Badge variant="outline">
+                                {style.color.name}
+                                {style.color.code && <span className="ml-1 text-xs opacity-70">({style.color.code})</span>}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
                           </TableCell>
                           <TableCell>
-                            {style.buyer?.name || (style.buyer_id ? `Buyer #${style.buyer_id}` : '-')}
+                            {style.retailer?.name || '-'}
                           </TableCell>
                           <TableCell>
-                            {style.category?.name || (style.category_id ? `Category #${style.category_id}` : '-')}
+                            {style.category?.name || '-'}
                           </TableCell>
                           <TableCell>
-                            {style.purchase_order ? (
-                              <Button
-                                variant="link"
-                                size="sm"
-                                onClick={() => router.push(`/purchase-orders/${style.purchase_order_id}`)}
-                                className="h-auto p-0"
-                              >
-                                {style.purchase_order.po_number}
-                              </Button>
+                            {style.purchase_orders && style.purchase_orders.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {style.purchase_orders.map((po: any) => (
+                                  <Button
+                                    key={po.id}
+                                    variant="link"
+                                    size="sm"
+                                    onClick={() => router.push(`/purchase-orders/${po.id}`)}
+                                    className="h-auto p-0"
+                                  >
+                                    {po.po_number}
+                                  </Button>
+                                ))}
+                              </div>
                             ) : (
                               <span className="text-muted-foreground text-sm">Not used yet</span>
                             )}
@@ -578,7 +510,6 @@ export default function StylesPage() {
         }}
       />
 
-      {/* CRUD Dialogs */}
       <CreateStyleDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}

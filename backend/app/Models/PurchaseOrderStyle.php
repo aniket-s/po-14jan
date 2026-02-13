@@ -94,7 +94,7 @@ class PurchaseOrderStyle extends Pivot
     }
 
     /**
-     * Request shipping approval from buyer.
+     * Request shipping approval from importer.
      * Can only be requested max 21 days before the PO's ex_factory_date.
      */
     public function requestShippingApproval(int $userId): array
@@ -119,14 +119,14 @@ class PurchaseOrderStyle extends Pivot
         $this->shipping_approval_status = 'requested';
         $this->shipping_approval_requested_at = now();
         $this->shipping_approval_requested_by = $userId;
-        $this->save();
 
         // Auto-suggest ship option
         $suggestedOption = ShipOption::findEarliestConnectable($this->estimated_ex_factory_date);
         if ($suggestedOption) {
             $this->suggested_ship_option_id = $suggestedOption->id;
-            $this->save();
         }
+
+        $this->save();
 
         return ['success' => true, 'suggested_ship_option' => $suggestedOption];
     }

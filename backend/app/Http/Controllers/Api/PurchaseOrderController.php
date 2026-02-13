@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PurchaseOrder;
-use App\Models\Retailer;
 use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\PermissionService;
@@ -71,33 +70,21 @@ class PurchaseOrderController extends Controller
             }
         }
 
-        // Brand filter
-        if ($request->has('brand_name')) {
-            $query->where('brand_name', 'like', "%{$request->brand_name}%");
-        }
-
-        // Season filter
-        if ($request->has('season')) {
-            $query->where('season', $request->season);
-        }
-
         // Search filter
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('po_number', 'like', "%{$search}%")
-                  ->orWhere('brand_name', 'like', "%{$search}%")
-                  ->orWhere('special_instructions', 'like', "%{$search}%");
+                $q->where('po_number', 'like', "%{$search}%");
             });
         }
 
-        // Date range filter
+        // Date range filter (using po_date)
         if ($request->has('date_from')) {
-            $query->where('order_date', '>=', $request->date_from);
+            $query->where('po_date', '>=', $request->date_from);
         }
 
         if ($request->has('date_to')) {
-            $query->where('order_date', '<=', $request->date_to);
+            $query->where('po_date', '<=', $request->date_to);
         }
 
         // Sorting
@@ -124,10 +111,7 @@ class PurchaseOrderController extends Controller
                         'name' => $po->agency->name,
                         'company' => $po->agency->company,
                     ] : null,
-                    'retailer' => $po->retailer,
                     'po_date' => $po->po_date?->format('Y-m-d'),
-                    'delivery_date' => $po->delivery_date, // Kept for backward compatibility (no longer used)
-                    'currency' => $po->currency,
                     'total_quantity' => $po->total_quantity,
                     'total_value' => $po->total_value,
                     'status' => $po->status,
@@ -176,50 +160,29 @@ class PurchaseOrderController extends Controller
                     'email' => $po->agency->email,
                     'company' => $po->agency->company,
                 ] : null,
-                'brand_name' => $po->brand_name,
-                'season' => $po->season,
-                'category' => $po->category,
-                'order_date' => $po->order_date?->format('Y-m-d'),
-                'expected_delivery_date' => $po->expected_delivery_date?->format('Y-m-d'),
                 'po_date' => $po->po_date?->format('Y-m-d'),
-                'delivery_date' => $po->delivery_date, // Kept for backward compatibility (no longer used)
-                'currency' => $po->currency,
-                'exchange_rate' => $po->exchange_rate,
                 'total_quantity' => $po->total_quantity,
                 'total_value' => $po->total_value,
                 'payment_terms' => $po->payment_terms,
                 'payment_terms_structured' => $po->payment_terms_structured,
-                'incoterms' => $po->incoterms,
-                'destination_port' => $po->destination_port,
                 'destination_country' => $po->destination_country,
-                'special_instructions' => $po->special_instructions,
-                'internal_notes' => $po->internal_notes,
                 'additional_notes' => $po->additional_notes,
-                'notes' => $po->additional_notes,
                 'status' => $po->status,
                 'metadata' => $po->metadata,
-                // Enhanced PO fields
                 'revision_date' => $po->revision_date?->format('Y-m-d'),
                 'etd_date' => $po->etd_date?->format('Y-m-d'),
                 'eta_date' => $po->eta_date?->format('Y-m-d'),
                 'in_warehouse_date' => $po->in_warehouse_date?->format('Y-m-d'),
-                'ship_from' => $po->ship_from,
                 'ship_to' => $po->ship_to,
-                'manufacturer' => $po->manufacturer,
                 'ship_to_address' => $po->ship_to_address,
                 'sample_schedule' => $po->sample_schedule,
-                // REMOVED: buyer_details - moved to Style creation
                 'packing_guidelines' => $po->packing_guidelines,
-                // Master data foreign keys
-                // 'brand_id' removed - brand is in Style
                 'season_id' => $po->season_id,
                 'retailer_id' => $po->retailer_id,
-                'retailer' => $po->retailer,
                 'country_id' => $po->country_id,
                 'warehouse_id' => $po->warehouse_id,
                 'agent_id' => $po->agent_id,
                 'vendor_id' => $po->vendor_id,
-                // NOTE: shipping_term is per-style in pivot table, not at PO level
                 'payment_term' => $po->payment_term,
                 'country_of_origin' => $po->country_of_origin,
                 'packing_method' => $po->packing_method,
@@ -261,53 +224,35 @@ class PurchaseOrderController extends Controller
         $validator = Validator::make($request->all(), [
             'po_number' => 'required|string|max:50|unique:purchase_orders,po_number',
             'headline' => 'nullable|string|max:255',
-            'retailer' => 'nullable|string|max:255', // Backward compatibility
             'retailer_id' => 'nullable|exists:retailers,id',
             'po_date' => 'required|date',
-            'currency' => 'nullable|string|max:10', // Changed from max:3 to support currency_id
-            'currency_id' => 'nullable|exists:currencies,id', // NEW: Currency selection with + button
+            'currency_id' => 'nullable|exists:currencies,id',
             'exchange_rate' => 'nullable|numeric|min:0',
-            'payment_terms' => 'nullable|string',
-            'payment_term_id' => 'nullable|exists:payment_terms,id', // NEW: Dynamic payment term
-            'payment_terms_structured' => 'nullable|array', // For structured payment terms
+            'payment_term_id' => 'nullable|exists:payment_terms,id',
+            'payment_terms_structured' => 'nullable|array',
             'payment_terms_structured.term' => 'nullable|string',
             'payment_terms_structured.percentage' => 'nullable|numeric|min:0|max:100',
-            'terms_of_delivery' => 'nullable|string',
-            'destination_country' => 'nullable|string|max:100',
             'additional_notes' => 'nullable|string',
             'agency_id' => 'nullable|exists:users,id',
-            'status' => 'nullable|string|max:50',
-            // Enhanced PO fields
             'revision_date' => 'nullable|date',
-            'etd_date' => 'nullable|date', // Calculated based on shipping_term
+            'etd_date' => 'nullable|date',
             'eta_date' => 'nullable|date',
-            'in_warehouse_date' => 'nullable|date', // Required for DDP
-            'ex_factory_date' => 'nullable|date', // NEW: Required for FOB
+            'in_warehouse_date' => 'nullable|date',
+            'ex_factory_date' => 'nullable|date',
             'ship_to' => 'nullable|string|max:100',
             'ship_to_address' => 'nullable|string',
             'sample_schedule' => 'nullable|array',
-            'sample_schedule.general_approval' => 'nullable|date',
-            'sample_schedule.first_pp' => 'nullable|date',
-            'sample_schedule.sms' => 'nullable|date',
-            'sample_schedule.top' => 'nullable|date',
-            // REMOVED: buyer_details validation - moved to Style creation
             'packing_guidelines' => 'nullable|string',
-            // Master data foreign keys (removed: division_id, customer_id)
-            // 'brand_id' removed - brand is in Style
             'season_id' => 'nullable|exists:seasons,id',
-            'retailer_id' => 'nullable|exists:retailers,id',
             'country_id' => 'nullable|exists:countries,id',
             'warehouse_id' => 'nullable|exists:warehouses,id',
             'agent_id' => 'nullable|exists:agents,id',
             'vendor_id' => 'nullable|exists:vendors,id',
-            // Price/Shipping term - determines date calculation logic
             'shipping_term' => 'nullable|in:FOB,DDP',
-            // Additional fields (removed: manufacturer, ship_from, loading_port)
             'payment_term' => 'nullable|string|max:100',
             'country_of_origin' => 'nullable|string|max:100',
             'packing_method' => 'nullable|string',
             'other_terms' => 'nullable|string',
-            // Styles during PO creation
             'styles' => 'nullable|array',
             'styles.*.style_id' => 'required|exists:styles,id',
             'styles.*.quantity' => 'required|integer|min:1',
@@ -333,23 +278,15 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
-        // VALIDATION: If payment term requires percentage (e.g., ADVANCE), percentage is compulsory
+        // Validate payment term percentage if required
         $paymentTermsStructured = $request->payment_terms_structured;
         $requiresPercentage = false;
 
-        // Check if selected payment_term_id requires percentage
         if ($request->filled('payment_term_id')) {
             $paymentTermModel = \App\Models\PaymentTerm::find($request->payment_term_id);
             if ($paymentTermModel && $paymentTermModel->requires_percentage) {
                 $requiresPercentage = true;
             }
-        }
-
-        // Also check legacy term field for backward compatibility
-        if ($paymentTermsStructured &&
-            isset($paymentTermsStructured['term']) &&
-            strtoupper($paymentTermsStructured['term']) === 'ADVANCE') {
-            $requiresPercentage = true;
         }
 
         if ($requiresPercentage) {
@@ -416,63 +353,38 @@ class PurchaseOrderController extends Controller
             }
         }
 
-        // Fetch retailer name from retailer_id for backward compatibility
-        $retailerName = null;
-        if ($request->retailer_id) {
-            $retailer = Retailer::find($request->retailer_id);
-            $retailerName = $retailer ? $retailer->name : null;
-        }
-
-        // Get currency code from currency_id if provided
-        $currencyCode = $request->currency; // Default to legacy currency field
-        if ($request->filled('currency_id')) {
-            $currency = \App\Models\Currency::find($request->currency_id);
-            $currencyCode = $currency ? $currency->code : $currencyCode;
-        }
-
         $po = PurchaseOrder::create([
             'po_number' => $request->po_number,
             'headline' => $request->headline,
             'importer_id' => $request->user()->id,
             'creator_id' => $request->user()->id,
             'agency_id' => $request->agency_id,
-            'retailer' => $retailerName, // Backward compatibility - fetch from retailer_id
             'po_date' => $request->po_date,
-            'currency' => $currencyCode, // Currency code (from currency_id or legacy field)
-            'currency_id' => $request->currency_id, // NEW: Store foreign key
+            'currency_id' => $request->currency_id,
             'exchange_rate' => $request->exchange_rate ?? 1.0,
-            'payment_terms' => $request->payment_terms,
-            'payment_term_id' => $request->payment_term_id, // NEW: Dynamic payment term foreign key
+            'payment_term_id' => $request->payment_term_id,
             'payment_terms_structured' => $request->payment_terms_structured,
-            'terms_of_delivery' => $request->terms_of_delivery,
-            'destination_country' => $request->destination_country,
             'additional_notes' => $request->additional_notes,
-            'status' => $request->get('status', 'draft'),
+            'status' => 'draft',
             'total_styles' => 0,
             'total_quantity' => 0,
             'total_value' => 0,
-            // Enhanced PO fields (removed: ship_from, manufacturer)
             'revision_date' => $request->revision_date,
-            'etd_date' => $etdDate, // Use provided or calculated ETD
-            'ex_factory_date' => $exFactoryDate, // Auto-calculated for FOB: ETD - 7 days
-            'eta_date' => $etaDate, // Auto-calculated: ETD + sailing time
-            'in_warehouse_date' => $inWarehouseDate, // Auto-calculated for FOB: ETA + 5 days (IHD)
+            'etd_date' => $etdDate,
+            'ex_factory_date' => $exFactoryDate,
+            'eta_date' => $etaDate,
+            'in_warehouse_date' => $inWarehouseDate,
             'ship_to' => $request->ship_to,
             'ship_to_address' => $request->ship_to_address,
             'sample_schedule' => $request->sample_schedule,
-            // REMOVED: buyer_details - moved to Style creation
             'packing_guidelines' => $request->packing_guidelines,
-            // Master data foreign keys (removed: division_id, customer_id)
-            // 'brand_id' removed - brand is in Style
             'season_id' => $request->season_id,
             'retailer_id' => $request->retailer_id,
             'country_id' => $request->country_id,
             'warehouse_id' => $request->warehouse_id,
             'agent_id' => $request->agent_id,
             'vendor_id' => $request->vendor_id,
-            // Shipping term (FOB/DDP) - stored at PO level
             'shipping_term' => $shippingTerm,
-            // Additional fields (removed: loading_port)
             'payment_term' => $request->payment_term,
             'country_of_origin' => $request->country_of_origin,
             'packing_method' => $request->packing_method,
@@ -486,7 +398,7 @@ class PurchaseOrderController extends Controller
                     'quantity_in_po' => $styleData['quantity'],
                     'ratio' => $styleData['ratio'] ?? null,
                     'unit_price_in_po' => $styleData['unit_price_in_po'] ?? null,
-                    'shipping_term' => $request->shipping_term ?? 'FOB', // Changed from price_term
+                    'shipping_term' => $request->shipping_term ?? 'FOB',
                 ]);
             }
 
@@ -497,7 +409,6 @@ class PurchaseOrderController extends Controller
         // Log creation
         $this->activityLog->logCreated('PurchaseOrder', $po->id, [
             'po_number' => $po->po_number,
-            'retailer' => $po->retailer,
         ]);
 
         // Auto-generate TNA chart for this PO
@@ -514,7 +425,6 @@ class PurchaseOrderController extends Controller
             'purchase_order' => [
                 'id' => $po->id,
                 'po_number' => $po->po_number,
-                'brand_name' => $po->brand_name,
                 'status' => $po->status,
             ],
         ], 201);
@@ -538,48 +448,31 @@ class PurchaseOrderController extends Controller
         $validator = Validator::make($request->all(), [
             'po_number' => 'required|string|max:50|unique:purchase_orders,po_number,' . $id,
             'headline' => 'nullable|string|max:255',
-            'retailer' => 'nullable|string|max:255', // Backward compatibility
             'retailer_id' => 'nullable|exists:retailers,id',
             'po_date' => 'required|date',
-            'currency' => 'nullable|string|max:10',
             'currency_id' => 'nullable|exists:currencies,id',
             'exchange_rate' => 'nullable|numeric|min:0',
-            'payment_terms' => 'nullable|string',
-            'payment_term_id' => 'nullable|exists:payment_terms,id', // NEW: Dynamic payment term
-            'payment_terms_structured' => 'nullable|array', // For structured payment terms
+            'payment_term_id' => 'nullable|exists:payment_terms,id',
+            'payment_terms_structured' => 'nullable|array',
             'payment_terms_structured.term' => 'nullable|string',
             'payment_terms_structured.percentage' => 'nullable|numeric|min:0|max:100',
-            'terms_of_delivery' => 'nullable|string',
-            'destination_country' => 'nullable|string|max:100',
             'additional_notes' => 'nullable|string',
             'agency_id' => 'nullable|exists:users,id',
-            'status' => 'nullable|string|max:50',
-            // Enhanced PO fields
             'revision_date' => 'nullable|date',
-            'ex_factory_date' => 'nullable|date', // For FOB shipping term
-            'etd_date' => 'nullable|date', // Auto-calculated based on shipping term
+            'ex_factory_date' => 'nullable|date',
+            'etd_date' => 'nullable|date',
             'eta_date' => 'nullable|date',
             'in_warehouse_date' => 'nullable|date',
             'ship_to' => 'nullable|string|max:100',
             'ship_to_address' => 'nullable|string',
             'sample_schedule' => 'nullable|array',
-            'sample_schedule.general_approval' => 'nullable|date',
-            'sample_schedule.first_pp' => 'nullable|date',
-            'sample_schedule.sms' => 'nullable|date',
-            'sample_schedule.top' => 'nullable|date',
-            // REMOVED: buyer_details validation - moved to Style creation
             'packing_guidelines' => 'nullable|string',
-            // Master data foreign keys (removed: division_id, customer_id)
-            // 'brand_id' removed - brand is in Style
             'season_id' => 'nullable|exists:seasons,id',
-            'retailer_id' => 'nullable|exists:retailers,id',
             'country_id' => 'nullable|exists:countries,id',
             'warehouse_id' => 'nullable|exists:warehouses,id',
             'agent_id' => 'nullable|exists:agents,id',
             'vendor_id' => 'nullable|exists:vendors,id',
-            // Price term
             'shipping_term' => 'nullable|in:FOB,DDP',
-            // Additional fields (removed: manufacturer, ship_from, loading_port)
             'payment_term' => 'nullable|string|max:100',
             'country_of_origin' => 'nullable|string|max:100',
             'packing_method' => 'nullable|string',
@@ -605,63 +498,37 @@ class PurchaseOrderController extends Controller
 
         $oldData = [
             'po_number' => $po->po_number,
-            'retailer' => $po->retailer,
             'status' => $po->status,
             'agency_id' => $po->agency_id,
         ];
 
-        // Fetch retailer name from retailer_id for backward compatibility
-        $retailerName = $request->retailer; // Keep if provided directly
-        if ($request->filled('retailer_id') && !$request->filled('retailer')) {
-            $retailer = Retailer::find($request->retailer_id);
-            $retailerName = $retailer ? $retailer->name : $po->retailer;
-        }
-
-        // Get currency code from currency_id if provided
-        $currencyCode = $request->currency ?? $po->currency;
-        if ($request->filled('currency_id')) {
-            $currency = \App\Models\Currency::find($request->currency_id);
-            $currencyCode = $currency ? $currency->code : $currencyCode;
-        }
-
         $po->update([
             'po_number' => $request->po_number,
             'headline' => $request->headline,
-            'retailer' => $retailerName, // Backward compatibility - fetch from retailer_id if needed
             'po_date' => $request->po_date,
-            'currency' => $currencyCode, // Currency code (from currency_id or legacy field)
             'currency_id' => $request->currency_id ?? $po->currency_id,
             'exchange_rate' => $request->exchange_rate ?? $po->exchange_rate,
-            'payment_terms' => $request->payment_terms,
             'payment_term_id' => $request->payment_term_id ?? $po->payment_term_id,
             'payment_terms_structured' => $request->payment_terms_structured ?? $po->payment_terms_structured,
-            'terms_of_delivery' => $request->terms_of_delivery,
-            'destination_country' => $request->destination_country,
             'additional_notes' => $request->additional_notes,
             'agency_id' => $request->agency_id,
             'status' => $request->get('status', $po->status),
-            // Enhanced PO fields (removed: ship_from, manufacturer)
             'revision_date' => $request->revision_date,
-            'ex_factory_date' => $request->ex_factory_date, // For FOB shipping term
+            'ex_factory_date' => $request->ex_factory_date,
             'etd_date' => $request->etd_date,
             'eta_date' => $request->eta_date,
             'in_warehouse_date' => $request->in_warehouse_date,
             'ship_to' => $request->ship_to,
             'ship_to_address' => $request->ship_to_address,
             'sample_schedule' => $request->sample_schedule,
-            // REMOVED: buyer_details - moved to Style creation
             'packing_guidelines' => $request->packing_guidelines,
-            // Master data foreign keys (removed: division_id, customer_id)
-            // 'brand_id' removed - brand is in Style
             'season_id' => $request->season_id,
             'retailer_id' => $request->retailer_id,
             'country_id' => $request->country_id,
             'warehouse_id' => $request->warehouse_id,
             'agent_id' => $request->agent_id,
             'vendor_id' => $request->vendor_id,
-            // Shipping term (FOB/DDP) - stored at PO level
             'shipping_term' => $request->shipping_term ?? $po->shipping_term,
-            // Additional fields (removed: loading_port)
             'payment_term' => $request->payment_term,
             'country_of_origin' => $request->country_of_origin,
             'packing_method' => $request->packing_method,
@@ -670,7 +537,6 @@ class PurchaseOrderController extends Controller
 
         $newData = [
             'po_number' => $po->po_number,
-            'retailer' => $po->retailer,
             'status' => $po->status,
             'agency_id' => $po->agency_id,
         ];
@@ -683,7 +549,6 @@ class PurchaseOrderController extends Controller
             'purchase_order' => [
                 'id' => $po->id,
                 'po_number' => $po->po_number,
-                'brand_name' => $po->brand_name,
                 'status' => $po->status,
             ],
         ]);
@@ -714,7 +579,6 @@ class PurchaseOrderController extends Controller
 
         $poData = [
             'po_number' => $po->po_number,
-            'brand_name' => $po->brand_name,
         ];
 
         // Log deletion

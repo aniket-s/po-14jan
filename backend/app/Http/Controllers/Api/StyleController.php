@@ -65,9 +65,7 @@ class StyleController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('style_number', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhere('fabric', 'like', "%{$search}%")
-                  ->orWhere('color', 'like', "%{$search}%");
+                  ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
@@ -744,8 +742,6 @@ class StyleController extends Controller
         $validator = Validator::make($request->all(), [
             'style_number' => 'required|string|max:100|unique:styles,style_number',
             'description' => 'nullable|string',
-            'fabric' => 'nullable|string|max:255',
-            'color' => 'nullable|string|max:100',
             'size_breakup' => 'nullable|array',
             'total_quantity' => 'nullable|integer|min:1',
             'unit_price' => 'nullable|numeric|min:0',
@@ -757,11 +753,9 @@ class StyleController extends Controller
             'retailer_id' => 'nullable|exists:retailers,id',
             'category_id' => 'nullable|exists:categories,id',
             'season_id' => 'nullable|exists:seasons,id',
-            'gender_id' => 'required|exists:genders,id', // REQUIRED for size management
+            'gender_id' => 'required|exists:genders,id',
             'color_id' => 'nullable|exists:colors,id',
             // Enhanced style fields
-            'color_code' => 'nullable|string|max:50',
-            'color_name' => 'nullable|string|max:100',
             'fabric_name' => 'nullable|string|max:255',
             'fabric_type' => 'nullable|string|max:100',
             'fabric_type_name' => 'nullable|string|max:255',
@@ -796,8 +790,6 @@ class StyleController extends Controller
         $style = Style::create([
             'style_number' => $request->style_number,
             'description' => $request->description,
-            'fabric' => $request->fabric,
-            'color' => $request->color,
             'size_breakup' => $request->size_breakup,
             'total_quantity' => $request->total_quantity,
             'unit_price' => $request->unit_price,
@@ -812,8 +804,6 @@ class StyleController extends Controller
             'gender_id' => $request->gender_id,
             'color_id' => $request->color_id,
             // Enhanced style fields
-            'color_code' => $request->color_code,
-            'color_name' => $request->color_name,
             'fabric_name' => $request->fabric_name,
             'fabric_type' => $request->fabric_type,
             'fabric_type_name' => $request->fabric_type_name,
@@ -880,8 +870,6 @@ class StyleController extends Controller
             'season',
             'gender',
             'color',
-            'agent',
-            'vendor',
             'purchaseOrders',
             'prepacks.prepackCode',
             'creator',
@@ -994,11 +982,7 @@ class StyleController extends Controller
             'fit' => $request->fit,
             // Pricing fields
             'msrp' => $request->msrp,
-            'price_1' => $request->price_1,
-            'price_2' => $request->price_2,
-            'price_3' => $request->price_3,
-            'price_4' => $request->price_4,
-            'price_5' => $request->price_5,
+            'wholesale_price' => $request->wholesale_price,
             // Status
             'is_active' => $request->input('is_active', $style->is_active),
             // Audit

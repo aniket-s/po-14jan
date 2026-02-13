@@ -334,10 +334,10 @@ Route::middleware('auth:sanctum')->group(function () {
         // Customers
         Route::apiResource('customers', \App\Http\Controllers\Api\CustomerController::class);
 
-        // Retailers (NEW - replaces customers in POs)
+        // Retailers
         Route::apiResource('retailers', \App\Http\Controllers\Api\RetailerController::class);
 
-        // Countries (NEW - for shipping calculations)
+        // Countries
         Route::apiResource('countries', \App\Http\Controllers\Api\CountryController::class);
 
         // Agents
@@ -352,41 +352,41 @@ Route::middleware('auth:sanctum')->group(function () {
         // Prepack Codes
         Route::apiResource('prepack-codes', \App\Http\Controllers\Api\PrepackCodeController::class);
 
-        // Trims (NEW - brand-specific trims)
+        // Trims
         Route::apiResource('trims', \App\Http\Controllers\Api\TrimController::class);
         Route::post('trims/upload-image', [\App\Http\Controllers\Api\TrimController::class, 'uploadImage']);
         Route::post('trims/upload-file', [\App\Http\Controllers\Api\TrimController::class, 'uploadFile']);
         Route::get('trims/types/all', [\App\Http\Controllers\Api\TrimController::class, 'types']);
 
-        // Genders (NEW - for size management)
+        // Genders
         Route::apiResource('genders', \App\Http\Controllers\Api\GenderController::class);
         Route::get('genders/{id}/sizes', [\App\Http\Controllers\Api\GenderController::class, 'getSizes']);
 
-        // Sizes (NEW - gender-based sizes)
+        // Sizes
         Route::apiResource('sizes', \App\Http\Controllers\Api\SizeController::class);
 
-        // Colors (NEW - for style color management with fabric type filtering)
+        // Colors
         Route::apiResource('colors', \App\Http\Controllers\Api\ColorController::class);
 
-        // Buyers (NEW - for style buyer categorization)
+        // Buyers
         Route::apiResource('buyers', \App\Http\Controllers\Api\BuyerController::class);
 
-        // Categories (NEW - for style product categorization)
+        // Categories
         Route::apiResource('categories', \App\Http\Controllers\Api\CategoryController::class);
 
-        // Fabric Types (NEW - for dynamic fabric type selection in styles)
+        // Fabric Types
         Route::apiResource('fabric-types', \App\Http\Controllers\Api\FabricTypeController::class);
 
-        // Fabric Qualities (NEW - for dynamic fabric quality selection in styles)
+        // Fabric Qualities
         Route::apiResource('fabric-qualities', \App\Http\Controllers\Api\FabricQualityController::class);
 
-        // Currencies (NEW - for dynamic currency selection in POs)
+        // Currencies
         Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
 
-        // Payment Terms (NEW - for dynamic payment term selection in POs)
+        // Payment Terms
         Route::apiResource('payment-terms', \App\Http\Controllers\Api\PaymentTermController::class);
 
-        // Trim Types (NEW - for dynamic trim type selection)
+        // Trim Types
         Route::apiResource('trim-types', \App\Http\Controllers\Api\TrimTypeController::class);
         Route::post('trim-types/reorder', [\App\Http\Controllers\Api\TrimTypeController::class, 'reorder']);
     });
@@ -428,7 +428,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // ========================================
-        // PO-STYLE ASSOCIATIONS (UPDATED)
+        // PO-STYLE ASSOCIATIONS
         // ========================================
         Route::prefix('{poId}/styles')->group(function () {
             // View styles associated with this PO
@@ -436,7 +436,7 @@ Route::middleware('auth:sanctum')->group(function () {
                 Route::get('/', [PurchaseOrderStyleController::class, 'index']);
             });
 
-            // Add existing styles to this PO (NEW - replaces create)
+            // Add existing styles to this PO
             Route::middleware('permission:style.create')->group(function () {
                 Route::post('/attach', [PurchaseOrderStyleController::class, 'attachStyles']);
                 Route::post('/attach-bulk', [PurchaseOrderStyleController::class, 'attachStylesBulk']);
@@ -447,7 +447,7 @@ Route::middleware('auth:sanctum')->group(function () {
                 Route::put('/{styleId}', [PurchaseOrderStyleController::class, 'updatePivot']);
             });
 
-            // Remove style from this PO (NEW - replaces delete)
+            // Remove style from this PO
             Route::middleware('permission:style.delete')->group(function () {
                 Route::delete('/{styleId}/detach', [PurchaseOrderStyleController::class, 'detachStyle']);
             });
@@ -456,18 +456,6 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::middleware('permission:po.assign_factory')->group(function () {
                 Route::post('/{styleId}/assign-factory', [PurchaseOrderStyleController::class, 'assignFactory']);
             });
-
-            // Legacy endpoints for backward compatibility
-            // These will still work but use the old flow
-            Route::middleware('permission:style.create')->group(function () {
-                Route::post('/', [StyleController::class, 'store']); // DEPRECATED
-                Route::post('/bulk', [StyleController::class, 'bulkStore']); // DEPRECATED
-            });
-        });
-
-        // Factory Assignment
-        Route::middleware('permission:po.assign_factory')->group(function () {
-            Route::post('/{poId}/assign-factory', [StyleController::class, 'assignFactory']);
         });
 
         // Excel Import
@@ -494,7 +482,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // ========================================
-    // STANDALONE STYLE MANAGEMENT (NEW)
+    // STANDALONE STYLE MANAGEMENT
     // ========================================
     Route::prefix('styles')->group(function () {
         // View all styles
@@ -601,13 +589,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/upload/style-images', [FileUploadController::class, 'uploadStyleImages']);
     Route::post('/upload/technical-files', [FileUploadController::class, 'uploadTechnicalFiles']);
     Route::post('/upload/delete', [FileUploadController::class, 'delete']);
-
-    // Excel Import
-    Route::prefix('excel-import')->middleware('permission:style.create')->group(function () {
-        Route::post('/analyze', [\App\Http\Controllers\Api\ExcelImportController::class, 'analyze']);
-        Route::post('/{poId}/execute', [\App\Http\Controllers\Api\ExcelImportController::class, 'import']);
-        Route::post('/{poId}/import', [\App\Http\Controllers\Api\ExcelImportController::class, 'import']);
-    });
 
     // Invitation Management
     Route::prefix('purchase-orders/{poId}/invitations')->group(function () {

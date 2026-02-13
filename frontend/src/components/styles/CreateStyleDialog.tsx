@@ -42,27 +42,19 @@ import { CreateFabricQualityDialog } from '@/components/master-data/CreateFabric
 const styleSchema = z.object({
   style_number: z.string().min(1, 'Style number is required'),
   description: z.string().optional(),
-  fabric_type_name: z.string().optional(), // Combined fabric type and name (text)
-  fabric_type_id: z.coerce.number().optional(), // NEW: Foreign key to fabric_types table
-  fabric_quality_id: z.coerce.number().optional(), // NEW: Foreign key to fabric_qualities table
+  fabric_type_id: z.coerce.number().optional(),
+  fabric_quality_id: z.coerce.number().optional(),
   fabric_weight: z.string().optional(),
-  color: z.string().optional(),
   color_id: z.coerce.number().optional(),
-  size: z.string().optional(),
   fit: z.string().optional(),
-  images: z.string().optional(),
   technical_file_paths: z.array(z.string()).optional(),
-  // Master data
   brand_id: z.coerce.number().optional(),
-  retailer_id: z.coerce.number().optional(), // CHANGED: Replaced buyer_id with retailer_id
+  retailer_id: z.coerce.number().optional(),
   category_id: z.coerce.number().optional(),
   season_id: z.coerce.number().optional(),
   gender_id: z.coerce.number().min(1, 'Gender is required'),
-  // Pricing fields
   msrp: z.coerce.number().optional(),
   wholesale_price: z.coerce.number().optional(),
-  // REMOVED: is_active field
-  // Trims
   trims: z.array(z.number()).optional(),
 });
 
@@ -87,12 +79,12 @@ export function CreateStyleDialog({
   const [trims, setTrims] = useState<any[]>([]);
   const [genders, setGenders] = useState<any[]>([]);
   const [brands, setBrands] = useState<any[]>([]);
-  const [retailers, setRetailers] = useState<any[]>([]); // CHANGED: From buyers to retailers
+  const [retailers, setRetailers] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [seasons, setSeasons] = useState<any[]>([]);
   const [colors, setColors] = useState<any[]>([]);
-  const [fabricTypes, setFabricTypes] = useState<any[]>([]); // NEW
-  const [fabricQualities, setFabricQualities] = useState<any[]>([]); // NEW
+  const [fabricTypes, setFabricTypes] = useState<any[]>([]);
+  const [fabricQualities, setFabricQualities] = useState<any[]>([]);
   const [selectedTrims, setSelectedTrims] = useState<number[]>([]);
   const [trimOptions, setTrimOptions] = useState<MultiSelectOption[]>([]);
   const [sizes, setSizes] = useState<any[]>([]);
@@ -111,18 +103,14 @@ export function CreateStyleDialog({
     defaultValues: {
       style_number: '',
       description: '',
-      fabric_type_name: '',
       fabric_type_id: undefined,
       fabric_quality_id: undefined,
       fabric_weight: '',
-      color: '',
       color_id: undefined,
-      size: '',
       fit: '',
-      images: '',
       technical_file_paths: [],
       brand_id: undefined,
-      retailer_id: undefined, // CHANGED: From buyer_id
+      retailer_id: undefined,
       category_id: undefined,
       season_id: undefined,
       gender_id: undefined,
@@ -141,33 +129,33 @@ export function CreateStyleDialog({
           trimsResponse,
           gendersResponse,
           brandsResponse,
-          retailersResponse, // CHANGED: From buyers to retailers
+          retailersResponse,
           categoriesResponse,
           seasonsResponse,
           colorsResponse,
-          fabricTypesResponse, // NEW
-          fabricQualitiesResponse, // NEW
+          fabricTypesResponse,
+          fabricQualitiesResponse,
         ] = await Promise.all([
           api.get('/master-data/trims?all=true'),
           api.get('/master-data/genders?active_only=true&all=true'),
           api.get('/master-data/brands?all=true'),
-          api.get('/master-data/retailers?all=true'), // CHANGED: From buyers to retailers
+          api.get('/master-data/retailers?all=true'),
           api.get('/master-data/categories?all=true'),
           api.get('/master-data/seasons?all=true'),
           api.get('/master-data/colors?all=true'),
-          api.get('/master-data/fabric-types?all=true'), // NEW
-          api.get('/master-data/fabric-qualities?all=true'), // NEW
+          api.get('/master-data/fabric-types?all=true'),
+          api.get('/master-data/fabric-qualities?all=true'),
         ]);
         const fetchedTrims = trimsResponse.data || [];
         setTrims(fetchedTrims);
         setGenders(gendersResponse.data || []);
         setBrands(brandsResponse.data || []);
-        setRetailers(retailersResponse.data || []); // CHANGED
+        setRetailers(retailersResponse.data || []);
         setCategories(categoriesResponse.data || []);
         setSeasons(seasonsResponse.data || []);
         setColors(colorsResponse.data || []);
-        setFabricTypes(fabricTypesResponse.data || []); // NEW
-        setFabricQualities(fabricQualitiesResponse.data || []); // NEW
+        setFabricTypes(fabricTypesResponse.data || []);
+        setFabricQualities(fabricQualitiesResponse.data || []);
 
         // Transform trims to multi-select options
         const options: MultiSelectOption[] = fetchedTrims.map((trim: any) => ({
@@ -264,23 +252,21 @@ export function CreateStyleDialog({
       const styleData: CreateStyleData = {
         style_number: data.style_number,
         description: data.description || undefined,
-        fabric_type_name: data.fabric_type_name || undefined,
         fabric_type_id: data.fabric_type_id || undefined,
         fabric_quality_id: data.fabric_quality_id || undefined,
         fabric_weight: data.fabric_weight || undefined,
-        color: data.color || undefined,
         color_id: data.color_id || undefined,
         fit: data.fit || undefined,
         images: parsedImages,
         technical_file_paths: uploadedTechPacks.length > 0 ? uploadedTechPacks : undefined,
         brand_id: data.brand_id || undefined,
-        retailer_id: data.retailer_id || undefined, // CHANGED: From buyer_id
+        retailer_id: data.retailer_id || undefined,
         category_id: data.category_id || undefined,
         season_id: data.season_id || undefined,
         gender_id: data.gender_id || undefined,
         msrp: data.msrp || undefined,
         wholesale_price: data.wholesale_price || undefined,
-        is_active: true, // Always active by default
+        is_active: true,
         trims: transformedTrims,
       };
 
@@ -761,8 +747,6 @@ export function CreateStyleDialog({
                   )}
                 </div>
               </div>
-
-              {/* REMOVED: is_active checkbox section */}
 
               {/* Trims */}
               <div className="space-y-4">

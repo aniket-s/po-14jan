@@ -11,48 +11,34 @@ class PurchaseOrder extends Model
 
     protected $fillable = [
         'po_number',
-        'headline', // PO headline/title for display
+        'headline',
         'importer_id',
         'agency_id',
         'creator_id',
-        'brand_name',
-        'season',
-        'category',
-        'order_date',
-        'expected_delivery_date',
-        'currency',
-        'currency_id', // NEW: Foreign key to currencies table
+        'currency_id',
         'total_quantity',
         'total_value',
         'payment_terms',
-        'payment_terms_structured', // New JSON field
-        'payment_term_id', // NEW: Foreign key to payment_terms table
-        'incoterms',
-        'destination_port',
-        'special_instructions',
-        'internal_notes',
+        'payment_terms_structured',
+        'payment_term_id',
         'status',
         'metadata',
-        // Enhanced PO fields
         'revision_date',
         'etd_date',
-        'ex_factory_date', // NEW: For FOB shipping term calculations
+        'ex_factory_date',
         'eta_date',
-        'in_warehouse_date', // New field
-        'shipping_term', // NEW: FOB or DDP at PO level
+        'in_warehouse_date',
+        'shipping_term',
         'ship_to',
         'ship_to_address',
         'sample_schedule',
-        // REMOVED: 'buyer_details' - buyer/trim details removed per requirements
         'packing_guidelines',
-        // Master data foreign keys (brand_id removed - brand is in Style)
         'season_id',
-        'retailer_id', // New - replaced customer_id
-        'country_id', // New
-        'warehouse_id', // New
+        'retailer_id',
+        'country_id',
+        'warehouse_id',
         'agent_id',
         'vendor_id',
-        // Additional fields
         'payment_term',
         'country_of_origin',
         'packing_method',
@@ -60,7 +46,6 @@ class PurchaseOrder extends Model
         'revision_number',
         'revised_by',
         'po_date',
-        'retailer', // Keep for backward compatibility
         'exchange_rate',
         'terms_of_delivery',
         'additional_notes',
@@ -68,21 +53,16 @@ class PurchaseOrder extends Model
     ];
 
     protected $casts = [
-        'order_date' => 'date',
-        'expected_delivery_date' => 'date',
         'total_quantity' => 'integer',
         'total_value' => 'decimal:2',
         'metadata' => 'array',
-        // Enhanced PO field casts
         'revision_date' => 'date',
         'etd_date' => 'date',
-        'ex_factory_date' => 'date', // NEW: For FOB shipping term
+        'ex_factory_date' => 'date',
         'eta_date' => 'date',
-        'in_warehouse_date' => 'date', // New
+        'in_warehouse_date' => 'date',
         'sample_schedule' => 'array',
-        // REMOVED: 'buyer_details' => 'array' - buyer/trim details removed per requirements
-        'payment_terms_structured' => 'array', // New JSON cast
-        // Additional casts
+        'payment_terms_structured' => 'array',
         'po_date' => 'date',
         'exchange_rate' => 'decimal:4',
         'revision_number' => 'integer',
@@ -135,14 +115,6 @@ class PurchaseOrder extends Model
     public function paymentTerm()
     {
         return $this->belongsTo(PaymentTerm::class);
-    }
-
-    /**
-     * Get the brand for the PO
-     */
-    public function brand()
-    {
-        return $this->belongsTo(Brand::class);
     }
 
     /**
@@ -211,9 +183,9 @@ class PurchaseOrder extends Model
             ->withPivot([
                 'quantity_in_po',
                 'unit_price_in_po',
-                'shipping_term', // FOB or DDP - changed from price_term
-                'size_breakdown', // Size quantities for this style in this PO
-                'ratio', // Size ratio for this style in PO
+                'shipping_term',
+                'size_breakdown',
+                'ratio',
                 'assigned_factory_id',
                 'assigned_agency_id',
                 'assignment_type',
@@ -225,15 +197,6 @@ class PurchaseOrder extends Model
                 'notes',
             ])
             ->withTimestamps();
-    }
-
-    /**
-     * Get the legacy styles (DEPRECATED - for backward compatibility only)
-     * This returns styles with the old po_id foreign key
-     */
-    public function legacyStyles()
-    {
-        return $this->hasMany(Style::class, 'po_id');
     }
 
     /**
