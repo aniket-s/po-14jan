@@ -173,14 +173,6 @@ export const createStandaloneStyle = async (data: CreateStyleData): Promise<Styl
 };
 
 /**
- * Bulk create standalone styles
- */
-export const bulkCreateStandaloneStyles = async (styles: CreateStyleData[]): Promise<any> => {
-  const response = await api.post('/styles/bulk', { styles });
-  return response.data;
-};
-
-/**
  * Update a standalone style
  */
 export const updateStandaloneStyle = async (id: number, data: UpdateStyleData): Promise<Style> => {
@@ -193,14 +185,6 @@ export const updateStandaloneStyle = async (id: number, data: UpdateStyleData): 
  */
 export const deleteStandaloneStyle = async (id: number): Promise<void> => {
   await api.delete(`/styles/${id}`);
-};
-
-/**
- * Get styles available for PO selection (not yet in this PO)
- */
-export const getAvailableStylesForPO = async (poId: number, filters?: StyleFilters): Promise<PaginatedStyles> => {
-  const response = await api.get(`/styles/available-for-po/${poId}`, { params: filters });
-  return response.data;
 };
 
 // ========================================

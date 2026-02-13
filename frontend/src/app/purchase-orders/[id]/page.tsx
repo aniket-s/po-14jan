@@ -74,35 +74,10 @@ export default function PurchaseOrderDetailPage() {
   const [assignedFactoryIdForDialog, setAssignedFactoryIdForDialog] = useState<number | null>(null);
   const [assignedAgencyIdForDialog, setAssignedAgencyIdForDialog] = useState<number | null>(null);
 
-  // Master data state
-  const [brands, setBrands] = useState<any[]>([]);
-  const [seasons, setSeasons] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [vendors, setVendors] = useState<any[]>([]);
-
   useEffect(() => {
     fetchPurchaseOrder();
     fetchStyles();
-    fetchMasterData();
   }, [poId]);
-
-  const fetchMasterData = async () => {
-    try {
-      const [brandsRes, seasonsRes, agentsRes, vendorsRes] = await Promise.all([
-        api.get('/master-data/brands?all=true'),
-        api.get('/master-data/seasons?all=true'),
-        api.get('/master-data/agents?all=true'),
-        api.get('/master-data/vendors?all=true'),
-      ]);
-
-      setBrands(brandsRes.data || []);
-      setSeasons(seasonsRes.data || []);
-      setAgents(agentsRes.data || []);
-      setVendors(vendorsRes.data || []);
-    } catch (error) {
-      console.error('Failed to fetch master data:', error);
-    }
-  };
 
   const fetchPurchaseOrder = async () => {
     try {

@@ -494,7 +494,6 @@ Route::middleware('auth:sanctum')->group(function () {
         // Create standalone styles
         Route::middleware('permission:style.create')->group(function () {
             Route::post('/', [StyleController::class, 'createStandalone']);
-            Route::post('/bulk', [StyleController::class, 'bulkCreateStandalone']);
         });
 
         // Update standalone styles
@@ -515,9 +514,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Download Excel template
         Route::get('/template/download', [ExcelImportController::class, 'downloadTemplate']);
-
-        // Get styles available for PO selection
-        Route::get('/available-for-po/{poId}', [StyleController::class, 'getAvailableForPO']);
 
         // Trim Management for Styles
         Route::prefix('{id}/trims')->group(function () {
