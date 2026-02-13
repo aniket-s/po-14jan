@@ -267,7 +267,7 @@ export default function StatusManagementPage() {
   if (loading) {
     return (
       <DashboardLayout
-        requiredPermissions={['admin.statuses.view', 'admin.statuses.manage']}
+        requiredPermissions={['admin.statuses.view', 'admin.statuses.edit']}
         requireAll={false}
       >
         <div className="flex items-center justify-center h-96">
@@ -279,7 +279,7 @@ export default function StatusManagementPage() {
 
   return (
     <DashboardLayout
-      requiredPermissions={['admin.statuses.view', 'admin.statuses.manage']}
+      requiredPermissions={['admin.statuses.view', 'admin.statuses.edit']}
       requireAll={false}
     >
       <div className="space-y-6">

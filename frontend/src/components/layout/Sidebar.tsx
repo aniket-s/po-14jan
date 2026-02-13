@@ -211,7 +211,7 @@ const navItems: NavItem[] = [
     title: 'Admin',
     href: '/admin',
     icon: Settings,
-    permissions: ['admin.users.view', 'admin.roles.view', 'admin.permissions.view', 'admin.sample_types.view', 'admin.production_stages.view', 'admin.activity_logs.view', 'admin.email_templates.view', 'admin.settings.view', 'admin.statuses.view'],
+    permissions: ['admin.users.view', 'admin.roles.view', 'admin.permissions.view', 'admin.configuration.view', 'admin.activity_logs.view', 'admin.email_templates.view', 'admin.settings.view', 'admin.statuses.view'],
     requireAny: true,
     children: [
       {
@@ -236,13 +236,13 @@ const navItems: NavItem[] = [
         title: 'Sample Types',
         href: '/admin/sample-types',
         icon: Layers,
-        permissions: ['admin.sample_types.view'],
+        permissions: ['admin.configuration.view'],
       },
       {
         title: 'Production Stages',
         href: '/admin/production-stages',
         icon: Workflow,
-        permissions: ['admin.production_stages.view'],
+        permissions: ['admin.configuration.view'],
       },
       {
         title: 'Email Templates',
@@ -262,7 +262,7 @@ const navItems: NavItem[] = [
         title: 'Status Management',
         href: '/admin/statuses',
         icon: Workflow,
-        permissions: ['admin.statuses.view', 'admin.statuses.manage'],
+        permissions: ['admin.statuses.view', 'admin.statuses.edit'],
         requireAny: true,
       },
       {

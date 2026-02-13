@@ -58,10 +58,7 @@ export default function StylesPage() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!can('style.view') && !can('style.create')) {
-      router.push('/dashboard');
-    }
-  }, [can, router, authLoading]);
+  }, [authLoading]);
 
   useEffect(() => {
     const fetchFilterData = async () => {
@@ -166,7 +163,7 @@ export default function StylesPage() {
 
   if (loading && styles.length === 0) {
     return (
-      <DashboardLayout>
+      <DashboardLayout requiredPermissions={['style.view', 'style.view_own', 'style.create', 'style.edit']} requireAll={false}>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
@@ -175,7 +172,7 @@ export default function StylesPage() {
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['style.view', 'style.view_own', 'style.create', 'style.edit']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
