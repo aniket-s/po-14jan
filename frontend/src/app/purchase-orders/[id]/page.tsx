@@ -74,35 +74,10 @@ export default function PurchaseOrderDetailPage() {
   const [assignedFactoryIdForDialog, setAssignedFactoryIdForDialog] = useState<number | null>(null);
   const [assignedAgencyIdForDialog, setAssignedAgencyIdForDialog] = useState<number | null>(null);
 
-  // Master data state
-  const [brands, setBrands] = useState<any[]>([]);
-  const [seasons, setSeasons] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [vendors, setVendors] = useState<any[]>([]);
-
   useEffect(() => {
     fetchPurchaseOrder();
     fetchStyles();
-    fetchMasterData();
   }, [poId]);
-
-  const fetchMasterData = async () => {
-    try {
-      const [brandsRes, seasonsRes, agentsRes, vendorsRes] = await Promise.all([
-        api.get('/master-data/brands?all=true'),
-        api.get('/master-data/seasons?all=true'),
-        api.get('/master-data/agents?all=true'),
-        api.get('/master-data/vendors?all=true'),
-      ]);
-
-      setBrands(brandsRes.data || []);
-      setSeasons(seasonsRes.data || []);
-      setAgents(agentsRes.data || []);
-      setVendors(vendorsRes.data || []);
-    } catch (error) {
-      console.error('Failed to fetch master data:', error);
-    }
-  };
 
   const fetchPurchaseOrder = async () => {
     try {
@@ -141,9 +116,9 @@ export default function PurchaseOrderDetailPage() {
 
   const handleOpenAssignFactory = (style: Style) => {
     setSelectedStyleForAssignment(style);
-    setAssignmentTypeForDialog(style.assignment_type);
-    setAssignedFactoryIdForDialog(style.assigned_factory_id || (style.pivot?.assigned_factory_id ?? null));
-    setAssignedAgencyIdForDialog(style.assigned_agency_id || (style.pivot?.assigned_agency_id ?? null));
+    setAssignmentTypeForDialog(style.pivot?.assignment_type ?? null);
+    setAssignedFactoryIdForDialog(style.pivot?.assigned_factory_id ?? null);
+    setAssignedAgencyIdForDialog(style.pivot?.assigned_agency_id ?? null);
     setIsAssignFactoryDialogOpen(true);
   };
 
@@ -729,9 +704,9 @@ export default function PurchaseOrderDetailPage() {
                           <TableCell className="font-medium">{style.style_number}</TableCell>
                           <TableCell>{style.description || '-'}</TableCell>
                           <TableCell>
-                            {style.assignment_type ? (
+                            {style.pivot?.assignment_type ? (
                               <Badge variant="outline">
-                                {style.assignment_type === 'direct_to_factory' ? 'Direct to Factory' : 'Via Agency'}
+                                {style.pivot.assignment_type === 'direct_to_factory' ? 'Direct to Factory' : 'Via Agency'}
                               </Badge>
                             ) : (
                               <span className="text-muted-foreground text-sm">Not assigned</span>
@@ -761,7 +736,7 @@ export default function PurchaseOrderDetailPage() {
                               onClick={() => handleOpenAssignFactory(style)}
                             >
                               <Factory className="mr-2 h-4 w-4" />
-                              {style.assignment_type ? 'Edit' : 'Assign'}
+                              {style.pivot?.assignment_type ? 'Edit' : 'Assign'}
                             </Button>
                           </TableCell>
                         </TableRow>

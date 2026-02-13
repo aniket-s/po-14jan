@@ -10,7 +10,6 @@ class Style extends Model
     use HasFactory;
 
     protected $fillable = [
-        'po_id',
         'style_number',
         'description',
         'fabric',

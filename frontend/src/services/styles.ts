@@ -25,6 +25,7 @@ export interface Style {
   id: number;
   style_number: string;
   description: string | null;
+  fabric: string | null;
   color: ColorObject | null;
   fit: string | null;
   size_breakup: Record<string, number>;
@@ -60,6 +61,7 @@ export interface Style {
   is_active: boolean;
 
   created_by: number | null;
+  updated_by: number | null;
   tp_date: string | null;
 
   // Relationships (loaded when needed)
@@ -68,10 +70,11 @@ export interface Style {
   gender?: GenderObject; // Gender with active_sizes for size management
   retailer?: any;
   category?: any;
-  color?: any;
-  fabric_type?: any;
   fabric_quality?: any;
   purchase_orders?: any[];
+  trims?: any[];
+  creator?: { id: number; name: string; email?: string };
+  updatedBy?: { id: number; name: string; email?: string };
 
   created_at: string;
   updated_at: string;
@@ -174,14 +177,6 @@ export const createStandaloneStyle = async (data: CreateStyleData): Promise<Styl
 };
 
 /**
- * Bulk create standalone styles
- */
-export const bulkCreateStandaloneStyles = async (styles: CreateStyleData[]): Promise<any> => {
-  const response = await api.post('/styles/bulk', { styles });
-  return response.data;
-};
-
-/**
  * Update a standalone style
  */
 export const updateStandaloneStyle = async (id: number, data: UpdateStyleData): Promise<Style> => {
@@ -194,14 +189,6 @@ export const updateStandaloneStyle = async (id: number, data: UpdateStyleData): 
  */
 export const deleteStandaloneStyle = async (id: number): Promise<void> => {
   await api.delete(`/styles/${id}`);
-};
-
-/**
- * Get styles available for PO selection (not yet in this PO)
- */
-export const getAvailableStylesForPO = async (poId: number, filters?: StyleFilters): Promise<PaginatedStyles> => {
-  const response = await api.get(`/styles/available-for-po/${poId}`, { params: filters });
-  return response.data;
 };
 
 // ========================================
