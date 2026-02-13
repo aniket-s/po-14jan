@@ -10,13 +10,16 @@ class DefaultRolesSeeder extends Seeder
 {
     public function run(): void
     {
+        // Reset cached roles and permissions
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
         // Super Admin - Full system access
-        $superAdmin = Role::create(['name' => 'Super Admin']);
-        $superAdmin->givePermissionTo(Permission::all());
+        $superAdmin = Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+        $superAdmin->syncPermissions(Permission::all());
 
         // Importer - Create POs, assign factories/agencies, approve samples
-        $importer = Role::create(['name' => 'Importer']);
-        $importer->givePermissionTo([
+        $importer = Role::firstOrCreate(['name' => 'Importer', 'guard_name' => 'web']);
+        $importer->syncPermissions([
             // PO Permissions
             'po.view_all',
             'po.create',
@@ -60,8 +63,8 @@ class DefaultRolesSeeder extends Seeder
         ]);
 
         // Agency - Manage POs, assign factories, review samples
-        $agency = Role::create(['name' => 'Agency']);
-        $agency->givePermissionTo([
+        $agency = Role::firstOrCreate(['name' => 'Agency', 'guard_name' => 'web']);
+        $agency->syncPermissions([
             // PO Permissions
             'po.view_own',
             'po.edit',
@@ -93,8 +96,8 @@ class DefaultRolesSeeder extends Seeder
         ]);
 
         // Factory - Submit samples, manage production, create shipments
-        $factory = Role::create(['name' => 'Factory']);
-        $factory->givePermissionTo([
+        $factory = Role::firstOrCreate(['name' => 'Factory', 'guard_name' => 'web']);
+        $factory->syncPermissions([
             // PO Permissions
             'po.view_own',
             // Style Permissions
@@ -119,8 +122,8 @@ class DefaultRolesSeeder extends Seeder
         ]);
 
         // Quality Inspector - Conduct inspections, generate certificates
-        $inspector = Role::create(['name' => 'Quality Inspector']);
-        $inspector->givePermissionTo([
+        $inspector = Role::firstOrCreate(['name' => 'Quality Inspector', 'guard_name' => 'web']);
+        $inspector->syncPermissions([
             // PO Permissions
             'po.view',
             // Style Permissions
@@ -139,8 +142,8 @@ class DefaultRolesSeeder extends Seeder
         ]);
 
         // Viewer - Read-only access
-        $viewer = Role::create(['name' => 'Viewer']);
-        $viewer->givePermissionTo([
+        $viewer = Role::firstOrCreate(['name' => 'Viewer', 'guard_name' => 'web']);
+        $viewer->syncPermissions([
             'po.view',
             'style.view',
             'sample.view',

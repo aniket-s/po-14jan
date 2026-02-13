@@ -401,7 +401,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/sample-schedule', [PurchaseOrderController::class, 'getSampleSchedule']);
 
         // View POs
-        Route::middleware('permission:po.view|po.view_all|po.view_own')->group(function () {
+        Route::middleware('permission:po.view,po.view_all,po.view_own')->group(function () {
             Route::get('/', [PurchaseOrderController::class, 'index']);
             Route::get('/{id}', [PurchaseOrderController::class, 'show']);
             Route::get('/statistics/overview', [PurchaseOrderController::class, 'statistics']);
@@ -764,7 +764,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // Reporting & Analytics System
-    Route::prefix('reports')->middleware('permission:reports.view|po.view_all|po.view_own|po.view')->group(function () {
+    Route::prefix('reports')->middleware('permission:reports.view,po.view_all,po.view_own,po.view')->group(function () {
         // Dashboard overview
         Route::get('/dashboard', [ReportController::class, 'dashboard']);
 
