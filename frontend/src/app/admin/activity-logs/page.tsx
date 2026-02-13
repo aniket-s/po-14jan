@@ -225,7 +225,7 @@ function ActivityLogsPageContent() {
 
   if (loading && logs.length === 0) {
     return (
-      <DashboardLayout>
+      <DashboardLayout requiredPermissions={['admin.activity_logs.view']} requireAll={false}>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
@@ -234,7 +234,7 @@ function ActivityLogsPageContent() {
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['admin.activity_logs.view']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -525,7 +525,7 @@ function ActivityLogsPageContent() {
 export default function ActivityLogsPage() {
   return (
     <Suspense fallback={
-      <DashboardLayout>
+      <DashboardLayout requiredPermissions={['admin.activity_logs.view']} requireAll={false}>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>

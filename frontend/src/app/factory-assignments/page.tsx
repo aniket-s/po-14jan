@@ -138,10 +138,7 @@ export default function FactoryAssignmentsPage() {
   // Check permissions
   useEffect(() => {
     if (authLoading) return;
-    if (!can('po.assign_factory') && !can('style.assign_factory')) {
-      router.push('/dashboard');
-    }
-  }, [can, router, authLoading]);
+  }, [authLoading]);
 
   // Fetch factory assignments
   const fetchAssignments = async () => {
@@ -310,7 +307,7 @@ export default function FactoryAssignmentsPage() {
 
   if (loading && assignments.length === 0) {
     return (
-      <DashboardLayout>
+      <DashboardLayout requiredPermissions={['po.assign_factory', 'style.assign_factory']} requireAll={false}>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
@@ -319,7 +316,7 @@ export default function FactoryAssignmentsPage() {
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['po.assign_factory', 'style.assign_factory']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

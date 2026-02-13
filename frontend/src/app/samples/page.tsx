@@ -410,7 +410,7 @@ export default function SamplesPage() {
   };
 
   return (
-    <DashboardLayout requiredPermissions={['sample.view', 'sample.create', 'sample.approve_final', 'sample.agency_approve']} requireAll={false}>
+    <DashboardLayout requiredPermissions={['sample.view', 'sample.view_own', 'sample.submit', 'sample.create', 'sample.approve_final', 'sample.approve_agency']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

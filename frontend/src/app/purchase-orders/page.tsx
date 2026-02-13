@@ -355,7 +355,7 @@ export default function PurchaseOrdersPage() {
   };
 
   return (
-    <DashboardLayout requiredPermissions={['po.view', 'po.view_all', 'po.create']} requireAll={false}>
+    <DashboardLayout requiredPermissions={['po.view', 'po.view_all', 'po.view_own', 'po.create', 'po.edit', 'po.export']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

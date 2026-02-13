@@ -263,7 +263,7 @@ export default function InvitationsPage() {
   };
 
   return (
-    <DashboardLayout requiredPermissions={['invitation.send', 'invitation.view_all']} requireAll={false}>
+    <DashboardLayout requiredPermissions={['invitation.send', 'invitation.view_all', 'invitation.respond']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

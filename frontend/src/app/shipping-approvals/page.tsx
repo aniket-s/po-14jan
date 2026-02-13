@@ -462,7 +462,7 @@ export default function ShippingApprovalsPage() {
 
   return (
     <DashboardLayout
-      requiredPermissions={['production.view', 'production.view_all', 'shipment.view', 'shipment.view_all', 'po.view']}
+      requiredPermissions={['production.view', 'production.view_all', 'production.view_own', 'shipment.view', 'shipment.view_all', 'shipment.view_own', 'shipment.create', 'po.view', 'po.view_own']}
       requireAll={false}
     >
       <div className="space-y-6">

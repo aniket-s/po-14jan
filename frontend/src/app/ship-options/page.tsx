@@ -509,7 +509,7 @@ export default function ShipOptionsPage() {
   // -------------------------------------------------------------------------
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['shipment.view', 'shipment.view_all', 'shipment.view_own', 'shipment.create', 'po.view', 'po.view_own']} requireAll={false}>
       <div className="space-y-6">
         {/* ----------------------------------------------------------------- */}
         {/* Header                                                            */}

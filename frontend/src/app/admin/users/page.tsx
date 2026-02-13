@@ -353,7 +353,7 @@ export default function UsersManagementPage() {
 
   if (loading && users.length === 0) {
     return (
-      <DashboardLayout>
+      <DashboardLayout requiredPermissions={['admin.users.view']} requireAll={false}>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
@@ -362,7 +362,7 @@ export default function UsersManagementPage() {
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['admin.users.view']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
