@@ -14,11 +14,15 @@ class DefaultRolesSeeder extends Seeder
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
         // Super Admin - Full system access
-        $superAdmin = Role::firstOrCreate(['name' => 'Super Admin', 'guard_name' => 'web']);
+        // Spatie's Role::create() throws if the role already exists,
+        // so we must check manually instead of using firstOrCreate().
+        $superAdmin = Role::where('name', 'Super Admin')->where('guard_name', 'web')->first()
+            ?? Role::create(['name' => 'Super Admin', 'guard_name' => 'web']);
         $superAdmin->syncPermissions(Permission::all());
 
         // Importer - Create POs, assign factories/agencies, approve samples
-        $importer = Role::firstOrCreate(['name' => 'Importer', 'guard_name' => 'web']);
+        $importer = Role::where('name', 'Importer')->where('guard_name', 'web')->first()
+            ?? Role::create(['name' => 'Importer', 'guard_name' => 'web']);
         $importer->syncPermissions([
             // PO Permissions
             'po.view_all',
@@ -63,7 +67,8 @@ class DefaultRolesSeeder extends Seeder
         ]);
 
         // Agency - Manage POs, assign factories, review samples
-        $agency = Role::firstOrCreate(['name' => 'Agency', 'guard_name' => 'web']);
+        $agency = Role::where('name', 'Agency')->where('guard_name', 'web')->first()
+            ?? Role::create(['name' => 'Agency', 'guard_name' => 'web']);
         $agency->syncPermissions([
             // PO Permissions
             'po.view_own',
@@ -96,7 +101,8 @@ class DefaultRolesSeeder extends Seeder
         ]);
 
         // Factory - Submit samples, manage production, create shipments
-        $factory = Role::firstOrCreate(['name' => 'Factory', 'guard_name' => 'web']);
+        $factory = Role::where('name', 'Factory')->where('guard_name', 'web')->first()
+            ?? Role::create(['name' => 'Factory', 'guard_name' => 'web']);
         $factory->syncPermissions([
             // PO Permissions
             'po.view_own',
@@ -122,7 +128,8 @@ class DefaultRolesSeeder extends Seeder
         ]);
 
         // Quality Inspector - Conduct inspections, generate certificates
-        $inspector = Role::firstOrCreate(['name' => 'Quality Inspector', 'guard_name' => 'web']);
+        $inspector = Role::where('name', 'Quality Inspector')->where('guard_name', 'web')->first()
+            ?? Role::create(['name' => 'Quality Inspector', 'guard_name' => 'web']);
         $inspector->syncPermissions([
             // PO Permissions
             'po.view',
@@ -142,7 +149,8 @@ class DefaultRolesSeeder extends Seeder
         ]);
 
         // Viewer - Read-only access
-        $viewer = Role::firstOrCreate(['name' => 'Viewer', 'guard_name' => 'web']);
+        $viewer = Role::where('name', 'Viewer')->where('guard_name', 'web')->first()
+            ?? Role::create(['name' => 'Viewer', 'guard_name' => 'web']);
         $viewer->syncPermissions([
             'po.view',
             'style.view',
