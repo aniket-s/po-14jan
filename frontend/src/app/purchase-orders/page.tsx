@@ -48,7 +48,6 @@ import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialo
 import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
 import { CreatePaymentTermDialog } from '@/components/master-data/CreatePaymentTermDialog';
 import { useAuth } from '@/contexts/AuthContext';
-import { RatioInput } from '@/components/purchase-orders/RatioInput';
 
 const poSchema = z.object({
   po_number: z.string().min(1, 'PO number is required'),
@@ -121,7 +120,6 @@ export default function PurchaseOrdersPage() {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [vendors, setVendors] = useState<any[]>([]);
-  const [styles, setStyles] = useState<any[]>([]);
 
   const [autoGeneratePO, setAutoGeneratePO] = useState(true);
   const [isGeneratingPO, setIsGeneratingPO] = useState(false);
@@ -134,14 +132,6 @@ export default function PurchaseOrdersPage() {
   const [shippingTerm, setShippingTerm] = useState<'FOB' | 'DDP'>('FOB');
   // Selected country ID for DDP date calculations
   const [selectedCountryId, setSelectedCountryId] = useState<string>('');
-
-  // Selected styles with quantity, ratio, and price
-  const [selectedStyles, setSelectedStyles] = useState<Array<{
-    style_id: number;
-    quantity: number;
-    ratio: any;
-    unit_price_in_po?: number | null;
-  }>>([]);
 
   const {
     register,
@@ -179,14 +169,13 @@ export default function PurchaseOrdersPage() {
 
   const fetchMasterData = async () => {
     try {
-      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, stylesRes, currenciesRes, paymentTermsRes] = await Promise.all([
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, currenciesRes, paymentTermsRes] = await Promise.all([
         api.get('/master-data/seasons?all=true'),
         api.get('/master-data/retailers?all=true'),
         api.get('/master-data/countries?all=true'),
         api.get('/master-data/warehouses?all=true'),
         api.get('/master-data/agents?all=true'),
         api.get('/master-data/vendors?all=true'),
-        api.get('/styles?all=true'),
         api.get('/master-data/currencies?all=true'),
         api.get('/master-data/payment-terms?all=true'),
       ]);
@@ -197,8 +186,6 @@ export default function PurchaseOrdersPage() {
       setWarehouses(warehousesRes.data || []);
       setAgents(agentsRes.data || []);
       setVendors(vendorsRes.data || []);
-      // Handle paginated response from /styles endpoint
-      setStyles(stylesRes.data?.data || stylesRes.data || []);
       setCurrencies(currenciesRes.data || []);
       setPaymentTerms(paymentTermsRes.data || []);
     } catch (error) {
@@ -318,14 +305,12 @@ export default function PurchaseOrdersPage() {
         ship_to_address: data.ship_to_address,
         sample_schedule: data.sample_schedule || undefined,
         packing_guidelines: data.packing_guidelines,
-        styles: selectedStyles.length > 0 ? selectedStyles : undefined,
       };
 
       await api.post('/purchase-orders', requestData);
       setIsCreateDialogOpen(false);
       reset();
       setAutoGeneratePO(true);
-      setSelectedStyles([]);
       setPaymentTerm('');
       setPaymentPercentage('');
       setSelectedCountryId('');
@@ -408,7 +393,7 @@ export default function PurchaseOrdersPage() {
                   <DialogHeader>
                     <DialogTitle>Create Purchase Order</DialogTitle>
                     <DialogDescription>
-                      Create a new purchase order. Optionally add styles during creation.
+                      Create a new purchase order.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-6 py-4">
@@ -1050,132 +1035,6 @@ export default function PurchaseOrdersPage() {
                             className="bg-muted"
                           />
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Styles Selection */}
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-semibold">Styles (Optional)</h3>
-                      <div className="text-xs text-muted-foreground">
-                        Add styles to this PO with quantity and ratio
-                      </div>
-                      <div className="space-y-4">
-                        {/* Style Selection Dropdown */}
-                        <div className="space-y-2">
-                          <Label>Select Styles</Label>
-                          <Select
-                            onValueChange={(value) => {
-                              const styleId = parseInt(value);
-                              if (!selectedStyles.find(s => s.style_id === styleId)) {
-                                const style = styles.find(s => s.id === styleId);
-                                setSelectedStyles([...selectedStyles, {
-                                  style_id: styleId,
-                                  quantity: 100,
-                                  ratio: null,
-                                  unit_price_in_po: style?.unit_price || null,
-                                }]);
-                              }
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a style to add" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {styles
-                                .filter(style => !selectedStyles.find(s => s.style_id === style.id))
-                                .map((style) => (
-                                  <SelectItem key={style.id} value={style.id.toString()}>
-                                    {style.style_number}{style.description ? ` - ${style.description}` : ''}
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        {/* Selected Styles with Quantity and Ratio */}
-                        {selectedStyles.length > 0 && (
-                          <div className="space-y-3">
-                            <Label>Selected Styles</Label>
-                            {selectedStyles.map((selectedStyle, index) => {
-                              const style = styles.find(s => s.id === selectedStyle.style_id);
-                              if (!style) return null;
-
-                              return (
-                                <Card key={selectedStyle.style_id} className="p-4">
-                                  <div className="space-y-3">
-                                    <div className="flex items-center justify-between">
-                                      <div className="font-medium">
-                                        {style.style_number}{style.description ? ` - ${style.description}` : ''}
-                                      </div>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => {
-                                          setSelectedStyles(selectedStyles.filter((_, i) => i !== index));
-                                        }}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                    <div className="space-y-3">
-                                      <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                          <Label htmlFor={`style-quantity-${index}`} className="text-xs">
-                                            Quantity *
-                                          </Label>
-                                          <Input
-                                            id={`style-quantity-${index}`}
-                                            type="number"
-                                            min="1"
-                                            value={selectedStyle.quantity}
-                                            onChange={(e) => {
-                                              const newStyles = [...selectedStyles];
-                                              newStyles[index].quantity = parseInt(e.target.value) || 0;
-                                              setSelectedStyles(newStyles);
-                                            }}
-                                          />
-                                        </div>
-                                        <div className="space-y-1">
-                                          <Label htmlFor={`style-price-${index}`} className="text-xs">
-                                            Unit Price (Optional)
-                                          </Label>
-                                          <Input
-                                            id={`style-price-${index}`}
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            placeholder={style.unit_price ? `Default: ${style.unit_price}` : 'Enter price'}
-                                            value={selectedStyle.unit_price_in_po || ''}
-                                            onChange={(e) => {
-                                              const newStyles = [...selectedStyles];
-                                              newStyles[index].unit_price_in_po = e.target.value ? parseFloat(e.target.value) : null;
-                                              setSelectedStyles(newStyles);
-                                            }}
-                                          />
-                                          {style.unit_price && (
-                                            <p className="text-xs text-muted-foreground">
-                                              Style default: ${style.unit_price}
-                                            </p>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <RatioInput
-                                        value={selectedStyle.ratio}
-                                        onChange={(ratio) => {
-                                          const newStyles = [...selectedStyles];
-                                          newStyles[index].ratio = ratio;
-                                          setSelectedStyles(newStyles);
-                                        }}
-                                        styleGenderId={style.gender_id}
-                                      />
-                                    </div>
-                                  </div>
-                                </Card>
-                              );
-                            })}
-                          </div>
-                        )}
                       </div>
                     </div>
 
