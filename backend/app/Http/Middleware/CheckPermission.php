@@ -10,8 +10,11 @@ class CheckPermission
 {
     /**
      * Handle an incoming request.
+     *
+     * Accepts comma-separated permissions via Laravel middleware params (any-of check).
+     * Usage: middleware('permission:po.view,po.view_all,po.view_own')
      */
-    public function handle(Request $request, Closure $next, string $permission): Response
+    public function handle(Request $request, Closure $next, string ...$permissions): Response
     {
         if (!$request->user()) {
             return response()->json([
@@ -19,24 +22,15 @@ class CheckPermission
             ], 401);
         }
 
-        // Support pipe-separated permissions (any-of check)
-        $permissions = explode('|', $permission);
-
-        $hasAny = false;
         foreach ($permissions as $perm) {
             if ($request->user()->hasPermissionTo(trim($perm))) {
-                $hasAny = true;
-                break;
+                return $next($request);
             }
         }
 
-        if (!$hasAny) {
-            return response()->json([
-                'message' => 'You do not have permission to perform this action',
-                'required_permission' => $permission,
-            ], 403);
-        }
-
-        return $next($request);
+        return response()->json([
+            'message' => 'You do not have permission to perform this action',
+            'required_permission' => implode(', ', $permissions),
+        ], 403);
     }
 }
