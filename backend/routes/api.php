@@ -206,7 +206,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // Sample Type Configuration
-        Route::middleware('permission:admin.configuration.view,sample.view_own')->group(function () {
+        Route::middleware('permission:admin.configuration.view,sample.view,sample.view_own')->group(function () {
             Route::get('/sample-types', [SampleTypeController::class, 'index']);
             Route::get('/sample-types/{id}', [SampleTypeController::class, 'show']);
         });
