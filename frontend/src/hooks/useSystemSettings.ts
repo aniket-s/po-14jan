@@ -22,23 +22,16 @@ export function useSystemSettings() {
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      const response = await api.get<{ data: SystemSetting[] }>('/admin/settings');
-      const settingsData = response.data.data || response.data;
+      const response = await api.get<{ settings: Record<string, SettingValue> }>('/settings/public');
+      const settingsData = response.data.settings || {};
 
-      // Ensure settingsData is an array before calling reduce
-      if (!Array.isArray(settingsData)) {
-        console.warn('System settings data is not an array:', settingsData);
+      // Public endpoint returns key-value map directly
+      if (typeof settingsData === 'object' && !Array.isArray(settingsData)) {
+        setSettings(settingsData);
+      } else {
+        console.warn('System settings data is not a valid object:', settingsData);
         setSettings({});
-        return;
       }
-
-      // Convert array to key-value object
-      const settingsMap = settingsData.reduce((acc: Record<string, SettingValue>, setting: SystemSetting) => {
-        acc[setting.key] = parseSettingValue(setting.value, setting.type);
-        return acc;
-      }, {});
-
-      setSettings(settingsMap);
     } catch (error) {
       console.error('Failed to fetch system settings:', error);
       // Set empty settings on error to prevent further issues
