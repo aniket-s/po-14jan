@@ -53,6 +53,9 @@ class PurchaseOrder extends Model
     ];
 
     protected $casts = [
+        'importer_id' => 'integer',
+        'creator_id' => 'integer',
+        'agency_id' => 'integer',
         'total_quantity' => 'integer',
         'total_value' => 'decimal:2',
         'metadata' => 'array',
