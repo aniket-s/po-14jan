@@ -721,10 +721,19 @@ class InvitationController extends Controller
 
         $query = \App\Models\Invitation::with(['purchaseOrder:id,po_number', 'invitedBy:id,name']);
 
-        // Apply role-based filtering - only show user's invitations
-        if ($user->hasRole('Importer')) {
+        // Apply role-based filtering
+        if ($user->hasRole('Super Admin')) {
+            // Super Admin sees all invitations
+        } elseif ($user->hasRole('Importer')) {
+            // Importer sees invitations they sent (on POs they created)
             $query->whereHas('purchaseOrder', function($q) use ($user) {
                 $q->where('creator_id', $user->id);
+            });
+        } else {
+            // Agency/Factory/Inspector see invitations they received
+            $query->where(function($q) use ($user) {
+                $q->where('invited_email', $user->email)
+                  ->orWhere('invited_user_id', $user->id);
             });
         }
 
@@ -778,5 +787,101 @@ class InvitationController extends Controller
         });
 
         return response()->json($paginated);
+    }
+
+    /**
+     * Accept invitation by ID (authenticated users)
+     */
+    public function acceptById(Request $request, $id)
+    {
+        $user = $request->user();
+        $invitation = Invitation::findOrFail($id);
+
+        if ($user->email !== $invitation->invited_email) {
+            return response()->json([
+                'message' => 'You are not authorized to accept this invitation',
+            ], 403);
+        }
+
+        if (!$invitation->isPending()) {
+            return response()->json([
+                'message' => 'This invitation is no longer valid',
+                'status' => $invitation->status,
+            ], 422);
+        }
+
+        $invitation->accept();
+        $this->processInvitationAcceptance($invitation, $user);
+
+        $this->activityLog->log(
+            'invitation_accepted',
+            'Invitation',
+            $invitation->id,
+            "Invitation accepted by {$user->name}",
+            [
+                'invitation_type' => $invitation->invitation_type,
+                'po_number' => $invitation->purchaseOrder->po_number,
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Invitation accepted successfully',
+            'invitation' => [
+                'id' => $invitation->id,
+                'invitation_type' => $invitation->invitation_type,
+                'status' => $invitation->status,
+            ],
+        ]);
+    }
+
+    /**
+     * Reject invitation by ID (authenticated users)
+     */
+    public function rejectById(Request $request, $id)
+    {
+        $user = $request->user();
+        $invitation = Invitation::findOrFail($id);
+
+        if ($user->email !== $invitation->invited_email) {
+            return response()->json([
+                'message' => 'You are not authorized to reject this invitation',
+            ], 403);
+        }
+
+        if (!$invitation->isPending()) {
+            return response()->json([
+                'message' => 'This invitation is no longer valid',
+                'status' => $invitation->status,
+            ], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $invitation->reject($request->reason);
+
+        $this->activityLog->log(
+            'invitation_rejected',
+            'Invitation',
+            $invitation->id,
+            "Invitation rejected by {$user->name}",
+            [
+                'invitation_type' => $invitation->invitation_type,
+                'po_number' => $invitation->purchaseOrder->po_number,
+                'reason' => $request->reason,
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Invitation rejected successfully',
+        ]);
     }
 }

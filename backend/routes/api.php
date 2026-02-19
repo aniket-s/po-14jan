@@ -553,6 +553,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/quality-inspections', [QualityInspectionController::class, 'indexAll']);
     Route::get('/shipments', [ShipmentController::class, 'indexAll']);
     Route::get('/invitations', [InvitationController::class, 'indexAll']);
+
+    // Authenticated invitation accept/reject by ID
+    Route::middleware('permission:invitation.respond')->group(function () {
+        Route::post('/invitations/{id}/accept', [InvitationController::class, 'acceptById']);
+        Route::post('/invitations/{id}/reject', [InvitationController::class, 'rejectById']);
+    });
     Route::get('/factory-assignments', [FactoryAssignmentController::class, 'indexAll']);
     Route::get('/factories', [\App\Http\Controllers\Api\FactoryController::class, 'index']);
 
