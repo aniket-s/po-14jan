@@ -376,7 +376,7 @@ export default function EditPurchaseOrderPage() {
 
   if (loading) {
     return (
-      <DashboardLayout>
+      <DashboardLayout requiredPermissions={['po.edit']} requireAll={false}>
         <div className="flex h-96 items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -386,7 +386,7 @@ export default function EditPurchaseOrderPage() {
 
   if (!purchaseOrder) {
     return (
-      <DashboardLayout>
+      <DashboardLayout requiredPermissions={['po.edit']} requireAll={false}>
         <div className="flex h-96 flex-col items-center justify-center">
           <p className="text-lg text-muted-foreground">Purchase order not found</p>
           <Button className="mt-4" onClick={() => router.push('/purchase-orders')}>
