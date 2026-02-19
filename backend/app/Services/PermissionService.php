@@ -35,7 +35,7 @@ class PermissionService
             }
 
             // User is assigned factory for any style in this PO
-            if ($po->styles()->where('assigned_factory_id', $user->id)->exists()) {
+            if ($po->styles()->where('purchase_order_style.assigned_factory_id', $user->id)->exists()) {
                 return true;
             }
         }
@@ -158,7 +158,7 @@ class PermissionService
 
             // POs where user is assigned factory
             $factoryPOs = \App\Models\PurchaseOrder::whereHas('styles', function ($query) use ($user) {
-                $query->where('assigned_factory_id', $user->id);
+                $query->where('purchase_order_style.assigned_factory_id', $user->id);
             })->pluck('id')->toArray();
 
             $poIds = array_unique(array_merge($importerPOs, $agencyPOs, $factoryPOs));

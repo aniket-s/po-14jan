@@ -727,7 +727,7 @@ class ShipmentController extends Controller
         if ($user->hasRole('Factory')) {
             // Factories can see shipments for POs with their assigned styles
             $query->whereHas('purchaseOrder.styles', function($q) use ($user) {
-                $q->where('assigned_factory_id', $user->id);
+                $q->where('purchase_order_style.assigned_factory_id', $user->id);
             });
         } elseif ($user->hasRole('Importer')) {
             $query->whereHas('purchaseOrder', function($q) use ($user) {
