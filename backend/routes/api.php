@@ -206,7 +206,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // Sample Type Configuration
-        Route::middleware('permission:admin.configuration.view')->group(function () {
+        Route::middleware('permission:admin.configuration.view|sample.view_own')->group(function () {
             Route::get('/sample-types', [SampleTypeController::class, 'index']);
             Route::get('/sample-types/{id}', [SampleTypeController::class, 'show']);
         });
@@ -432,7 +432,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // ========================================
         Route::prefix('{poId}/styles')->group(function () {
             // View styles associated with this PO
-            Route::middleware('permission:style.view')->group(function () {
+            Route::middleware('permission:style.view|style.view_own')->group(function () {
                 Route::get('/', [PurchaseOrderStyleController::class, 'index']);
             });
 
@@ -486,7 +486,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // ========================================
     Route::prefix('styles')->group(function () {
         // View all styles
-        Route::middleware('permission:style.view')->group(function () {
+        Route::middleware('permission:style.view|style.view_own')->group(function () {
             Route::get('/', [StyleController::class, 'indexAll']);
             Route::get('/{id}', [StyleController::class, 'showStandalone']);
         });
@@ -518,7 +518,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Trim Management for Styles
         Route::prefix('{id}/trims')->group(function () {
             // Get trims for a style
-            Route::middleware('permission:style.view')->group(function () {
+            Route::middleware('permission:style.view|style.view_own')->group(function () {
                 Route::get('/', [StyleController::class, 'getTrims']);
             });
 
