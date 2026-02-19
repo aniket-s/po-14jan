@@ -543,10 +543,12 @@ class InvitationController extends Controller
      */
     private function validateInvitationType(User $user, PurchaseOrder $po, string $type): array
     {
+        $isImporter = $po->importer_id === $user->id || $po->creator_id === $user->id;
+
         switch ($type) {
             case 'invite_agency':
                 // Only importer can invite agency
-                if ($po->importer_id !== $user->id) {
+                if (!$isImporter) {
                     return [
                         'valid' => false,
                         'message' => 'Only the importer can invite an agency',
@@ -556,7 +558,7 @@ class InvitationController extends Controller
 
             case 'invite_factory_direct':
                 // Only importer can invite factory directly
-                if ($po->importer_id !== $user->id) {
+                if (!$isImporter) {
                     return [
                         'valid' => false,
                         'message' => 'Only the importer can invite factories directly',
@@ -576,7 +578,7 @@ class InvitationController extends Controller
 
             case 'invite_inspector':
                 // Importer or agency can invite inspector
-                if ($po->importer_id !== $user->id && $po->agency_id !== $user->id) {
+                if (!$isImporter && $po->agency_id !== $user->id) {
                     return [
                         'valid' => false,
                         'message' => 'Only the importer or assigned agency can invite inspectors',
