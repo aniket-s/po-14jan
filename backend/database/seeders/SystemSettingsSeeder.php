@@ -47,7 +47,7 @@ class SystemSettingsSeeder extends Seeder
             ['key' => 'po_enable_excel_import', 'value' => 'true', 'type' => 'boolean', 'group' => 'po', 'description' => 'Enable Excel import', 'is_public' => false],
             ['key' => 'po_enable_direct_factory', 'value' => 'true', 'type' => 'boolean', 'group' => 'po', 'description' => 'Enable direct factory assignment', 'is_public' => false],
             ['key' => 'po_enable_mixed_assignments', 'value' => 'true', 'type' => 'boolean', 'group' => 'po', 'description' => 'Enable mixed assignment types in same PO', 'is_public' => false],
-            ['key' => 'agency_style_upload_enabled', 'value' => 'true', 'type' => 'boolean', 'group' => 'po', 'description' => 'Allow agencies to upload/create styles', 'is_public' => false],
+            ['key' => 'agency_style_upload_enabled', 'value' => 'true', 'type' => 'boolean', 'group' => 'po', 'description' => 'Allow agencies to upload/create styles', 'is_public' => true],
 
             // Sample Configuration
             ['key' => 'sample_enable_parallel', 'value' => 'true', 'type' => 'boolean', 'group' => 'sample', 'description' => 'Enable parallel sample submission', 'is_public' => false],
