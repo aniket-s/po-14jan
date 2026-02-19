@@ -305,6 +305,14 @@ class Style extends Model
     }
 
     /**
+     * Get the assigned factory for the style
+     */
+    public function assignedFactory()
+    {
+        return $this->belongsTo(User::class, 'assigned_factory_id');
+    }
+
+    /**
      * Get the factory assignments for the style
      */
     public function factoryAssignments()
