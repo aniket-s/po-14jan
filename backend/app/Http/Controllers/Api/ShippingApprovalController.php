@@ -42,7 +42,7 @@ class ShippingApprovalController extends Controller
 
         // Role-based scoping
         if ($user->hasRole('Factory')) {
-            $query->where('assigned_factory_id', $user->id);
+            $query->where('purchase_order_style.assigned_factory_id', $user->id);
         } elseif ($user->hasRole('Agency')) {
             $query->whereHas('purchaseOrder', fn($q) => $q->where('agency_id', $user->id));
         } elseif ($user->hasRole('Importer')) {
@@ -52,7 +52,7 @@ class ShippingApprovalController extends Controller
 
         // Filter: factory_id
         if ($request->filled('factory_id')) {
-            $query->where('assigned_factory_id', $request->factory_id);
+            $query->where('purchase_order_style.assigned_factory_id', $request->factory_id);
         }
 
         // Filter: agency_id (on PO)
@@ -143,7 +143,7 @@ class ShippingApprovalController extends Controller
 
         // Optional filters
         if ($request->filled('factory_id')) {
-            $query->where('assigned_factory_id', $request->factory_id);
+            $query->where('purchase_order_style.assigned_factory_id', $request->factory_id);
         }
         if ($request->filled('style_number')) {
             $query->whereHas('style', fn($q) => $q->where('style_number', 'like', '%' . $request->style_number . '%'));

@@ -507,7 +507,7 @@ class ProductionTrackingController extends Controller
         // Apply role-based filtering
         if ($user->hasRole('Factory')) {
             $query->whereHas('style', function($q) use ($user) {
-                $q->where('assigned_factory_id', $user->id);
+                $q->where('styles.assigned_factory_id', $user->id);
             });
         } elseif ($user->hasRole('Importer')) {
             $query->whereHas('style.purchaseOrder', function($q) use ($user) {

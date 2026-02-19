@@ -393,15 +393,18 @@ class StyleController extends Controller
                 });
 
                 // OR include styles attached to accessible POs
-                $q->orWhereHas('purchaseOrder', function($poQuery) use ($user) {
-                    if ($user->hasRole('Factory')) {
-                        // Factories see styles assigned to them
-                        $poQuery->where('assigned_factory_id', $user->id);
-                    } elseif ($user->hasRole('Importer')) {
-                        // Importers see their own POs
+                if ($user->hasRole('Factory')) {
+                    // Factories see styles assigned to them
+                    $q->orWhere('styles.assigned_factory_id', $user->id);
+                } elseif ($user->hasRole('Importer')) {
+                    // Importers see their own POs
+                    $q->orWhereHas('purchaseOrder', function($poQuery) use ($user) {
                         $poQuery->where('created_by', $user->id);
-                    }
-                });
+                    });
+                } else {
+                    // Other roles see all styles attached to POs
+                    $q->orWhereHas('purchaseOrder');
+                }
             });
         }
 
@@ -417,7 +420,7 @@ class StyleController extends Controller
 
         // Factory filter
         if ($request->has('factory_id')) {
-            $query->where('assigned_factory_id', $request->factory_id);
+            $query->where('styles.assigned_factory_id', $request->factory_id);
         }
 
         // Search filter
