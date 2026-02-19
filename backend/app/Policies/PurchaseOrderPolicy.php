@@ -141,7 +141,7 @@ class PurchaseOrderPolicy
      */
     public function invite(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        if (!$user->can('po.invite')) {
+        if (!$user->can('invitation.send')) {
             return false;
         }
 

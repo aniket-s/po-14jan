@@ -589,18 +589,18 @@ Route::middleware('auth:sanctum')->group(function () {
     // Invitation Management
     Route::prefix('purchase-orders/{poId}/invitations')->group(function () {
         // View invitations
-        Route::middleware('permission:po.view')->group(function () {
+        Route::middleware('permission:po.view|po.view_all|po.view_own')->group(function () {
             Route::get('/', [InvitationController::class, 'index']);
         });
 
         // Send invitations
-        Route::middleware('permission:po.invite')->group(function () {
+        Route::middleware('permission:invitation.send')->group(function () {
             Route::post('/send', [InvitationController::class, 'send']);
             Route::post('/{invitationId}/resend', [InvitationController::class, 'resend']);
         });
 
         // Cancel invitations
-        Route::middleware('permission:po.invite')->group(function () {
+        Route::middleware('permission:invitation.cancel')->group(function () {
             Route::post('/{invitationId}/cancel', [InvitationController::class, 'cancel']);
         });
     });
