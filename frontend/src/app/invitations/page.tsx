@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Copy, Check, Loader2, Mail, X } from 'lucide-react';
+import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle } from 'lucide-react';
 import api from '@/lib/api';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -47,13 +47,17 @@ interface Invitation {
   invitation_type: string;
   invitee_email: string;
   invitee_name: string;
-  invited_by: number;
+  invited_email: string;
+  invited_name: string;
+  invited_by: { id: number; name: string } | number;
+  invited_user_id: number | null;
   status: string;
   invitation_token: string;
   expires_at: string;
   accepted_at: string | null;
   created_at: string;
   purchase_order?: {
+    id: number;
     po_number: string;
   };
   inviter?: {
@@ -190,6 +194,33 @@ export default function InvitationsPage() {
       fetchInvitations();
     } catch (error) {
       console.error('Failed to revoke invitation:', error);
+    }
+  };
+
+  const isReceivedInvitation = (invitation: Invitation) => {
+    const invitedEmail = invitation.invited_email || invitation.invitee_email;
+    return invitedEmail === user?.email;
+  };
+
+  const handleAccept = async (invitation: Invitation) => {
+    try {
+      await api.post(`/invitations/${invitation.id}/accept`);
+      fetchInvitations();
+    } catch (error) {
+      console.error('Failed to accept invitation:', error);
+    }
+  };
+
+  const handleReject = async (invitation: Invitation) => {
+    if (!confirm('Are you sure you want to reject this invitation?')) {
+      return;
+    }
+
+    try {
+      await api.post(`/invitations/${invitation.id}/reject`);
+      fetchInvitations();
+    } catch (error) {
+      console.error('Failed to reject invitation:', error);
     }
   };
 
@@ -486,12 +517,12 @@ export default function InvitationsPage() {
                         </TableCell>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{invitation.invitee_name}</p>
-                            <p className="text-xs text-muted-foreground">{invitation.invitee_email}</p>
+                            <p className="font-medium">{invitation.invited_name || invitation.invitee_name}</p>
+                            <p className="text-xs text-muted-foreground">{invitation.invited_email || invitation.invitee_email}</p>
                           </div>
                         </TableCell>
                         <TableCell>{invitation.purchase_order?.po_number || 'N/A'}</TableCell>
-                        <TableCell>{invitation.inviter?.name || 'N/A'}</TableCell>
+                        <TableCell>{typeof invitation.invited_by === 'object' ? invitation.invited_by?.name : invitation.inviter?.name || 'N/A'}</TableCell>
                         <TableCell>
                           <Badge variant={getStatusColor(invitation.status) as any}>
                             {invitation.status}
@@ -500,7 +531,29 @@ export default function InvitationsPage() {
                         <TableCell>{formatDate(invitation.expires_at)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            {invitation.status === 'pending' && (
+                            {invitation.status === 'pending' && isReceivedInvitation(invitation) && (
+                              <>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleAccept(invitation)}
+                                  title="Accept invitation"
+                                >
+                                  <CheckCircle className="mr-1 h-4 w-4" />
+                                  Accept
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleReject(invitation)}
+                                  title="Reject invitation"
+                                >
+                                  <XCircle className="mr-1 h-4 w-4" />
+                                  Reject
+                                </Button>
+                              </>
+                            )}
+                            {invitation.status === 'pending' && !isReceivedInvitation(invitation) && (
                               <>
                                 <Button
                                   variant="ghost"

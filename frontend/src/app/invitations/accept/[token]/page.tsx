@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Mail, Building2, Shield, CheckCircle, AlertCircle, UserPlus } from 'lucide-react';
 import api from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -49,12 +50,14 @@ type AcceptanceFormData = z.infer<typeof acceptanceSchema>;
 export default function InvitationAcceptancePage() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const token = params?.token as string;
   const [invitation, setInvitation] = useState<Invitation | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const isExistingUser = !!user;
 
   const {
     register,
@@ -97,6 +100,33 @@ export default function InvitationAcceptancePage() {
 
     fetchInvitation();
   }, [token]);
+
+  const handleAcceptAsExistingUser = async () => {
+    if (!token) return;
+
+    try {
+      setSubmitting(true);
+      setError(null);
+
+      await api.post(`/invitations/${token}/accept`);
+
+      setSuccess(true);
+
+      // Redirect to dashboard after 3 seconds
+      setTimeout(() => {
+        router.push('/purchase-orders');
+      }, 3000);
+    } catch (err: any) {
+      console.error('Failed to accept invitation:', err);
+      if (err.response?.data?.message) {
+        setError(err.response.data.message);
+      } else {
+        setError('Failed to accept invitation. Please try again.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const onSubmit = async (data: AcceptanceFormData) => {
     if (!token) return;
@@ -186,21 +216,25 @@ export default function InvitationAcceptancePage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-green-600">
               <CheckCircle className="h-6 w-6" />
-              Welcome Aboard!
+              {isExistingUser ? 'Invitation Accepted!' : 'Welcome Aboard!'}
             </CardTitle>
-            <CardDescription>Your account has been created successfully</CardDescription>
+            <CardDescription>
+              {isExistingUser ? 'You now have access to the purchase order' : 'Your account has been created successfully'}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-900 rounded-lg p-4">
               <p className="text-sm text-green-800 dark:text-green-200">
-                Your account has been activated. You will be redirected to the login page shortly.
+                {isExistingUser
+                  ? 'The invitation has been accepted. You will be redirected shortly.'
+                  : 'Your account has been activated. You will be redirected to the login page shortly.'}
               </p>
             </div>
             <Button
-              onClick={() => router.push('/login')}
+              onClick={() => router.push(isExistingUser ? '/purchase-orders' : '/login')}
               className="w-full"
             >
-              Go to Login Now
+              {isExistingUser ? 'Go to Purchase Orders' : 'Go to Login Now'}
             </Button>
           </CardContent>
         </Card>
@@ -344,111 +378,16 @@ export default function InvitationAcceptancePage() {
           </CardContent>
         </Card>
 
-        {/* Registration Form Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Complete Your Registration</CardTitle>
-            <CardDescription>
-              Create your account to accept this invitation
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name *</Label>
-                <Input
-                  id="name"
-                  {...register('name')}
-                  placeholder="John Doe"
-                  autoComplete="name"
-                />
-                {errors.name && (
-                  <p className="text-sm text-red-500">{errors.name.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={invitation.email}
-                  disabled
-                  className="bg-muted"
-                />
-                <p className="text-xs text-muted-foreground">
-                  This email is pre-filled from your invitation
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="company">Company Name (Optional)</Label>
-                <Input
-                  id="company"
-                  {...register('company')}
-                  placeholder="Company Name"
-                  autoComplete="organization"
-                />
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password *</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    {...register('password')}
-                    placeholder="••••••••"
-                    autoComplete="new-password"
-                  />
-                  {errors.password && (
-                    <p className="text-sm text-red-500">{errors.password.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password_confirmation">Confirm Password *</Label>
-                  <Input
-                    id="password_confirmation"
-                    type="password"
-                    {...register('password_confirmation')}
-                    placeholder="••••••••"
-                    autoComplete="new-password"
-                  />
-                  {errors.password_confirmation && (
-                    <p className="text-sm text-red-500">{errors.password_confirmation.message}</p>
-                  )}
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-3">
-                <div className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    id="accept_terms"
-                    {...register('accept_terms')}
-                    className="mt-1 rounded border-gray-300"
-                  />
-                  <div className="flex-1">
-                    <Label htmlFor="accept_terms" className="cursor-pointer">
-                      I accept the{' '}
-                      <a href="/terms" target="_blank" className="text-primary underline">
-                        Terms and Conditions
-                      </a>{' '}
-                      and{' '}
-                      <a href="/privacy" target="_blank" className="text-primary underline">
-                        Privacy Policy
-                      </a>
-                    </Label>
-                  </div>
-                </div>
-                {errors.accept_terms && (
-                  <p className="text-sm text-red-500">{errors.accept_terms.message}</p>
-                )}
-              </div>
-
+        {/* Accept / Registration Card */}
+        {isExistingUser ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Accept Invitation</CardTitle>
+              <CardDescription>
+                You are logged in as {user?.email}. Click below to accept this invitation.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               {error && (
                 <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 rounded-lg p-3">
                   <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
@@ -456,34 +395,167 @@ export default function InvitationAcceptancePage() {
               )}
 
               <Button
-                type="submit"
+                onClick={handleAcceptAsExistingUser}
                 className="w-full"
-                disabled={submitting || !acceptTerms}
+                disabled={submitting}
               >
                 {submitting ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Creating Account...
+                    Accepting...
                   </>
                 ) : (
                   <>
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    Accept Invitation & Create Account
+                    Accept Invitation
                   </>
                 )}
               </Button>
-            </form>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Complete Your Registration</CardTitle>
+              <CardDescription>
+                Create your account to accept this invitation
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name *</Label>
+                  <Input
+                    id="name"
+                    {...register('name')}
+                    placeholder="John Doe"
+                    autoComplete="name"
+                  />
+                  {errors.name && (
+                    <p className="text-sm text-red-500">{errors.name.message}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={invitation.email}
+                    disabled
+                    className="bg-muted"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This email is pre-filled from your invitation
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="company">Company Name (Optional)</Label>
+                  <Input
+                    id="company"
+                    {...register('company')}
+                    placeholder="Company Name"
+                    autoComplete="organization"
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password *</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      {...register('password')}
+                      placeholder="••••••••"
+                      autoComplete="new-password"
+                    />
+                    {errors.password && (
+                      <p className="text-sm text-red-500">{errors.password.message}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="password_confirmation">Confirm Password *</Label>
+                    <Input
+                      id="password_confirmation"
+                      type="password"
+                      {...register('password_confirmation')}
+                      placeholder="••••••••"
+                      autoComplete="new-password"
+                    />
+                    {errors.password_confirmation && (
+                      <p className="text-sm text-red-500">{errors.password_confirmation.message}</p>
+                    )}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      id="accept_terms"
+                      {...register('accept_terms')}
+                      className="mt-1 rounded border-gray-300"
+                    />
+                    <div className="flex-1">
+                      <Label htmlFor="accept_terms" className="cursor-pointer">
+                        I accept the{' '}
+                        <a href="/terms" target="_blank" className="text-primary underline">
+                          Terms and Conditions
+                        </a>{' '}
+                        and{' '}
+                        <a href="/privacy" target="_blank" className="text-primary underline">
+                          Privacy Policy
+                        </a>
+                      </Label>
+                    </div>
+                  </div>
+                  {errors.accept_terms && (
+                    <p className="text-sm text-red-500">{errors.accept_terms.message}</p>
+                  )}
+                </div>
+
+                {error && (
+                  <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 rounded-lg p-3">
+                    <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={submitting || !acceptTerms}
+                >
+                  {submitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Creating Account...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Accept Invitation & Create Account
+                    </>
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Footer */}
         <div className="text-center text-sm text-muted-foreground">
-          <p>
-            Already have an account?{' '}
-            <a href="/login" className="text-primary underline">
-              Log in instead
-            </a>
-          </p>
+          {!isExistingUser && (
+            <p>
+              Already have an account?{' '}
+              <a href="/login" className="text-primary underline">
+                Log in instead
+              </a>
+            </p>
+          )}
           <p className="mt-2">
             This invitation expires on{' '}
             <span className="font-medium">
