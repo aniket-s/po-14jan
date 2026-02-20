@@ -252,7 +252,7 @@ class PurchaseOrderController extends Controller
                     'po_date' => $po->po_date?->format('Y-m-d'),
                     'total_quantity' => $po->total_quantity,
                     'total_value' => $po->total_value,
-                    'currency' => $po->getRelation('currency')?->code ?? $po->getAttributes()['currency'] ?? 'USD',
+                    'currency' => ($po->relationLoaded('currency') ? $po->getRelation('currency')?->code : null) ?? $po->getAttributes()['currency'] ?? 'USD',
                     'status' => $po->status,
                     'styles_count' => $po->styles->count(),
                     'created_at' => $po->created_at,
