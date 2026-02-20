@@ -3,6 +3,7 @@ node_modules/
 
 # Next.js build output
 frontend/.next/
+.next/
 
 # Next.js auto-generated types
 frontend/next-env.d.ts
