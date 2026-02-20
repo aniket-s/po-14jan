@@ -37,8 +37,6 @@ class PurchaseOrder extends Model
         'retailer_id',
         'country_id',
         'warehouse_id',
-        'agent_id',
-        'vendor_id',
         'payment_term',
         'country_of_origin',
         'packing_method',
@@ -150,22 +148,6 @@ class PurchaseOrder extends Model
     public function warehouse()
     {
         return $this->belongsTo(Warehouse::class);
-    }
-
-    /**
-     * Get the agent for the PO
-     */
-    public function agent()
-    {
-        return $this->belongsTo(Agent::class);
-    }
-
-    /**
-     * Get the vendor for the PO
-     */
-    public function vendor()
-    {
-        return $this->belongsTo(Vendor::class);
     }
 
     /**

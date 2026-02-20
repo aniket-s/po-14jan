@@ -56,8 +56,6 @@ export interface PurchaseOrder {
   retailer_id?: number | null;
   country_id?: number | null;
   warehouse_id?: number | null;
-  agent_id?: number | null;
-  vendor_id?: number | null;
   // Shipping term and additional fields
   shipping_term?: 'FOB' | 'DDP' | null;
   payment_term?: string | null;

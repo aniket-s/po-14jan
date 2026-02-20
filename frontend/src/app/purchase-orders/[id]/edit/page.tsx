@@ -23,8 +23,6 @@ import * as z from 'zod';
 import { CreateRetailerDialog } from '@/components/master-data/CreateRetailerDialog';
 import { CreateSeasonDialog } from '@/components/master-data/CreateSeasonDialog';
 import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseDialog';
-import { CreateAgentDialog } from '@/components/master-data/CreateAgentDialog';
-import { CreateVendorDialog } from '@/components/master-data/CreateVendorDialog';
 import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialog';
 import { Plus } from 'lucide-react';
 
@@ -39,8 +37,6 @@ const poSchema = z.object({
   notes: z.string().optional(),
   // REMOVED: brand_id - Brand is already in Style
   season_id: z.string().optional(),
-  agent_id: z.string().optional(),
-  vendor_id: z.string().optional(),
   warehouse_id: z.string().optional(),
   country_id: z.string().optional(),
   shipping_term: z.enum(['FOB', 'DDP']).optional(), // Changed from price_term
@@ -83,8 +79,6 @@ export default function EditPurchaseOrderPage() {
   const [isCreateRetailerDialogOpen, setIsCreateRetailerDialogOpen] = useState(false);
   const [isCreateSeasonDialogOpen, setIsCreateSeasonDialogOpen] = useState(false);
   const [isCreateWarehouseDialogOpen, setIsCreateWarehouseDialogOpen] = useState(false);
-  const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
-  const [isCreateVendorDialogOpen, setIsCreateVendorDialogOpen] = useState(false);
   const [isCreateCountryDialogOpen, setIsCreateCountryDialogOpen] = useState(false);
 
   // Master data state
@@ -93,8 +87,6 @@ export default function EditPurchaseOrderPage() {
   const [retailers, setRetailers] = useState<any[]>([]);
   const [countries, setCountries] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [vendors, setVendors] = useState<any[]>([]);
 
   // Payment terms state
   const [paymentTerm, setPaymentTerm] = useState<string>('');
@@ -108,8 +100,6 @@ export default function EditPurchaseOrderPage() {
   // REMOVED: selectedBrandId - Brand is already in Style
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
-  const [selectedVendorId, setSelectedVendorId] = useState<string>('');
   const [selectedCountryId, setSelectedCountryId] = useState<string>('');
   const [selectedStatus, setSelectedStatus] = useState<string>('draft');
   const [selectedCurrency, setSelectedCurrency] = useState<string>('USD');
@@ -131,21 +121,17 @@ export default function EditPurchaseOrderPage() {
   const fetchMasterData = async () => {
     try {
       // REMOVED: brands fetch - Brand is already in Style
-      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes] = await Promise.all([
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes] = await Promise.all([
         api.get('/master-data/seasons?all=true'),
         api.get('/master-data/retailers?all=true'),
         api.get('/master-data/countries?all=true'),
         api.get('/master-data/warehouses?all=true'),
-        api.get('/master-data/agents?all=true'),
-        api.get('/master-data/vendors?all=true'),
       ]);
 
       setSeasons(seasonsRes.data || []);
       setRetailers(retailersRes.data || []);
       setCountries(countriesRes.data || []);
       setWarehouses(warehousesRes.data || []);
-      setAgents(agentsRes.data || []);
-      setVendors(vendorsRes.data || []);
     } catch (error) {
       console.error('Failed to fetch master data:', error);
     }
@@ -186,16 +172,6 @@ export default function EditPurchaseOrderPage() {
         const seasonId = po.season_id.toString();
         setSelectedSeasonId(seasonId);
         setValue('season_id', seasonId);
-      }
-      if (po.agent_id) {
-        const agentId = po.agent_id.toString();
-        setSelectedAgentId(agentId);
-        setValue('agent_id', agentId);
-      }
-      if (po.vendor_id) {
-        const vendorId = po.vendor_id.toString();
-        setSelectedVendorId(vendorId);
-        setValue('vendor_id', vendorId);
       }
       if (po.warehouse_id) {
         const warehouseId = po.warehouse_id.toString();
@@ -344,8 +320,6 @@ export default function EditPurchaseOrderPage() {
         notes: data.notes,
         // REMOVED: brand_id - Brand is already in Style
         season_id: data.season_id ? parseInt(data.season_id) : null,
-        agent_id: data.agent_id ? parseInt(data.agent_id) : null,
-        vendor_id: data.vendor_id ? parseInt(data.vendor_id) : null,
         warehouse_id: data.warehouse_id ? parseInt(data.warehouse_id) : null,
         country_id: data.country_id ? parseInt(data.country_id) : null,
         shipping_term: shippingTerm || null, // Changed from price_term/priceTerm
@@ -627,68 +601,6 @@ export default function EditPurchaseOrderPage() {
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="agent_id">Agent</Label>
-                      <div className="flex gap-2">
-                        <Select
-                          value={selectedAgentId}
-                          onValueChange={(value) => {
-                            setSelectedAgentId(value);
-                            setValue('agent_id', value);
-                          }}
-                        >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Select agent" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {agents.map((agent) => (
-                              <SelectItem key={agent.id} value={agent.id.toString()}>
-                                {agent.company_name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setIsCreateAgentDialogOpen(true)}
-                          title="Create new agent"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="vendor_id">Vendor/Factory</Label>
-                      <div className="flex gap-2">
-                        <Select
-                          value={selectedVendorId}
-                          onValueChange={(value) => {
-                            setSelectedVendorId(value);
-                            setValue('vendor_id', value);
-                          }}
-                        >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Select vendor" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {vendors.map((vendor) => (
-                              <SelectItem key={vendor.id} value={vendor.id.toString()}>
-                                {vendor.company_name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setIsCreateVendorDialogOpen(true)}
-                          title="Create new vendor/factory"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="country_id">Country of Origin</Label>
                       <div className="flex gap-2">
@@ -1027,16 +939,6 @@ export default function EditPurchaseOrderPage() {
       <CreateWarehouseDialog
         open={isCreateWarehouseDialogOpen}
         onOpenChange={setIsCreateWarehouseDialogOpen}
-        onSuccess={fetchMasterData}
-      />
-      <CreateAgentDialog
-        open={isCreateAgentDialogOpen}
-        onOpenChange={setIsCreateAgentDialogOpen}
-        onSuccess={fetchMasterData}
-      />
-      <CreateVendorDialog
-        open={isCreateVendorDialogOpen}
-        onOpenChange={setIsCreateVendorDialogOpen}
         onSuccess={fetchMasterData}
       />
       <CreateCountryDialog

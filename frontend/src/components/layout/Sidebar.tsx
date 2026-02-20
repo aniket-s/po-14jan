@@ -99,16 +99,6 @@ const navItems: NavItem[] = [
         icon: Store,
       },
       {
-        title: 'Agents',
-        href: '/master-data/agents',
-        icon: Users,
-      },
-      {
-        title: 'Vendors',
-        href: '/master-data/vendors',
-        icon: Factory,
-      },
-      {
         title: 'Countries',
         href: '/master-data/countries',
         icon: Warehouse,
