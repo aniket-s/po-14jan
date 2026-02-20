@@ -172,36 +172,36 @@ class PurchaseOrderController extends Controller
                         'styles_count' => $po->styles->count(),
                         'payment_terms' => $po->payment_term,
                         'ship_to' => $po->ship_to,
-                        'importer' => [
-                            'id' => $po->importer->id,
-                            'name' => $po->importer->name,
-                            'company' => $po->importer->company,
-                        ],
-                        'agency' => $po->agency ? [
-                            'id' => $po->agency->id,
-                            'name' => $po->agency->name,
-                            'company' => $po->agency->company,
+                        'importer' => $po->importer_id ? [
+                            'id' => $po->getRelation('importer')?->id,
+                            'name' => $po->getRelation('importer')?->name,
+                            'company' => $po->getRelation('importer')?->company,
                         ] : null,
-                        'retailer' => $po->retailer ? [
-                            'id' => $po->retailer->id,
-                            'name' => $po->retailer->name,
+                        'agency' => $po->agency_id ? [
+                            'id' => $po->getRelation('agency')?->id,
+                            'name' => $po->getRelation('agency')?->name,
+                            'company' => $po->getRelation('agency')?->company,
                         ] : null,
-                        'season' => $po->season ? [
-                            'id' => $po->season->id,
-                            'name' => $po->season->name,
+                        'retailer' => $po->retailer_id ? [
+                            'id' => $po->getRelation('retailer')?->id,
+                            'name' => $po->getRelation('retailer')?->name,
                         ] : null,
-                        'country' => $po->country ? [
-                            'id' => $po->country->id,
-                            'name' => $po->country->name,
+                        'season' => $po->season_id ? [
+                            'id' => $po->getRelation('season')?->id,
+                            'name' => $po->getRelation('season')?->name,
                         ] : null,
-                        'warehouse' => $po->warehouse ? [
-                            'id' => $po->warehouse->id,
-                            'name' => $po->warehouse->name,
+                        'country' => $po->country_id ? [
+                            'id' => $po->getRelation('country')?->id,
+                            'name' => $po->getRelation('country')?->name,
                         ] : null,
-                        'currency' => $po->currency ? [
-                            'id' => $po->currency->id,
-                            'code' => $po->currency->code,
-                            'symbol' => $po->currency->symbol ?? '',
+                        'warehouse' => $po->warehouse_id ? [
+                            'id' => $po->getRelation('warehouse')?->id,
+                            'name' => $po->getRelation('warehouse')?->name,
+                        ] : null,
+                        'currency' => $po->currency_id ? [
+                            'id' => $po->getRelation('currency')?->id,
+                            'code' => $po->getRelation('currency')?->code,
+                            'symbol' => $po->getRelation('currency')?->symbol ?? '',
                         ] : null,
                         'styles' => $po->styles->map(function ($style) use ($factoryNames) {
                             $pivotFactoryId = $style->pivot->assigned_factory_id;
@@ -233,22 +233,26 @@ class PurchaseOrderController extends Controller
 
         return response()->json([
             'data' => $pos->map(function ($po) {
+                $importerRel = $po->getRelation('importer');
+                $agencyRel   = $po->getRelation('agency');
                 return [
                     'id' => $po->id,
                     'po_number' => $po->po_number,
-                    'importer' => [
-                        'id' => $po->importer->id,
-                        'name' => $po->importer->name,
-                        'company' => $po->importer->company,
-                    ],
-                    'agency' => $po->agency ? [
-                        'id' => $po->agency->id,
-                        'name' => $po->agency->name,
-                        'company' => $po->agency->company,
+                    'headline' => $po->headline,
+                    'importer' => $importerRel ? [
+                        'id' => $importerRel->id,
+                        'name' => $importerRel->name,
+                        'company' => $importerRel->company,
+                    ] : null,
+                    'agency' => $agencyRel ? [
+                        'id' => $agencyRel->id,
+                        'name' => $agencyRel->name,
+                        'company' => $agencyRel->company,
                     ] : null,
                     'po_date' => $po->po_date?->format('Y-m-d'),
                     'total_quantity' => $po->total_quantity,
                     'total_value' => $po->total_value,
+                    'currency' => $po->getRelation('currency')?->code ?? $po->getAttributes()['currency'] ?? 'USD',
                     'status' => $po->status,
                     'styles_count' => $po->styles->count(),
                     'created_at' => $po->created_at,
@@ -282,18 +286,18 @@ class PurchaseOrderController extends Controller
                 'po_number' => $po->po_number,
                 'headline' => $po->headline,
                 'importer_id' => $po->importer_id,
-                'importer' => [
-                    'id' => $po->importer->id,
-                    'name' => $po->importer->name,
-                    'email' => $po->importer->email,
-                    'company' => $po->importer->company,
-                ],
+                'importer' => $po->getRelation('importer') ? [
+                    'id' => $po->getRelation('importer')->id,
+                    'name' => $po->getRelation('importer')->name,
+                    'email' => $po->getRelation('importer')->email,
+                    'company' => $po->getRelation('importer')->company,
+                ] : null,
                 'agency_id' => $po->agency_id,
-                'agency' => $po->agency ? [
-                    'id' => $po->agency->id,
-                    'name' => $po->agency->name,
-                    'email' => $po->agency->email,
-                    'company' => $po->agency->company,
+                'agency' => $po->getRelation('agency') ? [
+                    'id' => $po->getRelation('agency')->id,
+                    'name' => $po->getRelation('agency')->name,
+                    'email' => $po->getRelation('agency')->email,
+                    'company' => $po->getRelation('agency')->company,
                 ] : null,
                 'po_date' => $po->po_date?->format('Y-m-d'),
                 'total_quantity' => $po->total_quantity,
@@ -1067,13 +1071,13 @@ class PurchaseOrderController extends Controller
                 'shipping_term'   => $po->shipping_term,
                 'total_quantity'  => $po->total_quantity,
                 'total_value'     => $po->total_value,
-                'currency_code'   => $po->currency?->code ?? 'USD',
-                'currency_symbol' => $po->currency?->symbol ?? '$',
-                'retailer_name'   => $po->retailer?->name,
-                'season_name'     => $po->season?->name,
-                'country_name'    => $po->country?->name,
-                'importer_name'   => $po->importer->name,
-                'agency_name'     => $po->agency?->name,
+                'currency_code'   => $po->getRelation('currency')?->code ?? $po->getAttributes()['currency'] ?? 'USD',
+                'currency_symbol' => $po->getRelation('currency')?->symbol ?? '$',
+                'retailer_name'   => $po->getRelation('retailer')?->name,
+                'season_name'     => $po->getRelation('season')?->name,
+                'country_name'    => $po->getRelation('country')?->name,
+                'importer_name'   => $po->getRelation('importer')?->name ?? 'Unknown',
+                'agency_name'     => $po->getRelation('agency')?->name,
                 'creator_id'      => $po->creator_id ?? $po->importer_id,
             ],
             'rows' => $rows,

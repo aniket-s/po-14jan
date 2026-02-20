@@ -70,11 +70,11 @@ class QualityInspectionController extends Controller
 
         // Filter by date range
         if ($request->has('start_date') && $request->has('end_date')) {
-            $query->whereBetween('inspection_date', [$request->start_date, $request->end_date]);
+            $query->whereBetween('inspected_at', [$request->start_date, $request->end_date]);
         }
 
         // Sort
-        $sortField = $request->input('sort_field', 'inspection_date');
+        $sortField = $request->input('sort_field', 'inspected_at');
         $sortOrder = $request->input('sort_order', 'desc');
         $query->orderBy($sortField, $sortOrder);
 
@@ -170,7 +170,7 @@ class QualityInspectionController extends Controller
         $validator = Validator::make($request->all(), [
             'inspection_type_id' => 'required|exists:inspection_types,id',
             'inspector_id' => 'required|exists:users,id',
-            'inspection_date' => 'required|date|before_or_equal:today',
+            'inspected_at' => 'required|date|before_or_equal:today',
             'lot_size' => 'required|integer|min:1',
             'sample_size' => 'required|integer|min:1|lte:lot_size',
             'aql_critical' => 'required|numeric|min:0',
@@ -213,7 +213,7 @@ class QualityInspectionController extends Controller
                 'style_id' => $styleId,
                 'inspection_type_id' => $request->inspection_type_id,
                 'inspector_id' => $request->inspector_id,
-                'inspection_date' => $request->inspection_date,
+                'inspected_at' => $request->inspected_at,
                 'inspection_reference' => $inspectionReference,
                 'lot_size' => $request->lot_size,
                 'sample_size' => $request->sample_size,
@@ -574,7 +574,7 @@ class QualityInspectionController extends Controller
             'issued_at' => $inspection->certificate_issued_at,
             'inspection' => [
                 'reference' => $inspection->inspection_reference,
-                'date' => $inspection->inspection_date,
+                'date' => $inspection->inspected_at,
                 'type' => $inspection->inspectionType->name,
                 'result' => $inspection->inspection_result,
             ],
@@ -760,7 +760,7 @@ class QualityInspectionController extends Controller
                     'inspection_reference' => $inspection->inspection_reference,
                     'style_number' => $inspection->style->style_number,
                     'inspection_type' => $inspection->inspectionType->name,
-                    'inspection_date' => $inspection->inspection_date->format('Y-m-d'),
+                    'inspected_at' => $inspection->inspected_at->format('Y-m-d'),
                 ]
             );
         } catch (\Exception $e) {
@@ -855,6 +855,6 @@ class QualityInspectionController extends Controller
             });
         }
 
-        return response()->json($query->orderBy('inspection_date', 'desc')->paginate($request->input('per_page', 20)));
+        return response()->json($query->orderBy('inspected_at', 'desc')->paginate($request->input('per_page', 20)));
     }
 }

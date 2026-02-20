@@ -204,7 +204,7 @@ class ReportService
 
         // Apply date range filter
         if ($startDate && $endDate) {
-            $query->whereBetween('inspection_date', [$startDate, $endDate]);
+            $query->whereBetween('inspected_at', [$startDate, $endDate]);
         }
 
         // Apply user-based access control
@@ -434,7 +434,7 @@ class ReportService
 
         // Apply filters
         if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
-            $query->whereBetween('inspection_date', [$filters['start_date'], $filters['end_date']]);
+            $query->whereBetween('inspected_at', [$filters['start_date'], $filters['end_date']]);
         }
 
         if (!empty($filters['result'])) {
@@ -456,7 +456,7 @@ class ReportService
                 'style_number' => $inspection->style->style_number,
                 'inspection_type' => $inspection->inspectionType->name,
                 'inspector' => $inspection->inspector->name,
-                'inspection_date' => $inspection->inspection_date->format('Y-m-d'),
+                'inspected_at' => $inspection->inspected_at->format('Y-m-d'),
                 'lot_size' => $inspection->lot_size,
                 'sample_size' => $inspection->sample_size,
                 'result' => $inspection->inspection_result,
