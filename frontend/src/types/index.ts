@@ -249,3 +249,62 @@ export interface CreatePurchaseOrderData {
 export interface UpdatePurchaseOrderData extends Partial<CreatePurchaseOrderData> {
   id: number;
 }
+
+// Excel View types for PO list spreadsheet view
+
+export interface ExcelViewStyle {
+  id: number;
+  style_number: string;
+  description: string | null;
+  color_name: string | null;
+  quantity_in_po: number;
+  unit_price_in_po: number;
+  total_price: number;
+  production_status: string | null;
+  shipping_approval_status: string | null;
+  assigned_factory: string | null;
+  assignment_type: string | null;
+  ex_factory_date: string | null;
+  target_shipment_date: string | null;
+}
+
+export interface ExcelViewPurchaseOrder {
+  id: number;
+  po_number: string;
+  headline: string | null;
+  status: string;
+  po_date: string;
+  revision_date: string | null;
+  shipping_term: string | null;
+  etd_date: string | null;
+  eta_date: string | null;
+  ex_factory_date: string | null;
+  in_warehouse_date: string | null;
+  total_quantity: number;
+  total_value: number;
+  styles_count: number;
+  payment_terms: string | null;
+  ship_to: string | null;
+  importer: { id: number; name: string; company: string | null };
+  agency: { id: number; name: string; company: string | null } | null;
+  retailer: { id: number; name: string } | null;
+  season: { id: number; name: string } | null;
+  country: { id: number; name: string } | null;
+  warehouse: { id: number; name: string } | null;
+  currency: { id: number; code: string; symbol: string } | null;
+  styles: ExcelViewStyle[];
+  created_at: string;
+}
+
+export interface ExcelViewFilters {
+  search?: string;
+  status?: string;
+  retailer_id?: string;
+  season_id?: string;
+  country_id?: string;
+  importer_id?: string;
+  agency_id?: string;
+  shipping_term?: string;
+  date_from?: string;
+  date_to?: string;
+}
