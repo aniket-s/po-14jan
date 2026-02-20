@@ -260,6 +260,15 @@ export default function PurchaseOrderDetailPage() {
               <FileText className="mr-2 h-4 w-4" />
               Export
             </Button>
+            <Button
+              variant="default"
+              size="sm"
+              className="bg-[#217346] hover:bg-[#1a5c38]"
+              onClick={() => router.push(`/purchase-orders/${poId}/spreadsheet`)}
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Spreadsheet
+            </Button>
           </div>
         </div>
 

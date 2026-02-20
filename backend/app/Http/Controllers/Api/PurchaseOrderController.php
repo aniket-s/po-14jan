@@ -10,11 +10,14 @@ use App\Services\PermissionService;
 use App\Services\PONumberService;
 use App\Services\DateCalculationService;
 use App\Services\SampleScheduleService;
+use App\Models\Style;
+use App\Models\PurchaseOrderStyle;
 use App\Services\TNAChartService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Broadcast;
 
 class PurchaseOrderController extends Controller
 {
@@ -965,5 +968,213 @@ class PurchaseOrderController extends Controller
         }
 
         return Storage::disk('public')->download($filePath);
+    }
+
+    // =========================================================================
+    // SPREADSHEET VIEW ENDPOINTS
+    // =========================================================================
+
+    /**
+     * Return all styles for a PO in a flat spreadsheet-ready format.
+     *
+     * GET /api/purchase-orders/{id}/spreadsheet-data
+     */
+    public function spreadsheetData(Request $request, $id)
+    {
+        $user = $request->user();
+        $po = PurchaseOrder::with([
+            'importer', 'agency', 'retailer', 'season', 'country', 'warehouse', 'currency',
+            'styles.category', 'styles.season', 'styles.brand', 'styles.color',
+        ])->findOrFail($id);
+
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        // Batch-load factory & agency names from pivot
+        $factoryIds = $po->styles->pluck('pivot.assigned_factory_id')->filter()->unique();
+        $agencyIds  = $po->styles->pluck('pivot.assigned_agency_id')->filter()->unique();
+        $userIds    = $factoryIds->merge($agencyIds)->unique();
+        $userNames  = $userIds->isNotEmpty()
+            ? User::whereIn('id', $userIds)->pluck('name', 'id')
+            : collect();
+
+        // All factories / agencies for dropdown lookups
+        $factories = User::role('factory')->select('id', 'name')->orderBy('name')->get();
+        $agencies  = User::role('agency')->select('id', 'name')->orderBy('name')->get();
+
+        $rows = $po->styles->map(function ($style) use ($userNames) {
+            $pivot = $style->pivot;
+            $qty   = $pivot->quantity_in_po ?? 0;
+            $price = $pivot->unit_price_in_po ?? $style->unit_price ?? 0;
+
+            return [
+                '_styleId'  => $style->id,
+                '_pivotId'  => $pivot->id,
+
+                // Style fields
+                'style_number'       => $style->style_number,
+                'description'        => $style->description,
+                'color_name'         => $style->color_name ?? ($style->color?->name ?? null),
+                'color_code'         => $style->color_code ?? ($style->color?->code ?? null),
+                'fabric'             => $style->fabric,
+                'fabric_type_name'   => $style->fabric_type_name,
+                'fit'                => $style->fit,
+                'country_of_origin'  => $style->country_of_origin,
+                'item_description'   => $style->item_description,
+                'images'             => $style->images ?? [],
+                'fob_price'          => $style->fob_price,
+                'msrp'               => $style->msrp,
+                'wholesale_price'    => $style->wholesale_price,
+                'unit_price'         => $style->unit_price,
+                'total_price_style'  => $style->total_price,
+                'category_name'      => $style->category?->name,
+                'season_name'        => $style->season?->name,
+                'brand_name'         => $style->brand?->name,
+
+                // Pivot fields
+                'quantity_in_po'             => $qty,
+                'unit_price_in_po'           => $pivot->unit_price_in_po,
+                'total_price'                => $qty * $price,
+                'size_breakdown'             => $pivot->size_breakdown,
+                'ratio'                      => $pivot->ratio,
+                'status'                     => $pivot->status ?? 'pending',
+                'production_status'          => $pivot->production_status,
+                'shipping_approval_status'   => null,
+                'assigned_factory_id'        => $pivot->assigned_factory_id,
+                'assigned_factory_name'      => $pivot->assigned_factory_id ? ($userNames[$pivot->assigned_factory_id] ?? null) : null,
+                'assigned_agency_id'         => $pivot->assigned_agency_id,
+                'assignment_type'            => $pivot->assignment_type,
+                'ex_factory_date'            => $pivot->ex_factory_date?->format('Y-m-d'),
+                'estimated_ex_factory_date'  => $pivot->estimated_ex_factory_date?->format('Y-m-d'),
+                'target_production_date'     => $pivot->target_production_date?->format('Y-m-d'),
+                'target_shipment_date'       => $pivot->target_shipment_date?->format('Y-m-d'),
+                'notes'                      => $pivot->notes,
+            ];
+        })->values();
+
+        return response()->json([
+            'po' => [
+                'id'              => $po->id,
+                'po_number'       => $po->po_number,
+                'headline'        => $po->headline,
+                'status'          => $po->status,
+                'po_date'         => $po->po_date?->format('Y-m-d'),
+                'etd_date'        => $po->etd_date?->format('Y-m-d'),
+                'eta_date'        => $po->eta_date?->format('Y-m-d'),
+                'ex_factory_date' => $po->ex_factory_date?->format('Y-m-d'),
+                'in_warehouse_date' => $po->in_warehouse_date?->format('Y-m-d'),
+                'shipping_term'   => $po->shipping_term,
+                'total_quantity'  => $po->total_quantity,
+                'total_value'     => $po->total_value,
+                'currency_code'   => $po->currency?->code ?? 'USD',
+                'currency_symbol' => $po->currency?->symbol ?? '$',
+                'retailer_name'   => $po->retailer?->name,
+                'season_name'     => $po->season?->name,
+                'country_name'    => $po->country?->name,
+                'importer_name'   => $po->importer->name,
+                'agency_name'     => $po->agency?->name,
+                'creator_id'      => $po->creator_id ?? $po->importer_id,
+            ],
+            'rows' => $rows,
+            'lookups' => [
+                'factories'           => $factories,
+                'agencies'            => $agencies,
+                'statuses'            => ['pending', 'confirmed', 'in_production', 'completed', 'cancelled'],
+                'production_statuses' => ['pending', 'cutting', 'sewing', 'finishing', 'packing', 'ready_to_ship', 'shipped'],
+            ],
+        ]);
+    }
+
+    /**
+     * Update a single cell (field) for a style within a PO.
+     *
+     * PATCH /api/purchase-orders/{poId}/styles/{styleId}/cell
+     */
+    public function updateStyleCell(Request $request, $poId, $styleId)
+    {
+        $user = $request->user();
+        $po   = PurchaseOrder::findOrFail($poId);
+
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'field'  => 'required|string|max:100',
+            'value'  => 'present',
+            'target' => 'required|in:style,pivot',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $field  = $request->input('field');
+        $value  = $request->input('value');
+        $target = $request->input('target');
+
+        // ---- Whitelist of editable fields per target ----
+        $styleFields = [
+            'style_number', 'description', 'color_name', 'color_code',
+            'fabric', 'fabric_type_name', 'fit', 'country_of_origin',
+            'item_description', 'fob_price', 'msrp', 'wholesale_price',
+        ];
+        $pivotFields = [
+            'quantity_in_po', 'unit_price_in_po', 'size_breakdown', 'ratio',
+            'status', 'production_status', 'notes',
+            'assigned_factory_id', 'assigned_agency_id', 'assignment_type',
+            'ex_factory_date', 'estimated_ex_factory_date',
+            'target_production_date', 'target_shipment_date',
+        ];
+
+        $allowed = $target === 'style' ? $styleFields : $pivotFields;
+        if (!in_array($field, $allowed, true)) {
+            return response()->json(['message' => "Field '{$field}' is not editable"], 422);
+        }
+
+        $style = Style::findOrFail($styleId);
+
+        // Ensure style is attached to this PO
+        $pivotRow = PurchaseOrderStyle::where('purchase_order_id', $poId)
+            ->where('style_id', $styleId)
+            ->firstOrFail();
+
+        $oldValue = $target === 'style' ? $style->{$field} : $pivotRow->{$field};
+
+        DB::beginTransaction();
+        try {
+            if ($target === 'style') {
+                $style->update([$field => $value]);
+            } else {
+                $pivotRow->update([$field => $value]);
+
+                // Recalculate PO totals if qty or price changed
+                if (in_array($field, ['quantity_in_po', 'unit_price_in_po'])) {
+                    $po->updateTotals();
+                }
+            }
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Update failed', 'error' => $e->getMessage()], 500);
+        }
+
+        // Compute new total_price for the row
+        $pivotRow->refresh();
+        $effectivePrice = $pivotRow->unit_price_in_po ?? $style->unit_price ?? 0;
+        $newTotalPrice  = ($pivotRow->quantity_in_po ?? 0) * $effectivePrice;
+
+        return response()->json([
+            'success'     => true,
+            'field'       => $field,
+            'value'       => $value,
+            'old_value'   => $oldValue,
+            'total_price' => $newTotalPrice,
+            'po_totals'   => [
+                'total_quantity' => $po->fresh()->total_quantity,
+                'total_value'    => $po->fresh()->total_value,
+            ],
+        ]);
     }
 }
