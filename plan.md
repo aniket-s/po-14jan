@@ -1,458 +1,271 @@
-# PDF Purchase Order Parser - Implementation Plan
+# PDF Import Feature - Comprehensive Fix & Enhancement Plan
 
-## Overview
+## PDF Format Analysis (5 Samples Studied)
 
-Build a feature that allows importers/agencies to upload a Purchase Order PDF, automatically extract all data from it, create a PO with attached styles, and surface any fields the system couldn't identify for manual correction.
+All 5 POs are "Master Cut Ticket / Purchase Order" from **SPORT CASUAL INTERNATIONAL (SCI)**. They follow an identical layout.
+
+### Header Layout (consistent across all samples):
+```
+SPORT CASUAL INTERNATIONAL (SCI)                    PO#: 2454
+500 WEST CYPRESS ROAD SUITE 320                     Purchase ORIGINAL
+FORT LAUDERDALE, FL 33309
+Tel: 954-777-6997                                   CUST: CITITRENDS
+                                                    LABELS: SAINT ARCHIVES
+Vendor: Crystal Apparels India                      ISSUE DATE: 12-FEB-26
+        Shed No-51, 2nd Floor...                    SHIP: 25-MAY-26
+        New Delhi 110020 INDIA                      CANCEL: 01-JUN-26
+                                                    PRE-TICKET: Y
+Ship to Warehouse:                                  SAMPLE: Y
+FTDI-EAST, 45 SAW MILL POND ROAD                   AIR/SEA: SEA
+EDISON NJ 08817 6025 USA                           TERMS: NET 30
+                                                    DDP
+```
+
+### CRITICAL: Multi-Row Line Item Structure
+Each line item occupies **3-4 rows** in the PDF (NOT one row per item):
+```
+STYLE      COLOR          Ln  WH  DESCRIPTION              QTY    PRICE EA.  EXTN
+SAT301SBC  001 BLACK       1  FE  SUPER BOXY TEE          2400      3.36   8,064.00
+                                   Category:                               PACK 6
+           SIZE >  XS    S     M     L     XL    2XL
+           QTY >   300   600   600   600   300   0
+```
+
+### Variations Across Samples:
+- **PO Numbers**: 2452, 2453, 2454, 2455, 2456
+- **Size ranges**: Regular (XS-2XL) vs Plus (2XL-5XL) depending on style suffix (SBC vs SBCX)
+- **SHIP dates vary**: 25-MAY-26, 22-JUN-26, 13-JUL-26
+- **CANCEL dates vary**: 01-JUN-26, 01-JUL-26, 01-AUG-26
+- **IN HOUSE dates vary**: "NEED 05/22/26 IN HOUSE", "NEED 06/22/26", "NEED 07/13/26"
+- **Price can be 0.00**: PO 2456 has $0.00 for all items (sample/promo PO)
+- **Packing**: "FLAT PACK S-2XL 8PREPACK" vs "FLAT PACK 3X-5X 3PC PREPACK"
+- **Color codes**: 3-digit code + short name (001 BLACK, 002 CAN, 004 MUSLI, 100 WHITE, 316 PINE, 486 CAR)
+- **Multi-line descriptions**: "SUPER BOXY CROP DROP SHOULDER SOLID TEE" can wrap
+- **Footer totals**: "Total Items: N", "Total Extn: $$$", "Total Order Qty: N", "Total Pcs: N"
 
 ---
 
-## PDF Format Analysis (from provided images)
+## Problems Identified
 
-The PO PDFs contain:
+### A. PDF Parser Failures (Backend: `PdfImportService.php`)
 
-**Header Section:**
-- PO Number, Date, Revision
-- Vendor/Supplier (name, address, contact, phone, fax, email)
-- Ship To (company name, address)
-- Payment Terms, Ship Via, FOB
-- Season, Department, Division, Buyer
+1. **PO Number not parsed** — The PO# is a bare number (2454) without "PO" prefix. Current regex expects "P.O. Number" or "PO-XXXX" patterns.
 
-**Line Items Table:**
-- Style/Item number
-- Description
-- Color/Colorway
-- Size columns with individual quantities (XS, S, M, L, XL, XXL, etc.)
-- Total Quantity per row
-- Unit Price per row
-- Total Amount per row
+2. **PO Date not parsed** — PDF uses "ISSUE DATE: 12-FEB-26". Regex only checks "P.O. Date / Order Date / Date". Date format `dd-MMM-yy` (uppercase month abbreviation, 2-digit year) not in `parseDate()`.
 
-**Footer:**
-- Grand Total Quantity
-- Grand Total Amount
-- Special Instructions / Notes
+3. **Retailer misidentified** — Parser maps `vendor_name` → `retailer_id`. Vendor is the factory (Crystal Apparels India). Actual retailer/buyer is "CUST: CITITRENDS". No regex for CUST/CUSTOMER label.
 
----
+4. **Country wrongly parsed as "AL"** — "Origin" regex grabs stray text. No explicit "Country of Origin" label. The vendor address has "INDIA" but parser doesn't extract from address blocks.
 
-## Architecture Decision: PDF Parsing Approach
+5. **No line items extracted** — **Root cause: multi-row line item structure.** Each item spans 3-4 lines (main row + color name + SIZE row + QTY row). Current parser expects one row per item. Tokenizer splits on `\s{2,}` which fails on PDF text extraction whitespace.
 
-**Chosen: `smalot/pdfparser` (PHP) for text extraction + structured regex-based parsing**
+6. **ETD not parsed** — PDF has "SHIP: 25-MAY-26" but no regex for "SHIP" as date label.
 
-Rationale:
-- Pure PHP, no external system dependencies (no Python, no poppler-utils needed)
-- Keeps everything within the existing Laravel ecosystem
-- The PO format shown is text-based (not scanned images), making text extraction reliable
-- Follows the same service pattern as the existing `ExcelImportService`
-- No external API costs (vs Claude Vision API)
-- The two-phase approach (parse → review → confirm) handles edge cases where parsing fails
+7. **IHD not parsed** — Footer says "NEED 05/22/26 IN HOUSE" but regex only checks "In-Warehouse" / "IHD".
 
-If text extraction proves insufficient for some PDFs in the future, we can add a fallback to Claude Vision API (the architecture supports swapping parsers).
+8. **Payment terms not parsed** — PDF has "TERMS: NET 30" but regex only checks "Payment Terms".
+
+9. **Currency not detected** — Prices are bare numbers (3.36). No explicit currency symbol in the table.
+
+10. **Shipping term partially detected** — "DDP" appears standalone (not as "Shipping Term: DDP"), may or may not be caught.
+
+### B. Missing Features in PDF Import Dialog (Frontend)
+
+1. **No "+" buttons** for creating master data on-the-go (retailer, season, currency, payment term, country, warehouse).
+2. **No payment_terms_structured support** — Manual PO uses `{ term: code, percentage?: number }` with conditional % field.
+3. **No date auto-calculation logic** — No FOB/DDP auto-calculation chain.
+4. **No sample schedule auto-generation** — No "Auto-Generate Schedule" button or API call.
+5. **Missing fields** — No `packing_guidelines`, `other_terms`.
+6. **Backend create endpoint** missing `payment_terms_structured` and `sample_schedule`.
 
 ---
 
 ## Implementation Plan
 
-### Phase 1: Backend - PDF Parser Service & API
+### Phase 1: Rewrite PDF Parser (Backend)
 
-#### 1.1 Install PHP PDF Parser dependency
-- Add `smalot/pdfparser` to composer.json
-- Run `composer install`
+**File: `backend/app/Services/PdfImportService.php`**
 
-#### 1.2 Create `PdfImportService` (new file)
-**File:** `backend/app/Services/PdfImportService.php`
+Complete rewrite of parsing logic to handle the SCI "Master Cut Ticket" format.
 
-This service mirrors the `ExcelImportService` pattern with two phases: analyze and execute.
+#### 1.1 Fix Header Parsing — `parseHeaderSection()`
 
-**Methods:**
+**PO Number** — Add patterns:
+- `/PO\s*#?\s*[:\-]?\s*(\d{3,6})/i` (bare number after "PO#:")
+- `/(?:Purchase\s+Order|Cut\s+Ticket).*?(\d{4,6})/i` (number near title)
 
-```
-analyzePdf(string $filePath): array
-```
-- Extracts all text from PDF using smalot/pdfparser
-- Parses text into structured sections (header, line items, footer)
-- Returns parsed data with confidence indicators for each field
-- Returns warnings for fields that couldn't be identified
+**PO Date (ISSUE DATE)** — Add patterns:
+- `/ISSUE\s*DATE\s*[:\-]?\s*(.+?)(?:\n|$)/i`
+- `/(?:Issue|Issued)\s*(?:Date|Dt\.?)\s*[:\-]?\s*(.+?)(?:\n|$)/i`
 
-```
-parseHeaderSection(string $text): array
-```
-- Extracts PO number, date, revision using regex patterns
-- Extracts vendor/factory information block
-- Extracts ship-to information block
-- Extracts payment terms, shipping term (FOB/DDP), season
-- Matches extracted values against master data (retailers, seasons, countries, currencies, payment terms, warehouses) by name/code
-- Returns matched IDs where found, raw text where not matched
+**Fix `parseDate()`** — Add support for:
+- `d-M-y` format (12-FEB-26) — requires ucfirst normalization: `FEB` → `Feb`
+- `d-M-Y` format (12-FEB-2026)
+- Normalize input: `strtolower()` then `ucfirst()` each word before parsing
 
-```
-parseLineItems(string $text): array
-```
-- Detects the table structure from text layout
-- Extracts column headers to identify size columns dynamically
-- Parses each row: style number, description, color, size quantities, total qty, unit price, total amount
-- Builds size_breakdown JSON from individual size columns
-- Validates row data (quantities match, prices calculate correctly)
+**Customer/Retailer** — New extraction:
+- `/(?:CUST|CUSTOMER|CLIENT)\s*[:\-]?\s*(.+?)(?:\n|$)/i` → `customer_name` field
+- Map `customer_name` → retailer matching (NOT vendor_name)
 
-```
-parseFooter(string $text): array
-```
-- Extracts total quantity and total value
-- Extracts special instructions/notes
-- Cross-validates totals against sum of line items
+**ETD Date (SHIP)** — Add patterns:
+- `/(?:SHIP|SHIP\s*DATE|SHIPPING\s*DATE)\s*[:\-]?\s*(.+?)(?:\n|$)/i`
 
-```
-matchMasterData(array $parsedData): array
-```
-- Fuzzy-matches extracted text values to existing master data records:
-  - Retailer name → retailer_id
-  - Season name → season_id
-  - Country name → country_id
-  - Currency code/symbol → currency_id
-  - Payment term name → payment_term_id
-  - Warehouse name → warehouse_id
-- Returns matched IDs with confidence scores and unmatched raw values
+**Cancel Date** — New field:
+- `/(?:CANCEL|CANCEL\s*DATE|CANCELLATION)\s*[:\-]?\s*(.+?)(?:\n|$)/i`
 
-```
-buildPurchaseOrderData(array $parsedData, array $matchedMasterData): array
-```
-- Assembles the final structured output that maps to PurchaseOrder + Style models
-- Separates into: `po_header` (maps to PurchaseOrder fields) and `styles` (maps to Style + pivot fields)
-- Marks each field with status: `matched` | `parsed` | `unrecognized` | `missing`
+**In-Warehouse Date (NEED...IN HOUSE)** — Add patterns:
+- `/NEED\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})\s*IN\s*HOUSE/i`
+- `/(?:IN[\s\-]*HOUSE|IN[\s\-]*WAREHOUSE|IHD)\s*(?:DATE)?\s*[:\-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i`
 
-**Return structure from analyzePdf:**
-```json
-{
-  "success": true,
-  "po_header": {
-    "po_number": { "value": "PO-2024-001", "status": "parsed", "confidence": "high" },
-    "po_date": { "value": "2024-01-15", "status": "parsed", "confidence": "high" },
-    "retailer_id": { "value": 3, "raw_text": "Walmart", "status": "matched", "confidence": "high" },
-    "season_id": { "value": null, "raw_text": "Spring 2024", "status": "unrecognized", "confidence": "low" },
-    "currency_id": { "value": 1, "raw_text": "USD", "status": "matched", "confidence": "high" },
-    "shipping_term": { "value": "FOB", "status": "parsed", "confidence": "high" },
-    "payment_term_id": { "value": null, "raw_text": "Net 30", "status": "unrecognized", "confidence": "low" },
-    "ship_to": { "value": "Warehouse A, 123 Street", "status": "parsed", "confidence": "medium" },
-    "country_of_origin": { "value": null, "raw_text": "", "status": "missing" },
-    "etd_date": { "value": null, "status": "missing" },
-    "notes": { "value": "Handle with care", "status": "parsed", "confidence": "medium" }
-  },
-  "styles": [
-    {
-      "style_number": { "value": "ST-001", "status": "parsed", "confidence": "high" },
-      "description": { "value": "Men's Cotton T-Shirt", "status": "parsed", "confidence": "high" },
-      "color_name": { "value": "Navy Blue", "status": "parsed", "confidence": "high" },
-      "size_breakdown": { "value": { "S": 100, "M": 200, "L": 150, "XL": 50 }, "status": "parsed", "confidence": "high" },
-      "quantity": { "value": 500, "status": "parsed", "confidence": "high" },
-      "unit_price": { "value": 12.50, "status": "parsed", "confidence": "high" },
-      "total_amount": { "value": 6250.00, "status": "parsed", "confidence": "high" }
-    }
-  ],
-  "totals": {
-    "total_quantity": 5000,
-    "total_value": 75000.00,
-    "validation_passed": true
-  },
-  "warnings": [
-    "Season 'Spring 2024' not found in system - please select manually",
-    "Payment term 'Net 30' not found - please select manually"
-  ],
-  "errors": [],
-  "raw_text": "... (full extracted text for debugging)"
-}
-```
+**Payment Terms** — Add patterns:
+- `/TERMS\s*[:\-]?\s*(.+?)(?:\n|$)/i`
+- Keep existing "Payment Terms" patterns
 
-#### 1.3 Create API Endpoints
+**Labels / Brand** — New informational field:
+- `/LABELS?\s*[:\-]?\s*(.+?)(?:\n|$)/i`
 
-**File:** `backend/app/Http/Controllers/Api/PdfImportController.php` (new)
+**Shipping Mode** — New informational field:
+- `/AIR[\s\/]*SEA\s*[:\-]?\s*(.+?)(?:\n|$)/i`
 
-Two-phase flow (mirrors Excel import pattern):
+**Country from vendor address** — Instead of "Country of Origin" label, parse country from the vendor address block by checking the last line for known country names (INDIA, CHINA, BANGLADESH, VIETNAM, etc.).
 
-**Endpoint 1: Analyze PDF**
-```
-POST /api/purchase-orders/pdf-import/analyze
-Content-Type: multipart/form-data
-Body: { file: <PDF file> }
+#### 1.2 Rewrite Line Item Parsing — `parseLineItems()`
 
-Response: {
-  "success": true,
-  "parsed_data": { ... },      // Full structured parse result
-  "temp_file_path": "temp/...", // For re-parsing if needed
-  "warnings": [...],
-  "errors": [...]
-}
-```
+**New approach: Multi-row block parsing**
 
-Validation:
-- File type: application/pdf
-- Max size: 20MB
-- Required: file field
+1. Find table header row containing "STYLE" + ("QTY" or "PRICE")
+2. After header, scan for **item blocks** — each block is a group of consecutive lines:
+   - **Main row**: starts with a style number pattern (alphanumeric, 5+ chars)
+   - **Sub-rows**: SIZE >, QTY >, color continuation, Category, PACK info
+3. For each block:
+   - Extract style number, color code + name from main row
+   - Extract description from main row
+   - Extract QTY, PRICE EA., EXTN from main row (rightmost numbers)
+   - Find "SIZE >" row → extract size labels
+   - Find "QTY >" row → extract size quantities → build `size_breakdown`
+   - Extract PACK info if present
+4. Handle the total/footer row ("Total Items:", "Total Extn:", etc.)
 
-**Endpoint 2: Create PO from Parsed Data**
-```
-POST /api/purchase-orders/pdf-import/create
-Content-Type: application/json
-Body: {
-  "po_header": {
-    "po_number": "PO-2024-001",
-    "po_date": "2024-01-15",
-    "retailer_id": 3,
-    "currency_id": 1,
-    "shipping_term": "FOB",
-    "season_id": 5,
-    "payment_term_id": 2,
-    "country_id": 1,
-    "warehouse_id": 2,
-    "ship_to": "...",
-    "ship_to_address": "...",
-    "packing_method": "...",
-    "other_terms": "...",
-    "additional_notes": "...",
-    "etd_date": "2024-03-15",
-    "headline": "Spring Collection"
-  },
-  "styles": [
-    {
-      "style_number": "ST-001",
-      "description": "Men's Cotton T-Shirt",
-      "color_name": "Navy Blue",
-      "size_breakdown": { "S": 100, "M": 200, "L": 150, "XL": 50 },
-      "quantity": 500,
-      "unit_price": 12.50
-    }
-  ]
-}
+**Key detection patterns:**
+- Style number: `/^[A-Z]{2,}[\d]+[A-Z]*/` (e.g., SAT301SBC, SAT301SBCX)
+- SIZE row: `/SIZE\s*>/i`
+- QTY row: `/QTY\s*>/i`
+- Total row: `/^Total\s+(Items|Extn|Order|Pcs)/i`
+- PACK info: `/PACK\s*\d+/i`
 
-Response: {
-  "success": true,
-  "message": "Purchase order created successfully from PDF",
-  "purchase_order": { "id": 123, "po_number": "PO-2024-001", ... },
-  "styles_created": 12,
-  "styles_errors": []
-}
-```
-
-This endpoint:
-1. Validates the submitted data using the same rules as the existing PO `store` method
-2. Creates the PO header via the existing PurchaseOrder model
-3. Creates each Style and attaches to PO via the pivot table (reusing ExcelImportService patterns)
-4. Recalculates PO totals
-5. Logs activity via ActivityLogService
-6. Returns the created PO with any style-level errors
-
-#### 1.4 Register Routes
-
-**File:** `backend/routes/api.php`
-
-Add inside the authenticated middleware group:
+**Size breakdown construction:**
 ```php
-Route::post('purchase-orders/pdf-import/analyze', [PdfImportController::class, 'analyze']);
-Route::post('purchase-orders/pdf-import/create', [PdfImportController::class, 'create']);
+// From: SIZE > XS  S   M   L   XL  2XL
+//       QTY >  300 600 600 600 300 0
+// Build: {"XS": 300, "S": 600, "M": 600, "L": 600, "XL": 300, "2XL": 0}
 ```
 
----
+#### 1.3 Fix Footer Parsing — `parseFooter()`
 
-### Phase 2: Frontend - PDF Import Dialog & Review UI
+Add patterns for this format:
+- `/Total\s+Items\s*[:\-]?\s*(\d+)/i`
+- `/Total\s+Extn\s*[:\-]?\s*[\$]?\s*([\d,]+\.?\d*)/i`
+- `/Total\s+Order\s+Qty\s*[:\-]?\s*([\d,]+)/i`
+- `/Total\s+Pcs\s*[:\-]?\s*([\d,]+)/i`
 
-#### 2.1 Create `PdfImportDialog` Component (new file)
-**File:** `frontend/src/components/purchase-orders/PdfImportDialog.tsx`
+Extract packing instructions from footer area:
+- `/FLAT\s+PACK\s+.+?POLYBAG/i`
+- `/USE\s+SCI\s+RN#\d+/i`
 
-A multi-step dialog (similar pattern to `ExcelImportDialog.tsx`) with these steps:
+#### 1.4 Fix `matchMasterData()` — Use customer_name for retailer
 
-**Step 1: Upload**
-- Drag-and-drop zone + file picker for PDF files
-- Accept: `.pdf` only, max 20MB
-- Upload button triggers `POST /purchase-orders/pdf-import/analyze`
-- Shows loading spinner during parsing
-
-**Step 2: Review PO Header**
-- Displays all parsed PO header fields in a form layout
-- Each field shows:
-  - The parsed value (pre-filled in form input)
-  - A status indicator (green check = matched, yellow warning = needs review, red X = missing)
-  - For master data fields (retailer, season, country, currency, warehouse, payment term): a select dropdown pre-populated with the matched value, allowing the user to change or select if unmatched
-  - Inline "+" create buttons for missing master data (same pattern as existing PO create form)
-- Warning banner at top listing all fields that need attention
-- Required fields that are missing are highlighted with red borders
-
-**Step 3: Review Styles / Line Items**
-- Table showing all parsed styles with columns:
-  - Row # | Style Number | Description | Color | Size Breakdown (expandable) | Total Qty | Unit Price | Total Amount | Status
-- Each cell is editable (inline editing)
-- Rows with issues highlighted in yellow/red
-- Ability to delete rows that shouldn't be imported
-- Ability to add missing rows manually
-- Summary row: Total Quantity, Total Value
-- Cross-validation: total matches sum of line items
-
-**Step 4: Confirmation / Creating**
-- Summary of what will be created:
-  - PO header details (key fields)
-  - Number of styles to be created
-  - Total quantity and value
-- "Create Purchase Order" button
-- Loading state during creation
-
-**Step 5: Result**
-- Success/failure message
-- Created PO details with link to view
-- Any style-level errors listed
-- "View Purchase Order" button navigates to PO detail page
-
-#### 2.2 Add TypeScript Types
-**File:** `frontend/src/types/index.ts`
-
-Add new types:
-```typescript
-interface PdfParsedField<T = string> {
-  value: T | null;
-  raw_text?: string;
-  status: 'matched' | 'parsed' | 'unrecognized' | 'missing';
-  confidence?: 'high' | 'medium' | 'low';
-}
-
-interface PdfParsedPOHeader {
-  po_number: PdfParsedField;
-  po_date: PdfParsedField;
-  retailer_id: PdfParsedField<number>;
-  season_id: PdfParsedField<number>;
-  currency_id: PdfParsedField<number>;
-  shipping_term: PdfParsedField;
-  payment_term_id: PdfParsedField<number>;
-  country_id: PdfParsedField<number>;
-  warehouse_id: PdfParsedField<number>;
-  ship_to: PdfParsedField;
-  ship_to_address: PdfParsedField;
-  country_of_origin: PdfParsedField;
-  etd_date: PdfParsedField;
-  notes: PdfParsedField;
-  headline: PdfParsedField;
-  packing_method: PdfParsedField;
-  other_terms: PdfParsedField;
-}
-
-interface PdfParsedStyle {
-  style_number: PdfParsedField;
-  description: PdfParsedField;
-  color_name: PdfParsedField;
-  size_breakdown: PdfParsedField<Record<string, number>>;
-  quantity: PdfParsedField<number>;
-  unit_price: PdfParsedField<number>;
-  total_amount: PdfParsedField<number>;
-}
-
-interface PdfAnalysisResult {
-  success: boolean;
-  po_header: PdfParsedPOHeader;
-  styles: PdfParsedStyle[];
-  totals: {
-    total_quantity: number;
-    total_value: number;
-    validation_passed: boolean;
-  };
-  warnings: string[];
-  errors: string[];
-  raw_text: string;
-  temp_file_path: string;
+```php
+// OLD: uses vendor_name → retailer (WRONG)
+// NEW: uses customer_name → retailer (CORRECT)
+if (isset($parsedHeader['customer_name']) && $parsedHeader['customer_name']['value'] !== null) {
+    $matches['retailer_id'] = $this->fuzzyMatchModel(Retailer::class, 'name', $parsedHeader['customer_name']['value']);
 }
 ```
 
-#### 2.3 Integrate into PO List Page
-**File:** `frontend/src/app/purchase-orders/page.tsx`
+#### 1.5 Fix `parseDate()` — Handle uppercase month abbreviations
 
-Add:
-- "Import from PDF" button next to the existing "Import Excel" button in the PO list page header
-- Opens `PdfImportDialog`
-- On successful creation, refreshes the PO list
+```php
+private function parseDate(string $dateStr): ?string
+{
+    // Normalize: "12-FEB-26" → "12-Feb-26"
+    $normalized = preg_replace_callback('/[A-Z]{3,}/', function($m) {
+        return ucfirst(strtolower($m[0]));
+    }, trim($dateStr));
 
-#### 2.4 Add PDF Import Service Functions
-**File:** `frontend/src/services/styles.ts` (extend existing)
-
-Add new functions:
-```typescript
-analyzePdf(file: File): Promise<PdfAnalysisResult>
-createPOFromPdf(data: { po_header: object; styles: object[] }): Promise<CreatePOFromPdfResult>
+    // Add format: d-M-y (12-Feb-26)
+    $formats = ['d-M-y', 'd-M-Y', /* ...existing formats... */];
+    // ...
+}
 ```
 
+### Phase 2: Enhance PDF Import Dialog (Frontend)
+
+**File: `frontend/src/components/purchase-orders/PdfImportDialog.tsx`**
+
+#### 2.1 Add "+" buttons for master data creation
+For each dropdown (Retailer, Season, Currency, Payment Term, Country, Warehouse):
+- Add `<Button>` with `<Plus>` icon next to each `<Select>` (identical pattern to manual PO form)
+- Open corresponding Create dialog (reuse `CreateRetailerDialog`, `CreateSeasonDialog`, etc.)
+- On success → call `onRefreshMasterData()` prop to refresh dropdowns
+- Add state for each dialog open/close
+
+#### 2.2 Add payment terms with structured support
+- Replace plain `payment_term_id` Select with:
+  - Payment term Select using `code` as value (same as manual PO)
+  - Conditional percentage input when `requires_percentage: true`
+  - Store as `payment_terms_structured: { term: code, percentage?: number }`
+
+#### 2.3 Add date auto-calculation logic (mirror manual PO creation exactly)
+- **FOB**: ETD → Ex-Factory (ETD-7), ETA (ETD+sailing_time_days), IHD (ETA+5)
+- **DDP**: IHD → ETD (IHD-transit-5), ETA (ETD+transit)
+- Country change → recalculate using `sailing_time_days`
+- Shipping term change → switch calculation mode, recalculate
+- Auto-calculated fields as disabled/muted inputs
+
+#### 2.4 Add sample schedule auto-generation
+- "Auto-Generate Schedule" button
+- Call `POST /purchase-orders/sample-schedule` with `po_date` + `etd_date`
+- Display 8 milestone dates (Lab Dip, Fit Samples, Trim Approvals, 1st Proto, Bulk Fabric, PP Sample, Production Start, TOP Approval)
+- Include in create request
+
+#### 2.5 Add missing fields
+- `packing_guidelines` textarea (pre-fill from PDF packing instructions)
+- `other_terms` textarea
+
+### Phase 3: Update Backend Create Endpoint
+
+**File: `backend/app/Http/Controllers/Api/PdfImportController.php`**
+
+#### 3.1 Add payment_terms_structured
+- Validation: `po_header.payment_terms_structured` (object with `term` + optional `percentage`)
+- Same percentage validation as PurchaseOrderController::store()
+- Pass to PurchaseOrder::create()
+
+#### 3.2 Add date auto-calculation (server-side fallback)
+- Same FOB/DDP logic as PurchaseOrderController::store()
+
+#### 3.3 Add sample_schedule + packing_guidelines
+- Accept and validate both fields
+- Auto-generate sample_schedule if missing but po_date + etd_date present
+- Pass to PurchaseOrder::create()
+
+### Phase 4: Update Types & Integration
+
+**File: `frontend/src/types/index.ts`**
+- Add `payment_terms_structured`, `sample_schedule`, `packing_guidelines` to `PdfCreatePORequest`
+
+**File: `frontend/src/app/purchase-orders/page.tsx`**
+- Add `onRefreshMasterData` prop wired to `fetchMasterData()`
+- Render Create dialogs for PDF import (or share existing instances)
+
 ---
 
-## Field Mapping: PDF → Database Schema
-
-| PDF Field | DB Table | DB Column | Match Strategy |
-|-----------|----------|-----------|----------------|
-| PO Number | purchase_orders | po_number | Direct text extraction |
-| Date | purchase_orders | po_date | Date pattern regex |
-| Revision | purchase_orders | revision_number | Number extraction |
-| Vendor Name | - | (informational) | Display only, or match to factory user |
-| Ship To | purchase_orders | ship_to, ship_to_address | Text block extraction |
-| Payment Terms | purchase_orders | payment_term_id | Fuzzy match to payment_terms table |
-| Ship Via / FOB | purchase_orders | shipping_term | Keyword detection (FOB/DDP) |
-| Season | purchase_orders | season_id | Fuzzy match to seasons table |
-| Currency ($, USD) | purchase_orders | currency_id | Symbol/code match to currencies table |
-| Notes | purchase_orders | additional_notes | Text block extraction |
-| Style # | styles | style_number | Direct extraction per row |
-| Description | styles | description | Direct extraction per row |
-| Color | styles | color_name | Direct extraction per row |
-| Size Qtys | styles | size_breakdown (JSON) | Column-based extraction |
-| Total Qty | pivot (purchase_order_style) | quantity_in_po | Sum/extraction per row |
-| Unit Price | pivot (purchase_order_style) | unit_price_in_po | Decimal extraction per row |
-| Total Amount | - | Calculated validation | qty * price cross-check |
-
----
-
-## Error Handling Strategy
-
-1. **Parse Errors** (Phase 1): PDF can't be read, is encrypted, or is a scanned image
-   - Show clear error: "Unable to extract text from this PDF. The file may be scanned or encrypted."
-
-2. **Field Recognition Errors** (Phase 2): Some fields couldn't be identified
-   - Show warnings with yellow indicators
-   - Fields left editable for manual input
-   - Required fields marked with red if missing
-
-3. **Master Data Mismatch** (Phase 2): Extracted values don't match existing records
-   - Show the raw extracted text alongside the dropdown
-   - User selects correct value or creates new master data inline
-
-4. **Validation Errors** (Phase 4): Submitted data fails backend validation
-   - Show validation errors from API response
-   - Allow user to go back and correct
-
-5. **Partial Failures** (Phase 5): Some styles fail to create
-   - PO is still created
-   - Show which styles succeeded and which failed
-   - User can manually add failed styles later
-
----
-
-## Files to Create (New)
-
-| # | File | Description |
-|---|------|-------------|
-| 1 | `backend/app/Services/PdfImportService.php` | Core PDF parsing and data extraction service |
-| 2 | `backend/app/Http/Controllers/Api/PdfImportController.php` | API endpoints for analyze + create |
-| 3 | `frontend/src/components/purchase-orders/PdfImportDialog.tsx` | Multi-step PDF import wizard UI |
-
-## Files to Modify (Existing)
+## Files to Modify
 
 | # | File | Changes |
 |---|------|---------|
-| 1 | `backend/composer.json` | Add `smalot/pdfparser` dependency |
-| 2 | `backend/routes/api.php` | Add 2 PDF import routes |
-| 3 | `frontend/src/app/purchase-orders/page.tsx` | Add "Import PDF" button + dialog integration |
-| 4 | `frontend/src/types/index.ts` | Add PDF-related TypeScript types |
-| 5 | `frontend/src/services/styles.ts` | Add PDF API service functions |
-
----
-
-## Permissions
-
-The PDF import feature will use the existing `po.create` permission — same as creating a PO manually or via Excel. No new permissions needed.
-
----
-
-## Summary
-
-- **Backend**: 2 new files (Service + Controller), 3 file modifications
-- **Frontend**: 1 new file (Dialog component), 3 file modifications
-- **New dependency**: `smalot/pdfparser` (PHP package)
-- **Approach**: Two-phase (analyze → review/edit → create) following the established Excel import pattern
-- **Error handling**: Comprehensive — parse errors, field warnings, master data mismatches, validation errors
-- **UX**: User always reviews and can edit every field before PO creation
+| 1 | `backend/app/Services/PdfImportService.php` | Major rewrite: header parsing, multi-row line items, date parsing, customer detection (Phase 1) |
+| 2 | `frontend/src/components/purchase-orders/PdfImportDialog.tsx` | Add + buttons, date logic, payment terms, sample schedule, missing fields (Phase 2) |
+| 3 | `backend/app/Http/Controllers/Api/PdfImportController.php` | Add payment_terms_structured, date calc, sample_schedule, packing_guidelines (Phase 3) |
+| 4 | `frontend/src/types/index.ts` | Update PdfCreatePORequest type (Phase 4) |
+| 5 | `frontend/src/app/purchase-orders/page.tsx` | Pass refresh callback, wire create dialogs (Phase 4) |

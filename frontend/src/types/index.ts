@@ -372,9 +372,12 @@ export interface PdfCreatePORequest {
     eta_date?: string;
     in_warehouse_date?: string;
     packing_method?: string;
+    packing_guidelines?: string;
     other_terms?: string;
     additional_notes?: string;
     revision_number?: number;
+    payment_terms_structured?: { term: string; percentage?: number };
+    sample_schedule?: Record<string, string>;
   };
   styles: Array<{
     style_number: string;
