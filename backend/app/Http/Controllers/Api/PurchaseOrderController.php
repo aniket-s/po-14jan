@@ -40,7 +40,7 @@ class PurchaseOrderController extends Controller
             $query = PurchaseOrder::with([
                 'importer', 'agency',
                 'retailer', 'season', 'country', 'warehouse', 'currency',
-                'styles.assignedFactory',
+                'styles',
             ]);
         } else {
             $query = PurchaseOrder::with(['importer', 'agency', 'styles']);
@@ -142,8 +142,16 @@ class PurchaseOrderController extends Controller
 
         // Return enriched data for Excel view
         if ($isExcelView) {
+            // Batch-load factory names from pivot assigned_factory_id to avoid N+1
+            $factoryIds = $pos->flatMap(function ($po) {
+                return $po->styles->pluck('pivot.assigned_factory_id');
+            })->filter()->unique()->values();
+            $factoryNames = $factoryIds->isNotEmpty()
+                ? User::whereIn('id', $factoryIds)->pluck('name', 'id')
+                : collect();
+
             return response()->json([
-                'data' => $pos->map(function ($po) {
+                'data' => $pos->map(function ($po) use ($factoryNames) {
                     return [
                         'id' => $po->id,
                         'po_number' => $po->po_number,
@@ -192,18 +200,19 @@ class PurchaseOrderController extends Controller
                             'code' => $po->currency->code,
                             'symbol' => $po->currency->symbol ?? '',
                         ] : null,
-                        'styles' => $po->styles->map(function ($style) {
+                        'styles' => $po->styles->map(function ($style) use ($factoryNames) {
+                            $pivotFactoryId = $style->pivot->assigned_factory_id;
                             return [
                                 'id' => $style->id,
                                 'style_number' => $style->style_number,
                                 'description' => $style->description,
-                                'color_name' => $style->color['name'] ?? null,
+                                'color_name' => $style->color_name ?? ($style->color?->name ?? null),
                                 'quantity_in_po' => $style->pivot->quantity_in_po,
                                 'unit_price_in_po' => $style->pivot->unit_price_in_po,
                                 'total_price' => ($style->pivot->quantity_in_po ?? 0) * ($style->pivot->unit_price_in_po ?? 0),
                                 'production_status' => $style->pivot->status,
                                 'shipping_approval_status' => null,
-                                'assigned_factory' => $style->assignedFactory?->name ?? null,
+                                'assigned_factory' => $pivotFactoryId ? ($factoryNames[$pivotFactoryId] ?? null) : null,
                                 'assignment_type' => $style->pivot->assignment_type,
                                 'ex_factory_date' => $style->pivot->ex_factory_date,
                                 'target_shipment_date' => $style->pivot->target_shipment_date,

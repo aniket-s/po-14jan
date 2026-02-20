@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { Fragment, useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
   useReactTable,
@@ -12,7 +12,6 @@ import {
   ColumnFiltersState,
   VisibilityState,
   ExpandedState,
-  Row,
 } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,11 +37,10 @@ import {
   ChevronUp,
   Columns3,
   Loader2,
-  Search,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { ExcelViewPurchaseOrder, ExcelViewFilters } from '@/types';
-import { TextFilter, SelectFilter } from './ExcelColumnFilter';
+import { SelectFilter } from './ExcelColumnFilter';
 import { ExcelExpandedRow } from './ExcelExpandedRow';
 
 interface MasterDataItem {
@@ -232,7 +230,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     },
     // Retailer
     {
-      accessorKey: 'retailer_name',
+      id: 'retailer_name',
       header: 'Retailer',
       accessorFn: (row) => row.retailer?.name ?? '-',
       cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue() as string}</span>,
@@ -241,7 +239,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     },
     // Season
     {
-      accessorKey: 'season_name',
+      id: 'season_name',
       header: 'Season',
       accessorFn: (row) => row.season?.name ?? '-',
       cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue() as string}</span>,
@@ -250,7 +248,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     },
     // Country
     {
-      accessorKey: 'country_name',
+      id: 'country_name',
       header: 'Country',
       accessorFn: (row) => row.country?.name ?? '-',
       cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue() as string}</span>,
@@ -274,7 +272,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     },
     // Currency
     {
-      accessorKey: 'currency_code',
+      id: 'currency_code',
       header: 'Ccy',
       accessorFn: (row) => row.currency?.code ?? '-',
       cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue() as string}</span>,
@@ -353,7 +351,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     },
     // Importer
     {
-      accessorKey: 'importer_name',
+      id: 'importer_name',
       header: 'Importer',
       accessorFn: (row) => row.importer?.name ?? '-',
       cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue() as string}</span>,
@@ -362,7 +360,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     },
     // Agency
     {
-      accessorKey: 'agency_name',
+      id: 'agency_name',
       header: 'Agency',
       accessorFn: (row) => row.agency?.name ?? '-',
       cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue() as string}</span>,
@@ -651,9 +649,8 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
                 </tr>
               ) : (
                 table.getRowModel().rows.map((row) => (
-                  <>
+                  <Fragment key={row.id}>
                     <tr
-                      key={row.id}
                       className={`border-b hover:bg-muted/40 transition-colors ${
                         row.getIsSelected() ? 'bg-primary/5' : ''
                       } ${row.index % 2 === 1 ? 'bg-muted/20' : ''}`}
@@ -691,7 +688,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))
               )}
             </tbody>
