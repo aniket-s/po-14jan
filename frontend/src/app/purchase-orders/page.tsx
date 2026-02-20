@@ -39,7 +39,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { ExcelImportDialog } from '@/components/purchase-orders/ExcelImportDialog';
-import { POExcelView } from '@/components/purchase-orders/POExcelView';
+import { PoListSpreadsheetView } from '@/components/spreadsheet/PoListSpreadsheetView';
 import { CreateRetailerDialog } from '@/components/master-data/CreateRetailerDialog';
 import { CreateSeasonDialog } from '@/components/master-data/CreateSeasonDialog';
 import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseDialog';
@@ -347,6 +347,21 @@ export default function PurchaseOrdersPage() {
     });
   };
 
+  // Full-screen Excel view — rendered outside DashboardLayout
+  if (viewMode === 'excel') {
+    return (
+      <div className="h-screen w-screen overflow-hidden">
+        <PoListSpreadsheetView
+          searchTerm={searchTerm}
+          onBack={() => {
+            setViewMode('list');
+            localStorage.setItem('po-view-mode', 'list');
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <DashboardLayout requiredPermissions={['po.view', 'po.view_all', 'po.view_own', 'po.create', 'po.edit', 'po.export']} requireAll={false}>
       <div className="space-y-6">
@@ -360,18 +375,14 @@ export default function PurchaseOrdersPage() {
             {/* View mode toggle */}
             <div className="flex rounded-md border">
               <Button
-                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                variant="default"
                 size="sm"
                 className="rounded-r-none h-8"
-                onClick={() => {
-                  setViewMode('list');
-                  localStorage.setItem('po-view-mode', 'list');
-                }}
               >
                 <List className="h-4 w-4" />
               </Button>
               <Button
-                variant={viewMode === 'excel' ? 'default' : 'ghost'}
+                variant="ghost"
                 size="sm"
                 className="rounded-l-none h-8"
                 onClick={() => {
@@ -1084,17 +1095,8 @@ export default function PurchaseOrdersPage() {
           />
         </div>
 
-        {viewMode === 'excel' ? (
-          <POExcelView
-            searchTerm={searchTerm}
-            retailers={retailers}
-            seasons={seasons}
-            countries={countries}
-          />
-        ) : (
-          <>
-            {/* Table */}
-            <Card>
+        {/* Table */}
+        <Card>
               <CardContent className="p-0">
                 {loading ? (
                   <div className="flex h-96 items-center justify-center">
@@ -1200,8 +1202,6 @@ export default function PurchaseOrdersPage() {
                 </Button>
               </div>
             )}
-          </>
-        )}
 
         {/* Select PO for Import Dialog */}
         <Dialog open={isSelectPODialogOpen} onOpenChange={setIsSelectPODialogOpen}>

@@ -111,6 +111,37 @@ export interface EditHistoryEntry {
   timestamp: number;
 }
 
+// ========== PO List Spreadsheet Types ==========
+
+/** Row data for the PO list spreadsheet — one row per purchase order */
+export interface PoListRow {
+  _poId: number;
+  po_number: string;
+  headline: string | null;
+  status: string;
+  po_date: string | null;
+  revision_date: string | null;
+  shipping_term: string | null;
+  etd_date: string | null;
+  eta_date: string | null;
+  ex_factory_date: string | null;
+  in_warehouse_date: string | null;
+  total_quantity: number;
+  total_value: number;
+  styles_count: number;
+  payment_terms: string | null;
+  ship_to: string | null;
+  importer_name: string | null;
+  agency_name: string | null;
+  retailer_name: string | null;
+  season_name: string | null;
+  country_name: string | null;
+  warehouse_name: string | null;
+  currency_code: string | null;
+  currency_symbol: string | null;
+  created_at: string | null;
+}
+
 /** Toolbar active tab */
 export type ToolbarTab = 'home' | 'insert' | 'data' | 'view';
 

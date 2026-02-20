@@ -14,7 +14,7 @@ import DataEditor, {
 } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 
-import { SpreadsheetRow, SpreadsheetSelection } from '@/types/spreadsheet';
+import { SpreadsheetRow, SpreadsheetSelection, SpreadsheetColumnDef } from '@/types/spreadsheet';
 import { SPREADSHEET_COLUMNS, colIndexToLetter, cellAddress } from './hooks/useSpreadsheetColumns';
 
 /** Excel-like green theme */
@@ -40,7 +40,7 @@ const EXCEL_THEME: Partial<Theme> = {
 };
 
 interface SpreadsheetGridProps {
-  rows: SpreadsheetRow[];
+  rows: any[];
   canEdit: boolean;
   currencySymbol: string;
   visibleColumnKeys: string[];
@@ -49,6 +49,10 @@ interface SpreadsheetGridProps {
   freezeColumns: number;
   showRowNumbers: boolean;
   gridRef?: React.RefObject<DataEditorRef | null>;
+  /** Optional column definitions override (defaults to SPREADSHEET_COLUMNS) */
+  columns?: SpreadsheetColumnDef[];
+  /** Callback when a cell is double-clicked / activated */
+  onCellActivated?: (cell: Item) => void;
 }
 
 export function SpreadsheetGrid({
@@ -61,14 +65,18 @@ export function SpreadsheetGrid({
   freezeColumns,
   showRowNumbers,
   gridRef: externalRef,
+  columns: columnsProp,
+  onCellActivated,
 }: SpreadsheetGridProps) {
   const internalRef = useRef<DataEditorRef>(null);
   const ref = externalRef ?? internalRef;
 
+  const allColumns = columnsProp ?? SPREADSHEET_COLUMNS;
+
   // Filter columns by visibility
   const activeColumns = useMemo(
-    () => SPREADSHEET_COLUMNS.filter((c) => visibleColumnKeys.includes(c.key)),
-    [visibleColumnKeys],
+    () => allColumns.filter((c) => visibleColumnKeys.includes(c.key)),
+    [allColumns, visibleColumnKeys],
   );
 
   // Map to glide-data-grid GridColumn format
@@ -315,6 +323,7 @@ export function SpreadsheetGrid({
       rowSelect="multi"
       preventDiagonalScrolling={false}
       rightElement={null}
+      onCellActivated={onCellActivated}
     />
   );
 }
