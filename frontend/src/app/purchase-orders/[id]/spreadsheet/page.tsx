@@ -4,12 +4,12 @@ import { use } from 'react';
 import { SpreadsheetView } from '@/components/spreadsheet/SpreadsheetView';
 
 interface PageProps {
-  params: Promise<{ poId: string }>;
+  params: Promise<{ id: string }>;
 }
 
 export default function SpreadsheetPage({ params }: PageProps) {
-  const { poId } = use(params);
-  const numericId = parseInt(poId, 10);
+  const { id } = use(params);
+  const numericId = parseInt(id, 10);
 
   if (isNaN(numericId)) {
     return (
