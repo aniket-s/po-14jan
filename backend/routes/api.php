@@ -340,12 +340,6 @@ Route::middleware('auth:sanctum')->group(function () {
         // Countries
         Route::apiResource('countries', \App\Http\Controllers\Api\CountryController::class);
 
-        // Agents
-        Route::apiResource('agents', \App\Http\Controllers\Api\AgentController::class);
-
-        // Vendors
-        Route::apiResource('vendors', \App\Http\Controllers\Api\VendorController::class);
-
         // Warehouses
         Route::apiResource('warehouses', \App\Http\Controllers\Api\WarehouseController::class);
 

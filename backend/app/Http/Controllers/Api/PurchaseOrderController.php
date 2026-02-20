@@ -180,8 +180,6 @@ class PurchaseOrderController extends Controller
                 'retailer_id' => $po->retailer_id,
                 'country_id' => $po->country_id,
                 'warehouse_id' => $po->warehouse_id,
-                'agent_id' => $po->agent_id,
-                'vendor_id' => $po->vendor_id,
                 'payment_term' => $po->payment_term,
                 'country_of_origin' => $po->country_of_origin,
                 'packing_method' => $po->packing_method,
@@ -246,8 +244,6 @@ class PurchaseOrderController extends Controller
             'season_id' => 'nullable|exists:seasons,id',
             'country_id' => 'nullable|exists:countries,id',
             'warehouse_id' => 'nullable|exists:warehouses,id',
-            'agent_id' => 'nullable|exists:agents,id',
-            'vendor_id' => 'nullable|exists:vendors,id',
             'shipping_term' => 'nullable|in:FOB,DDP',
             'payment_term' => 'nullable|string|max:100',
             'country_of_origin' => 'nullable|string|max:100',
@@ -259,17 +255,6 @@ class PurchaseOrderController extends Controller
             return response()->json([
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // VALIDATION: Either agent_id or vendor_id (factory) must be selected
-        if (empty($request->agent_id) && empty($request->vendor_id)) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors' => [
-                    'agent_id' => ['Either Agent or Factory (Vendor) must be selected'],
-                    'vendor_id' => ['Either Agent or Factory (Vendor) must be selected'],
-                ]
             ], 422);
         }
 
@@ -377,8 +362,6 @@ class PurchaseOrderController extends Controller
             'retailer_id' => $request->retailer_id,
             'country_id' => $request->country_id,
             'warehouse_id' => $request->warehouse_id,
-            'agent_id' => $request->agent_id,
-            'vendor_id' => $request->vendor_id,
             'shipping_term' => $shippingTerm,
             'payment_term' => $request->payment_term,
             'country_of_origin' => $request->country_of_origin,
@@ -450,8 +433,6 @@ class PurchaseOrderController extends Controller
             'season_id' => 'nullable|exists:seasons,id',
             'country_id' => 'nullable|exists:countries,id',
             'warehouse_id' => 'nullable|exists:warehouses,id',
-            'agent_id' => 'nullable|exists:agents,id',
-            'vendor_id' => 'nullable|exists:vendors,id',
             'shipping_term' => 'nullable|in:FOB,DDP',
             'payment_term' => 'nullable|string|max:100',
             'country_of_origin' => 'nullable|string|max:100',
@@ -506,8 +487,6 @@ class PurchaseOrderController extends Controller
             'retailer_id' => $request->retailer_id,
             'country_id' => $request->country_id,
             'warehouse_id' => $request->warehouse_id,
-            'agent_id' => $request->agent_id,
-            'vendor_id' => $request->vendor_id,
             'shipping_term' => $request->shipping_term ?? $po->shipping_term,
             'payment_term' => $request->payment_term,
             'country_of_origin' => $request->country_of_origin,

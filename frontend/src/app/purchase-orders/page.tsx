@@ -42,8 +42,6 @@ import { ExcelImportDialog } from '@/components/purchase-orders/ExcelImportDialo
 import { CreateRetailerDialog } from '@/components/master-data/CreateRetailerDialog';
 import { CreateSeasonDialog } from '@/components/master-data/CreateSeasonDialog';
 import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseDialog';
-import { CreateAgentDialog } from '@/components/master-data/CreateAgentDialog';
-import { CreateVendorDialog } from '@/components/master-data/CreateVendorDialog';
 import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialog';
 import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
 import { CreatePaymentTermDialog } from '@/components/master-data/CreatePaymentTermDialog';
@@ -58,8 +56,6 @@ const poSchema = z.object({
   shipping_method: z.string().optional(),
   notes: z.string().optional(),
   season_id: z.string().optional(),
-  agent_id: z.string().optional(),
-  vendor_id: z.string().optional(),
   warehouse_id: z.string().optional(),
   country_id: z.string().optional(),
   shipping_term: z.enum(['FOB', 'DDP']).optional(),
@@ -106,8 +102,6 @@ export default function PurchaseOrdersPage() {
   const [isCreateRetailerDialogOpen, setIsCreateRetailerDialogOpen] = useState(false);
   const [isCreateSeasonDialogOpen, setIsCreateSeasonDialogOpen] = useState(false);
   const [isCreateWarehouseDialogOpen, setIsCreateWarehouseDialogOpen] = useState(false);
-  const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
-  const [isCreateVendorDialogOpen, setIsCreateVendorDialogOpen] = useState(false);
   const [isCreateCountryDialogOpen, setIsCreateCountryDialogOpen] = useState(false);
   const [isCreateCurrencyDialogOpen, setIsCreateCurrencyDialogOpen] = useState(false);
   const [isCreatePaymentTermDialogOpen, setIsCreatePaymentTermDialogOpen] = useState(false);
@@ -118,8 +112,6 @@ export default function PurchaseOrdersPage() {
   const [retailers, setRetailers] = useState<any[]>([]);
   const [countries, setCountries] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [vendors, setVendors] = useState<any[]>([]);
 
   const [autoGeneratePO, setAutoGeneratePO] = useState(true);
   const [isGeneratingPO, setIsGeneratingPO] = useState(false);
@@ -169,13 +161,11 @@ export default function PurchaseOrdersPage() {
 
   const fetchMasterData = async () => {
     try {
-      const [seasonsRes, retailersRes, countriesRes, warehousesRes, agentsRes, vendorsRes, currenciesRes, paymentTermsRes] = await Promise.all([
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes, currenciesRes, paymentTermsRes] = await Promise.all([
         api.get('/master-data/seasons?all=true'),
         api.get('/master-data/retailers?all=true'),
         api.get('/master-data/countries?all=true'),
         api.get('/master-data/warehouses?all=true'),
-        api.get('/master-data/agents?all=true'),
-        api.get('/master-data/vendors?all=true'),
         api.get('/master-data/currencies?all=true'),
         api.get('/master-data/payment-terms?all=true'),
       ]);
@@ -184,8 +174,6 @@ export default function PurchaseOrdersPage() {
       setRetailers(retailersRes.data || []);
       setCountries(countriesRes.data || []);
       setWarehouses(warehousesRes.data || []);
-      setAgents(agentsRes.data || []);
-      setVendors(vendorsRes.data || []);
       setCurrencies(currenciesRes.data || []);
       setPaymentTerms(paymentTermsRes.data || []);
     } catch (error) {
@@ -288,8 +276,6 @@ export default function PurchaseOrdersPage() {
         shipping_method: data.shipping_method,
         notes: data.notes,
         season_id: data.season_id ? parseInt(data.season_id) : null,
-        agent_id: data.agent_id ? parseInt(data.agent_id) : null,
-        vendor_id: data.vendor_id ? parseInt(data.vendor_id) : null,
         warehouse_id: data.warehouse_id ? parseInt(data.warehouse_id) : null,
         country_id: data.country_id ? parseInt(data.country_id) : null,
         shipping_term: shippingTerm || null,
@@ -575,56 +561,6 @@ export default function PurchaseOrdersPage() {
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="agent_id">Agent</Label>
-                          <div className="flex gap-2">
-                            <Select onValueChange={(value) => setValue('agent_id', value)}>
-                              <SelectTrigger className="flex-1">
-                                <SelectValue placeholder="Select agent" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {agents.map((agent) => (
-                                  <SelectItem key={agent.id} value={agent.id.toString()}>
-                                    {agent.company_name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => setIsCreateAgentDialogOpen(true)}
-                              title="Create new agent"
-                            >
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="vendor_id">Vendor/Factory</Label>
-                          <div className="flex gap-2">
-                            <Select onValueChange={(value) => setValue('vendor_id', value)}>
-                              <SelectTrigger className="flex-1">
-                                <SelectValue placeholder="Select vendor" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {vendors.map((vendor) => (
-                                  <SelectItem key={vendor.id} value={vendor.id.toString()}>
-                                    {vendor.company_name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => setIsCreateVendorDialogOpen(true)}
-                              title="Create new vendor/factory"
-                            >
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
                         <div className="space-y-2">
                           <Label htmlFor="country_id">Country of Origin *</Label>
                           <div className="flex gap-2">
@@ -1321,16 +1257,6 @@ export default function PurchaseOrdersPage() {
         <CreateWarehouseDialog
           open={isCreateWarehouseDialogOpen}
           onOpenChange={setIsCreateWarehouseDialogOpen}
-          onSuccess={fetchMasterData}
-        />
-        <CreateAgentDialog
-          open={isCreateAgentDialogOpen}
-          onOpenChange={setIsCreateAgentDialogOpen}
-          onSuccess={fetchMasterData}
-        />
-        <CreateVendorDialog
-          open={isCreateVendorDialogOpen}
-          onOpenChange={setIsCreateVendorDialogOpen}
           onSuccess={fetchMasterData}
         />
         <CreateCountryDialog
