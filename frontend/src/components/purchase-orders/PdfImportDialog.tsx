@@ -45,7 +45,6 @@ import {
 import { analyzePdfForPOImport, createPOFromPdf } from '@/services/styles';
 import type {
   PdfAnalysisResult,
-  PdfParsedField,
   PdfParsedStyle,
   PdfCreatePORequest,
   PdfCreatePOResult,

@@ -1,4 +1,5 @@
 import api from '@/lib/api';
+import type { PdfAnalysisResult, PdfCreatePORequest, PdfCreatePOResult } from '@/types';
 
 export interface ColorObject {
   id: number;
@@ -379,8 +380,6 @@ export const downloadStylesTemplate = async (): Promise<Blob> => {
 // ========================================
 // PDF IMPORT FOR PURCHASE ORDERS
 // ========================================
-
-import type { PdfAnalysisResult, PdfCreatePORequest, PdfCreatePOResult } from '@/types';
 
 /**
  * Analyze a PDF purchase order file
