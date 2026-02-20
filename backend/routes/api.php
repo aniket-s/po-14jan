@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\PurchaseOrderStyleController;
 use App\Http\Controllers\Api\StyleController;
 use App\Http\Controllers\Api\ExcelImportController;
+use App\Http\Controllers\Api\PdfImportController;
 use App\Http\Controllers\Api\FileUploadController;
 use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\FactoryAssignmentController;
@@ -470,6 +471,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Excel Import Template Download (public within auth)
     Route::get('/excel-templates/styles', [ExcelImportController::class, 'downloadTemplate']);
+
+    // PDF Import for Purchase Orders
+    Route::prefix('purchase-orders/pdf-import')->group(function () {
+        Route::middleware('permission:po.create')->group(function () {
+            Route::post('/analyze', [PdfImportController::class, 'analyze']);
+            Route::post('/create', [PdfImportController::class, 'create']);
+        });
+    });
 
     // Import Mapping Management
     Route::prefix('import-mappings')->group(function () {

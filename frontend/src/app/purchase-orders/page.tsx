@@ -32,13 +32,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Plus, Search, Eye, Edit, Trash2, FileDown, FileUp, Loader2, List, Sheet } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Trash2, FileDown, FileUp, FileText, Loader2, List, Sheet } from 'lucide-react';
 import api from '@/lib/api';
 import { PurchaseOrder, PaginatedResponse } from '@/types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { ExcelImportDialog } from '@/components/purchase-orders/ExcelImportDialog';
+import { PdfImportDialog } from '@/components/purchase-orders/PdfImportDialog';
 import { PoListSpreadsheetView } from '@/components/spreadsheet/PoListSpreadsheetView';
 import { CreateRetailerDialog } from '@/components/master-data/CreateRetailerDialog';
 import { CreateSeasonDialog } from '@/components/master-data/CreateSeasonDialog';
@@ -100,6 +101,7 @@ export default function PurchaseOrdersPage() {
   const [isSelectPODialogOpen, setIsSelectPODialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedPOForImport, setSelectedPOForImport] = useState<number | null>(null);
+  const [isPdfImportDialogOpen, setIsPdfImportDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'excel'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('po-view-mode') as 'list' | 'excel') || 'list';
@@ -407,6 +409,16 @@ export default function PurchaseOrdersPage() {
               >
                 <FileUp className="mr-2 h-4 w-4" />
                 Import Styles
+              </Button>
+            )}
+            {can('po.create') && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPdfImportDialogOpen(true)}
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                Import PDF
               </Button>
             )}
             {can('po.create') && (
@@ -1273,6 +1285,24 @@ export default function PurchaseOrdersPage() {
             }}
           />
         )}
+
+        {/* PDF Import Dialog */}
+        <PdfImportDialog
+          isOpen={isPdfImportDialogOpen}
+          onClose={() => setIsPdfImportDialogOpen(false)}
+          onImportComplete={() => {
+            fetchPurchaseOrders();
+            setIsPdfImportDialogOpen(false);
+          }}
+          masterData={{
+            currencies,
+            paymentTerms,
+            seasons,
+            retailers,
+            countries,
+            warehouses,
+          }}
+        />
 
         {/* Create Dialogs */}
         <CreateRetailerDialog

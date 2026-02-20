@@ -375,3 +375,31 @@ export const downloadStylesTemplate = async (): Promise<Blob> => {
   const response = await api.get('/styles/template/download', { responseType: 'blob' });
   return response.data;
 };
+
+// ========================================
+// PDF IMPORT FOR PURCHASE ORDERS
+// ========================================
+
+import type { PdfAnalysisResult, PdfCreatePORequest, PdfCreatePOResult } from '@/types';
+
+/**
+ * Analyze a PDF purchase order file
+ */
+export const analyzePdfForPOImport = async (file: File): Promise<PdfAnalysisResult> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await api.post('/purchase-orders/pdf-import/analyze', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+
+  return response.data;
+};
+
+/**
+ * Create a PO from parsed PDF data
+ */
+export const createPOFromPdf = async (data: PdfCreatePORequest): Promise<PdfCreatePOResult> => {
+  const response = await api.post('/purchase-orders/pdf-import/create', data);
+  return response.data;
+};

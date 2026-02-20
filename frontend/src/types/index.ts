@@ -308,3 +308,100 @@ export interface ExcelViewFilters {
   date_from?: string;
   date_to?: string;
 }
+
+// ========================================
+// PDF Import Types
+// ========================================
+
+export interface PdfParsedField<T = string> {
+  value: T | null;
+  raw_text?: string;
+  status: 'matched' | 'parsed' | 'unrecognized' | 'missing';
+  confidence?: 'high' | 'medium' | 'low';
+}
+
+export interface PdfParsedStyle {
+  style_number: PdfParsedField;
+  description: PdfParsedField;
+  color_name: PdfParsedField;
+  size_breakdown: PdfParsedField<Record<string, number>>;
+  quantity: PdfParsedField<number>;
+  unit_price: PdfParsedField<number>;
+  total_amount: PdfParsedField<number>;
+}
+
+export interface PdfParsedTotals {
+  total_quantity: number;
+  total_value: number;
+  calculated_quantity: number;
+  calculated_value: number;
+  validation_passed: boolean;
+}
+
+export interface PdfAnalysisResult {
+  success: boolean;
+  parsed_data: {
+    po_header: Record<string, PdfParsedField<any>>;
+    styles: PdfParsedStyle[];
+    totals: PdfParsedTotals;
+  };
+  temp_file_path: string;
+  warnings: string[];
+  errors: string[];
+  raw_text: string;
+}
+
+export interface PdfCreatePORequest {
+  po_header: {
+    po_number: string;
+    po_date: string;
+    headline?: string;
+    retailer_id?: number | null;
+    season_id?: number | null;
+    currency_id?: number | null;
+    payment_term_id?: number | null;
+    country_id?: number | null;
+    warehouse_id?: number | null;
+    agency_id?: number | null;
+    shipping_term?: string;
+    ship_to?: string;
+    ship_to_address?: string;
+    country_of_origin?: string;
+    etd_date?: string;
+    ex_factory_date?: string;
+    eta_date?: string;
+    in_warehouse_date?: string;
+    packing_method?: string;
+    other_terms?: string;
+    additional_notes?: string;
+    revision_number?: number;
+  };
+  styles: Array<{
+    style_number: string;
+    description?: string;
+    color_name?: string;
+    size_breakdown?: Record<string, number> | null;
+    quantity: number;
+    unit_price: number;
+  }>;
+  temp_file_path?: string;
+}
+
+export interface PdfCreatePOResult {
+  success: boolean;
+  message: string;
+  purchase_order: {
+    id: number;
+    po_number: string;
+    status: string;
+    total_quantity: number;
+    total_value: number;
+    total_styles: number;
+  };
+  styles_created: number;
+  styles_errors: Array<{
+    row: number;
+    style_number: string;
+    error: string;
+  }>;
+}
