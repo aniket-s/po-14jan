@@ -10,7 +10,6 @@ export const SPREADSHEET_COLUMNS: SpreadsheetColumnDef[] = [
   { key: 'description',       title: 'Description',      width: 200, editable: true,  target: 'style', kind: 'text',     defaultVisible: true,  align: 'left' },
   { key: 'color_name',        title: 'Color',            width: 100, editable: true,  target: 'style', kind: 'text',     defaultVisible: true,  align: 'left' },
   { key: 'color_code',        title: 'Color Code',       width: 90,  editable: true,  target: 'style', kind: 'text',     defaultVisible: true,  align: 'left' },
-  { key: 'images',            title: 'CAD',              width: 70,  editable: false, target: 'style', kind: 'image',    defaultVisible: true,  align: 'center' },
   { key: 'fabric',            title: 'Fabric',           width: 120, editable: true,  target: 'style', kind: 'text',     defaultVisible: true,  align: 'left' },
   { key: 'fabric_type_name',  title: 'Fabric Type',      width: 110, editable: true,  target: 'style', kind: 'text',     defaultVisible: false, align: 'left' },
   { key: 'fit',               title: 'Fit',              width: 80,  editable: true,  target: 'style', kind: 'text',     defaultVisible: true,  align: 'left' },
