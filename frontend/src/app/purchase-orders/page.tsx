@@ -1302,6 +1302,7 @@ export default function PurchaseOrdersPage() {
             countries,
             warehouses,
           }}
+          onRefreshMasterData={fetchMasterData}
         />
 
         {/* Create Dialogs */}

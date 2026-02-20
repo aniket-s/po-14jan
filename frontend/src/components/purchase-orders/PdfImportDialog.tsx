@@ -41,14 +41,22 @@ import {
   ArrowLeft,
   ArrowRight,
   Eye,
+  Plus,
 } from 'lucide-react';
 import { analyzePdfForPOImport, createPOFromPdf } from '@/services/styles';
+import api from '@/lib/api';
 import type {
   PdfAnalysisResult,
   PdfParsedStyle,
   PdfCreatePORequest,
   PdfCreatePOResult,
 } from '@/types';
+import { CreateRetailerDialog } from '@/components/master-data/CreateRetailerDialog';
+import { CreateSeasonDialog } from '@/components/master-data/CreateSeasonDialog';
+import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseDialog';
+import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialog';
+import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
+import { CreatePaymentTermDialog } from '@/components/master-data/CreatePaymentTermDialog';
 
 interface PdfImportDialogProps {
   isOpen: boolean;
@@ -62,6 +70,7 @@ interface PdfImportDialogProps {
     countries: any[];
     warehouses: any[];
   };
+  onRefreshMasterData?: () => void;
 }
 
 type Step = 'upload' | 'review-header' | 'review-styles' | 'confirm' | 'result';
@@ -86,6 +95,7 @@ export function PdfImportDialog({
   onClose,
   onImportComplete,
   masterData,
+  onRefreshMasterData,
 }: PdfImportDialogProps) {
   const [step, setStep] = useState<Step>('upload');
   const [isUploading, setIsUploading] = useState(false);
@@ -99,6 +109,21 @@ export function PdfImportDialog({
   // Editable form state for styles
   const [stylesForm, setStylesForm] = useState<Array<Record<string, any>>>([]);
 
+  // Create dialog states
+  const [isCreateRetailerOpen, setIsCreateRetailerOpen] = useState(false);
+  const [isCreateSeasonOpen, setIsCreateSeasonOpen] = useState(false);
+  const [isCreateCurrencyOpen, setIsCreateCurrencyOpen] = useState(false);
+  const [isCreatePaymentTermOpen, setIsCreatePaymentTermOpen] = useState(false);
+  const [isCreateCountryOpen, setIsCreateCountryOpen] = useState(false);
+  const [isCreateWarehouseOpen, setIsCreateWarehouseOpen] = useState(false);
+
+  // Payment terms structured state
+  const [paymentTermCode, setPaymentTermCode] = useState<string>('');
+  const [paymentPercentage, setPaymentPercentage] = useState<string>('');
+
+  // Sample schedule state
+  const [sampleSchedule, setSampleSchedule] = useState<Record<string, string>>({});
+
   const resetState = useCallback(() => {
     setStep('upload');
     setIsUploading(false);
@@ -108,11 +133,140 @@ export function PdfImportDialog({
     setCreateResult(null);
     setHeaderForm({});
     setStylesForm([]);
+    setPaymentTermCode('');
+    setPaymentPercentage('');
+    setSampleSchedule({});
   }, []);
 
   const handleClose = () => {
     resetState();
     onClose();
+  };
+
+  // Helper: get sailing days for selected country
+  const getSelectedCountrySailingDays = (): number => {
+    if (!headerForm.country_id) return 0;
+    const country = masterData.countries.find(
+      (c: any) => String(c.id) === String(headerForm.country_id)
+    );
+    return country?.sailing_time_days || 0;
+  };
+
+  // FOB date calculation: ETD -> auto-calculate Ex-Factory, ETA, IHD
+  const handleEtdChange = (etdDate: string) => {
+    updateHeader('etd_date', etdDate);
+    if (!etdDate) return;
+
+    const shippingTerm = headerForm.shipping_term || 'FOB';
+    if (shippingTerm === 'FOB') {
+      // Ex-Factory = ETD - 7 days
+      const exFactory = new Date(etdDate);
+      exFactory.setDate(exFactory.getDate() - 7);
+      updateHeader('ex_factory_date', exFactory.toISOString().split('T')[0]);
+
+      // ETA = ETD + sailing time
+      const sailingDays = getSelectedCountrySailingDays();
+      const eta = new Date(etdDate);
+      eta.setDate(eta.getDate() + sailingDays);
+      updateHeader('eta_date', eta.toISOString().split('T')[0]);
+
+      // IHD = ETA + 5 days
+      const ihd = new Date(eta);
+      ihd.setDate(ihd.getDate() + 5);
+      updateHeader('in_warehouse_date', ihd.toISOString().split('T')[0]);
+    }
+  };
+
+  // DDP date calculation: In-Warehouse -> auto-calculate ETD, ETA
+  const handleInWarehouseChange = (inWarehouseDate: string) => {
+    updateHeader('in_warehouse_date', inWarehouseDate);
+    if (!inWarehouseDate) return;
+
+    const shippingTerm = headerForm.shipping_term || 'FOB';
+    if (shippingTerm === 'DDP') {
+      const sailingDays = getSelectedCountrySailingDays();
+      // ETD = In-Warehouse - sailing - 5 days
+      const etd = new Date(inWarehouseDate);
+      etd.setDate(etd.getDate() - sailingDays - 5);
+      updateHeader('etd_date', etd.toISOString().split('T')[0]);
+
+      // ETA = ETD + sailing
+      const eta = new Date(etd);
+      eta.setDate(eta.getDate() + sailingDays);
+      updateHeader('eta_date', eta.toISOString().split('T')[0]);
+
+      // Ex-Factory = ETD - 7 days
+      const exFactory = new Date(etd);
+      exFactory.setDate(exFactory.getDate() - 7);
+      updateHeader('ex_factory_date', exFactory.toISOString().split('T')[0]);
+    }
+  };
+
+  // Recalculate dates when country changes (updates sailing time)
+  const handleCountryChange = (countryId: string) => {
+    updateHeader('country_id', countryId);
+    const country = masterData.countries.find(
+      (c: any) => String(c.id) === countryId
+    );
+    const sailingDays = country?.sailing_time_days || 0;
+
+    const shippingTerm = headerForm.shipping_term || 'FOB';
+    if (shippingTerm === 'FOB' && headerForm.etd_date) {
+      const eta = new Date(headerForm.etd_date);
+      eta.setDate(eta.getDate() + sailingDays);
+      setHeaderForm(prev => ({
+        ...prev,
+        country_id: countryId,
+        eta_date: eta.toISOString().split('T')[0],
+        in_warehouse_date: new Date(eta.getTime() + 5 * 86400000).toISOString().split('T')[0],
+      }));
+    } else if (shippingTerm === 'DDP' && headerForm.in_warehouse_date) {
+      const etd = new Date(headerForm.in_warehouse_date);
+      etd.setDate(etd.getDate() - sailingDays - 5);
+      const eta = new Date(etd);
+      eta.setDate(eta.getDate() + sailingDays);
+      setHeaderForm(prev => ({
+        ...prev,
+        country_id: countryId,
+        etd_date: etd.toISOString().split('T')[0],
+        eta_date: eta.toISOString().split('T')[0],
+      }));
+    } else {
+      // Just update country_id
+    }
+  };
+
+  // Auto-generate sample schedule from PO date + ETD
+  const handleGenerateSampleSchedule = async () => {
+    const poDate = headerForm.po_date;
+    const etdDate = headerForm.etd_date;
+    if (!poDate || !etdDate) {
+      setError('Please set PO Date and ETD Date before generating the sample schedule');
+      return;
+    }
+    try {
+      const response = await api.post('/purchase-orders/sample-schedule', {
+        po_date: poDate,
+        etd_date: etdDate,
+      });
+      if (response.data?.schedule) {
+        const schedule = response.data.schedule;
+        const formatDate = (dateString: string) => dateString ? dateString.split('T')[0] : '';
+        const newSchedule: Record<string, string> = {
+          lab_dip_submission: formatDate(schedule.lab_dip?.date || ''),
+          fit_sample_submission: formatDate(schedule.fit_samples?.date || ''),
+          trim_approvals: formatDate(schedule.trim_approvals?.date || ''),
+          first_proto_submission: formatDate(schedule.first_proto_samples?.date || ''),
+          bulk_fabric_inhouse: formatDate(schedule.bulk_fabric_inhouse?.date || ''),
+          pp_sample_submission: formatDate(schedule.pp_sample?.date || ''),
+          production_start: formatDate(schedule.production_start?.date || ''),
+          top_approval: formatDate(schedule.top_approval?.date || ''),
+        };
+        setSampleSchedule(newSchedule);
+      }
+    } catch {
+      setError('Failed to generate sample schedule');
+    }
   };
 
   // Step 1: Upload and analyze PDF
@@ -159,6 +313,7 @@ export function PdfImportDialog({
         header.eta_date = ph.eta_date?.value || '';
         header.in_warehouse_date = ph.in_warehouse_date?.value || '';
         header.packing_method = ph.packing_method?.value || '';
+        header.packing_guidelines = '';
         header.other_terms = ph.other_terms?.value || '';
         header.additional_notes = ph.additional_notes?.value || '';
         header.revision_number = ph.revision_number?.value || 1;
@@ -167,6 +322,7 @@ export function PdfImportDialog({
         header._buyer_name = ph.buyer_name?.value || '';
         header._department = ph.department?.value || '';
         header._division = ph.division?.value || '';
+        header._packing_type = ph.packing_method?.packing_type || null;
       }
       setHeaderForm(header);
 
@@ -222,12 +378,28 @@ export function PdfImportDialog({
     value: stylesForm.reduce((sum, s) => sum + Number(s.total_amount || 0), 0),
   };
 
+  // Check if any styles have price = 0
+  const zeroPriceCount = stylesForm.filter(s => Number(s.unit_price) === 0).length;
+
   // Step 4: Create PO
   const handleCreatePO = async () => {
     setIsCreating(true);
     setError(null);
 
     try {
+      // Build payment_terms_structured if a payment term code is selected
+      let paymentTermsStructured: { term: string; percentage?: number } | undefined;
+      if (paymentTermCode) {
+        paymentTermsStructured = { term: paymentTermCode };
+        if (paymentPercentage) {
+          paymentTermsStructured.percentage = parseFloat(paymentPercentage);
+        }
+      }
+
+      // Build sample_schedule if any dates are set
+      const hasScheduleDates = Object.values(sampleSchedule).some(v => v);
+      const sampleScheduleData = hasScheduleDates ? sampleSchedule : undefined;
+
       const request: PdfCreatePORequest = {
         po_header: {
           po_number: headerForm.po_number,
@@ -248,9 +420,12 @@ export function PdfImportDialog({
           eta_date: headerForm.eta_date || undefined,
           in_warehouse_date: headerForm.in_warehouse_date || undefined,
           packing_method: headerForm.packing_method || undefined,
+          packing_guidelines: headerForm.packing_guidelines || undefined,
           other_terms: headerForm.other_terms || undefined,
           additional_notes: headerForm.additional_notes || undefined,
           revision_number: headerForm.revision_number ? Number(headerForm.revision_number) : undefined,
+          payment_terms_structured: paymentTermsStructured,
+          sample_schedule: sampleScheduleData,
         },
         styles: stylesForm.map(s => ({
           style_number: s.style_number,
@@ -283,626 +458,866 @@ export function PdfImportDialog({
     return analysisResult?.parsed_data?.po_header?.[fieldName]?.status || 'missing';
   };
 
+  const handleMasterDataCreated = () => {
+    if (onRefreshMasterData) {
+      onRefreshMasterData();
+    }
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {step === 'upload' && 'Import Purchase Order from PDF'}
-            {step === 'review-header' && 'Review PO Header Details'}
-            {step === 'review-styles' && 'Review Line Items / Styles'}
-            {step === 'confirm' && 'Confirm & Create Purchase Order'}
-            {step === 'result' && 'Import Result'}
-          </DialogTitle>
-          <DialogDescription>
-            {step === 'upload' && 'Upload a PDF purchase order to automatically extract and create a PO'}
-            {step === 'review-header' && 'Review and correct the extracted PO header information'}
-            {step === 'review-styles' && 'Review and edit the extracted line items before creating'}
-            {step === 'confirm' && 'Review the final summary and create the purchase order'}
-            {step === 'result' && 'Purchase order creation result'}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {step === 'upload' && 'Import Purchase Order from PDF'}
+              {step === 'review-header' && 'Review PO Header Details'}
+              {step === 'review-styles' && 'Review Line Items / Styles'}
+              {step === 'confirm' && 'Confirm & Create Purchase Order'}
+              {step === 'result' && 'Import Result'}
+            </DialogTitle>
+            <DialogDescription>
+              {step === 'upload' && 'Upload a PDF purchase order to automatically extract and create a PO'}
+              {step === 'review-header' && 'Review and correct the extracted PO header information'}
+              {step === 'review-styles' && 'Review and edit the extracted line items before creating'}
+              {step === 'confirm' && 'Review the final summary and create the purchase order'}
+              {step === 'result' && 'Purchase order creation result'}
+            </DialogDescription>
+          </DialogHeader>
 
-        {/* Warnings */}
-        {analysisResult?.warnings && analysisResult.warnings.length > 0 && step !== 'upload' && step !== 'result' && (
-          <Alert variant="default" className="border-yellow-300 bg-yellow-50">
-            <AlertTriangle className="h-4 w-4 text-yellow-600" />
-            <AlertDescription>
-              <ul className="list-disc list-inside text-sm text-yellow-800 space-y-1">
-                {analysisResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Error */}
-        {error && (
-          <Alert variant="destructive">
-            <XCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {/* Step 1: Upload */}
-        {step === 'upload' && (
-          <div className="space-y-4 py-4">
-            <div
-              className="border-2 border-dashed rounded-lg p-12 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-colors"
-              onClick={() => document.getElementById('pdf-file-input')?.click()}
-            >
-              {isUploading ? (
-                <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Analyzing PDF... This may take a moment.</p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-3">
-                  <FileUp className="h-10 w-10 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Click to select a PDF purchase order file</p>
-                    <p className="text-xs text-muted-foreground mt-1">PDF files only, up to 20MB</p>
-                  </div>
-                </div>
-              )}
-              <input
-                id="pdf-file-input"
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={handleFileUpload}
-                className="hidden"
-                disabled={isUploading}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Review PO Header */}
-        {step === 'review-header' && (
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              {/* PO Number */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>PO Number <span className="text-red-500">*</span></Label>
-                  <StatusBadge status={getFieldStatus('po_number')} />
-                </div>
-                <Input
-                  value={headerForm.po_number || ''}
-                  onChange={(e) => updateHeader('po_number', e.target.value)}
-                  placeholder="e.g. PO-2024-001"
-                />
-              </div>
-
-              {/* PO Date */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>PO Date <span className="text-red-500">*</span></Label>
-                  <StatusBadge status={getFieldStatus('po_date')} />
-                </div>
-                <Input
-                  type="date"
-                  value={headerForm.po_date || ''}
-                  onChange={(e) => updateHeader('po_date', e.target.value)}
-                />
-              </div>
-
-              {/* Headline */}
-              <div className="space-y-1">
-                <Label>Headline</Label>
-                <Input
-                  value={headerForm.headline || ''}
-                  onChange={(e) => updateHeader('headline', e.target.value)}
-                  placeholder="Brief description for this PO"
-                />
-              </div>
-
-              {/* Shipping Term */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>Shipping Term</Label>
-                  <StatusBadge status={getFieldStatus('shipping_term')} />
-                </div>
-                <Select value={headerForm.shipping_term || ''} onValueChange={(v) => updateHeader('shipping_term', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select shipping term" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="FOB">FOB</SelectItem>
-                    <SelectItem value="DDP">DDP</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Retailer */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>Retailer</Label>
-                  <StatusBadge status={getFieldStatus('retailer_id')} />
-                </div>
-                <Select value={String(headerForm.retailer_id || '')} onValueChange={(v) => updateHeader('retailer_id', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select retailer" /></SelectTrigger>
-                  <SelectContent>
-                    {masterData.retailers.map((r: any) => (
-                      <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Season */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>Season</Label>
-                  <StatusBadge status={getFieldStatus('season_id')} />
-                </div>
-                <Select value={String(headerForm.season_id || '')} onValueChange={(v) => updateHeader('season_id', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select season" /></SelectTrigger>
-                  <SelectContent>
-                    {masterData.seasons.map((s: any) => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Currency */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>Currency</Label>
-                  <StatusBadge status={getFieldStatus('currency_id')} />
-                </div>
-                <Select value={String(headerForm.currency_id || '')} onValueChange={(v) => updateHeader('currency_id', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select currency" /></SelectTrigger>
-                  <SelectContent>
-                    {masterData.currencies.map((c: any) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.code} ({c.symbol})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Payment Term */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>Payment Term</Label>
-                  <StatusBadge status={getFieldStatus('payment_term_id')} />
-                </div>
-                <Select value={String(headerForm.payment_term_id || '')} onValueChange={(v) => updateHeader('payment_term_id', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select payment term" /></SelectTrigger>
-                  <SelectContent>
-                    {masterData.paymentTerms.map((pt: any) => (
-                      <SelectItem key={pt.id} value={String(pt.id)}>{pt.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Country */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>Country</Label>
-                  <StatusBadge status={getFieldStatus('country_id')} />
-                </div>
-                <Select value={String(headerForm.country_id || '')} onValueChange={(v) => updateHeader('country_id', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
-                  <SelectContent>
-                    {masterData.countries.map((c: any) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Warehouse */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>Warehouse</Label>
-                  <StatusBadge status={getFieldStatus('warehouse_id')} />
-                </div>
-                <Select value={String(headerForm.warehouse_id || '')} onValueChange={(v) => updateHeader('warehouse_id', v)}>
-                  <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
-                  <SelectContent>
-                    {masterData.warehouses.map((w: any) => (
-                      <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Ship To */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>Ship To</Label>
-                  <StatusBadge status={getFieldStatus('ship_to')} />
-                </div>
-                <Input
-                  value={headerForm.ship_to || ''}
-                  onChange={(e) => updateHeader('ship_to', e.target.value)}
-                  placeholder="Ship to location"
-                />
-              </div>
-
-              {/* Ship To Address */}
-              <div className="space-y-1 col-span-2">
-                <div className="flex items-center gap-2">
-                  <Label>Ship To Address</Label>
-                  <StatusBadge status={getFieldStatus('ship_to_address')} />
-                </div>
-                <Input
-                  value={headerForm.ship_to_address || ''}
-                  onChange={(e) => updateHeader('ship_to_address', e.target.value)}
-                  placeholder="Full shipping address"
-                />
-              </div>
-
-              {/* Dates */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>ETD Date</Label>
-                  <StatusBadge status={getFieldStatus('etd_date')} />
-                </div>
-                <Input
-                  type="date"
-                  value={headerForm.etd_date || ''}
-                  onChange={(e) => updateHeader('etd_date', e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>Ex-Factory Date</Label>
-                  <StatusBadge status={getFieldStatus('ex_factory_date')} />
-                </div>
-                <Input
-                  type="date"
-                  value={headerForm.ex_factory_date || ''}
-                  onChange={(e) => updateHeader('ex_factory_date', e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>ETA Date</Label>
-                  <StatusBadge status={getFieldStatus('eta_date')} />
-                </div>
-                <Input
-                  type="date"
-                  value={headerForm.eta_date || ''}
-                  onChange={(e) => updateHeader('eta_date', e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label>In-Warehouse Date</Label>
-                  <StatusBadge status={getFieldStatus('in_warehouse_date')} />
-                </div>
-                <Input
-                  type="date"
-                  value={headerForm.in_warehouse_date || ''}
-                  onChange={(e) => updateHeader('in_warehouse_date', e.target.value)}
-                />
-              </div>
-
-              {/* Country of Origin */}
-              <div className="space-y-1">
-                <Label>Country of Origin</Label>
-                <Input
-                  value={headerForm.country_of_origin || ''}
-                  onChange={(e) => updateHeader('country_of_origin', e.target.value)}
-                  placeholder="e.g. China, India, Bangladesh"
-                />
-              </div>
-
-              {/* Packing Method */}
-              <div className="space-y-1">
-                <Label>Packing Method</Label>
-                <Input
-                  value={headerForm.packing_method || ''}
-                  onChange={(e) => updateHeader('packing_method', e.target.value)}
-                  placeholder="e.g. Carton, Polybag"
-                />
-              </div>
-
-              {/* Notes */}
-              <div className="space-y-1 col-span-2">
-                <Label>Additional Notes</Label>
-                <Textarea
-                  value={headerForm.additional_notes || ''}
-                  onChange={(e) => updateHeader('additional_notes', e.target.value)}
-                  placeholder="Any special instructions or notes"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            {/* Informational: Vendor / Buyer extracted (not stored in PO, just shown) */}
-            {(headerForm._vendor_name || headerForm._buyer_name) && (
-              <Card className="bg-muted/30">
-                <CardHeader className="py-2 px-4">
-                  <CardTitle className="text-sm">Extracted Reference Info (not stored in PO)</CardTitle>
-                </CardHeader>
-                <CardContent className="py-2 px-4 grid grid-cols-2 gap-2 text-sm">
-                  {headerForm._vendor_name && <div><span className="text-muted-foreground">Vendor:</span> {headerForm._vendor_name}</div>}
-                  {headerForm._buyer_name && <div><span className="text-muted-foreground">Buyer:</span> {headerForm._buyer_name}</div>}
-                  {headerForm._department && <div><span className="text-muted-foreground">Department:</span> {headerForm._department}</div>}
-                  {headerForm._division && <div><span className="text-muted-foreground">Division:</span> {headerForm._division}</div>}
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
-
-        {/* Step 3: Review Styles */}
-        {step === 'review-styles' && (
-          <div className="space-y-4 py-2">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                {stylesForm.length} style(s) extracted. Edit any values below.
-              </p>
-              <div className="text-sm font-medium">
-                Total: {calculatedTotals.quantity} pcs | ${calculatedTotals.value.toFixed(2)}
-              </div>
-            </div>
-
-            <div className="max-h-[400px] overflow-auto border rounded">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[40px]">#</TableHead>
-                    <TableHead className="min-w-[120px]">Style Number</TableHead>
-                    <TableHead className="min-w-[150px]">Description</TableHead>
-                    <TableHead className="min-w-[100px]">Color</TableHead>
-                    <TableHead className="min-w-[150px]">Size Breakdown</TableHead>
-                    <TableHead className="w-[90px] text-right">Qty</TableHead>
-                    <TableHead className="w-[100px] text-right">Unit Price</TableHead>
-                    <TableHead className="w-[100px] text-right">Total</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stylesForm.map((style, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="text-muted-foreground text-xs">{index + 1}</TableCell>
-                      <TableCell>
-                        <Input
-                          value={style.style_number}
-                          onChange={(e) => updateStyle(index, 'style_number', e.target.value)}
-                          className="h-8 text-sm"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={style.description}
-                          onChange={(e) => updateStyle(index, 'description', e.target.value)}
-                          className="h-8 text-sm"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={style.color_name}
-                          onChange={(e) => updateStyle(index, 'color_name', e.target.value)}
-                          className="h-8 text-sm"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-xs text-muted-foreground">
-                          {style.size_breakdown && typeof style.size_breakdown === 'object' && Object.keys(style.size_breakdown).length > 0
-                            ? Object.entries(style.size_breakdown).map(([size, qty]) => `${size}:${qty}`).join(', ')
-                            : <span className="italic">None</span>
-                          }
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={style.quantity}
-                          onChange={(e) => updateStyle(index, 'quantity', e.target.value)}
-                          className="h-8 text-sm text-right"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={style.unit_price}
-                          onChange={(e) => updateStyle(index, 'unit_price', e.target.value)}
-                          className="h-8 text-sm text-right"
-                        />
-                      </TableCell>
-                      <TableCell className="text-right text-sm font-medium">
-                        ${Number(style.total_amount || 0).toFixed(2)}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeStyle(index)}
-                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            {stylesForm.length === 0 && (
-              <Alert variant="destructive">
-                <XCircle className="h-4 w-4" />
-                <AlertDescription>No styles to import. Please go back and check the PDF or add styles manually.</AlertDescription>
-              </Alert>
-            )}
-          </div>
-        )}
-
-        {/* Step 4: Confirmation */}
-        {step === 'confirm' && (
-          <div className="space-y-4 py-2">
-            <Card>
-              <CardHeader className="py-3 px-4">
-                <CardTitle className="text-sm">Purchase Order Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="py-2 px-4 space-y-3">
-                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                  <div><span className="text-muted-foreground">PO Number:</span> <strong>{headerForm.po_number}</strong></div>
-                  <div><span className="text-muted-foreground">PO Date:</span> {headerForm.po_date}</div>
-                  <div><span className="text-muted-foreground">Shipping Term:</span> {headerForm.shipping_term || 'FOB'}</div>
-                  <div><span className="text-muted-foreground">Retailer:</span> {masterData.retailers.find((r: any) => String(r.id) === String(headerForm.retailer_id))?.name || 'Not selected'}</div>
-                  <div><span className="text-muted-foreground">Season:</span> {masterData.seasons.find((s: any) => String(s.id) === String(headerForm.season_id))?.name || 'Not selected'}</div>
-                  <div><span className="text-muted-foreground">Currency:</span> {masterData.currencies.find((c: any) => String(c.id) === String(headerForm.currency_id))?.code || 'Not selected'}</div>
-                </div>
-                <hr />
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{stylesForm.length}</div>
-                    <div className="text-muted-foreground">Styles</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{calculatedTotals.quantity.toLocaleString()}</div>
-                    <div className="text-muted-foreground">Total Quantity</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">${calculatedTotals.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                    <div className="text-muted-foreground">Total Value</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
+          {/* Warnings */}
+          {analysisResult?.warnings && analysisResult.warnings.length > 0 && step !== 'upload' && step !== 'result' && (
+            <Alert variant="default" className="border-yellow-300 bg-yellow-50">
+              <AlertTriangle className="h-4 w-4 text-yellow-600" />
               <AlertDescription>
-                This will create a new Purchase Order in <strong>draft</strong> status with {stylesForm.length} style(s).
-                You can edit the PO further after creation.
+                <ul className="list-disc list-inside text-sm text-yellow-800 space-y-1">
+                  {analysisResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
               </AlertDescription>
             </Alert>
-          </div>
-        )}
+          )}
 
-        {/* Step 5: Result */}
-        {step === 'result' && createResult && (
-          <div className="space-y-4 py-4">
-            {createResult.success ? (
-              <>
-                <div className="flex flex-col items-center gap-3 py-4">
-                  <CheckCircle className="h-12 w-12 text-green-600" />
-                  <h3 className="text-lg font-semibold">Purchase Order Created!</h3>
-                  <p className="text-sm text-muted-foreground text-center">
-                    PO <strong>{createResult.purchase_order.po_number}</strong> has been created with {createResult.styles_created} style(s).
-                  </p>
-                </div>
+          {/* Error */}
+          {error && (
+            <Alert variant="destructive">
+              <XCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-                <div className="grid grid-cols-3 gap-4 text-sm text-center">
-                  <Card className="p-3">
-                    <div className="text-xl font-bold">{createResult.styles_created}</div>
-                    <div className="text-muted-foreground">Styles Created</div>
-                  </Card>
-                  <Card className="p-3">
-                    <div className="text-xl font-bold">{createResult.purchase_order.total_quantity?.toLocaleString()}</div>
-                    <div className="text-muted-foreground">Total Qty</div>
-                  </Card>
-                  <Card className="p-3">
-                    <div className="text-xl font-bold">${Number(createResult.purchase_order.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                    <div className="text-muted-foreground">Total Value</div>
-                  </Card>
-                </div>
-
-                {createResult.styles_errors && createResult.styles_errors.length > 0 && (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      <p className="font-medium mb-1">{createResult.styles_errors.length} style(s) failed to import:</p>
-                      <ul className="list-disc list-inside text-sm">
-                        {createResult.styles_errors.map((e, i) => (
-                          <li key={i}>Row {e.row} ({e.style_number}): {e.error}</li>
-                        ))}
-                      </ul>
-                    </AlertDescription>
-                  </Alert>
+          {/* Step 1: Upload */}
+          {step === 'upload' && (
+            <div className="space-y-4 py-4">
+              <div
+                className="border-2 border-dashed rounded-lg p-12 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-colors"
+                onClick={() => document.getElementById('pdf-file-input')?.click()}
+              >
+                {isUploading ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Analyzing PDF... This may take a moment.</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <FileUp className="h-10 w-10 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Click to select a PDF purchase order file</p>
+                      <p className="text-xs text-muted-foreground mt-1">PDF files only, up to 20MB</p>
+                    </div>
+                  </div>
                 )}
-              </>
-            ) : (
-              <div className="flex flex-col items-center gap-3 py-4">
-                <XCircle className="h-12 w-12 text-red-600" />
-                <h3 className="text-lg font-semibold">Import Failed</h3>
-                <p className="text-sm text-muted-foreground">{createResult.message}</p>
+                <input
+                  id="pdf-file-input"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  disabled={isUploading}
+                />
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* Footer with navigation */}
-        <DialogFooter className="flex justify-between">
-          <div>
-            {step === 'review-header' && (
-              <Button variant="outline" onClick={() => setStep('upload')}>
-                <ArrowLeft className="h-4 w-4 mr-1" /> Back
-              </Button>
-            )}
-            {step === 'review-styles' && (
-              <Button variant="outline" onClick={() => setStep('review-header')}>
-                <ArrowLeft className="h-4 w-4 mr-1" /> Back
-              </Button>
-            )}
-            {step === 'confirm' && (
-              <Button variant="outline" onClick={() => setStep('review-styles')}>
-                <ArrowLeft className="h-4 w-4 mr-1" /> Back
-              </Button>
-            )}
-          </div>
+          {/* Step 2: Review PO Header */}
+          {step === 'review-header' && (
+            <div className="space-y-4 py-2">
+              {/* Basic Info */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold">Basic Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* PO Number */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>PO Number <span className="text-red-500">*</span></Label>
+                      <StatusBadge status={getFieldStatus('po_number')} />
+                    </div>
+                    <Input
+                      value={headerForm.po_number || ''}
+                      onChange={(e) => updateHeader('po_number', e.target.value)}
+                      placeholder="e.g. PO-2024-001"
+                    />
+                  </div>
 
-          <div className="flex gap-2">
-            {step !== 'result' && (
-              <Button variant="outline" onClick={handleClose}>Cancel</Button>
-            )}
+                  {/* PO Date */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>PO Date <span className="text-red-500">*</span></Label>
+                      <StatusBadge status={getFieldStatus('po_date')} />
+                    </div>
+                    <Input
+                      type="date"
+                      value={headerForm.po_date || ''}
+                      onChange={(e) => updateHeader('po_date', e.target.value)}
+                    />
+                  </div>
 
-            {step === 'review-header' && (
-              <Button onClick={() => setStep('review-styles')} disabled={!headerForm.po_number || !headerForm.po_date}>
-                Next: Review Styles <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
-            )}
+                  {/* Headline */}
+                  <div className="space-y-1">
+                    <Label>Headline</Label>
+                    <Input
+                      value={headerForm.headline || ''}
+                      onChange={(e) => updateHeader('headline', e.target.value)}
+                      placeholder="Brief description for this PO"
+                    />
+                  </div>
 
-            {step === 'review-styles' && (
-              <Button onClick={() => setStep('confirm')} disabled={stylesForm.length === 0}>
-                Next: Confirm <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
-            )}
+                  {/* Shipping Term */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Shipping Term</Label>
+                      <StatusBadge status={getFieldStatus('shipping_term')} />
+                    </div>
+                    <Select
+                      value={headerForm.shipping_term || ''}
+                      onValueChange={(v) => updateHeader('shipping_term', v)}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Select shipping term" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FOB">FOB (Free On Board)</SelectItem>
+                        <SelectItem value="DDP">DDP (Delivered Duty Paid)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
 
-            {step === 'confirm' && (
-              <Button onClick={handleCreatePO} disabled={isCreating}>
-                {isCreating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Create Purchase Order
-              </Button>
-            )}
+              {/* Master Data with + buttons */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold">Master Data</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Retailer */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Retailer</Label>
+                      <StatusBadge status={getFieldStatus('retailer_id')} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={String(headerForm.retailer_id || '')} onValueChange={(v) => updateHeader('retailer_id', v)}>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Select retailer" /></SelectTrigger>
+                        <SelectContent>
+                          {masterData.retailers.map((r: any) => (
+                            <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsCreateRetailerOpen(true)} title="Create new retailer">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
 
-            {step === 'result' && (
-              <div className="flex gap-2">
-                {createResult?.success && (
+                  {/* Season */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Season</Label>
+                      <StatusBadge status={getFieldStatus('season_id')} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={String(headerForm.season_id || '')} onValueChange={(v) => updateHeader('season_id', v)}>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Select season" /></SelectTrigger>
+                        <SelectContent>
+                          {masterData.seasons.map((s: any) => (
+                            <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsCreateSeasonOpen(true)} title="Create new season">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Currency */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Currency</Label>
+                      <StatusBadge status={getFieldStatus('currency_id')} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={String(headerForm.currency_id || '')} onValueChange={(v) => updateHeader('currency_id', v)}>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Select currency" /></SelectTrigger>
+                        <SelectContent>
+                          {masterData.currencies.map((c: any) => (
+                            <SelectItem key={c.id} value={String(c.id)}>{c.code} - {c.name} {c.symbol && `(${c.symbol})`}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsCreateCurrencyOpen(true)} title="Create new currency">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Country of Origin */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Country of Origin</Label>
+                      <StatusBadge status={getFieldStatus('country_id')} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={String(headerForm.country_id || '')} onValueChange={handleCountryChange}>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Select country" /></SelectTrigger>
+                        <SelectContent>
+                          {masterData.countries.map((c: any) => (
+                            <SelectItem key={c.id} value={String(c.id)}>{c.name} ({c.sailing_time_days} days)</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsCreateCountryOpen(true)} title="Create new country">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Warehouse */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Warehouse</Label>
+                      <StatusBadge status={getFieldStatus('warehouse_id')} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={String(headerForm.warehouse_id || '')} onValueChange={(v) => updateHeader('warehouse_id', v)}>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                        <SelectContent>
+                          {masterData.warehouses.map((w: any) => (
+                            <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsCreateWarehouseOpen(true)} title="Create new warehouse">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Ship To */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Ship To</Label>
+                      <StatusBadge status={getFieldStatus('ship_to')} />
+                    </div>
+                    <Input
+                      value={headerForm.ship_to || ''}
+                      onChange={(e) => updateHeader('ship_to', e.target.value)}
+                      placeholder="Ship to location"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Terms (Structured: term + percentage) */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold">Payment Terms</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label>Payment Term</Label>
+                    <div className="flex gap-2">
+                      <Select
+                        value={paymentTermCode}
+                        onValueChange={(value) => {
+                          setPaymentTermCode(value);
+                          // Also set payment_term_id from the matching term
+                          const pt = masterData.paymentTerms.find((p: any) => p.code === value);
+                          if (pt) {
+                            updateHeader('payment_term_id', String(pt.id));
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Select term" /></SelectTrigger>
+                        <SelectContent>
+                          {masterData.paymentTerms.map((pt: any) => (
+                            <SelectItem key={pt.id} value={pt.code}>
+                              {pt.name}{pt.days ? ` (${pt.days} days)` : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsCreatePaymentTermOpen(true)} title="Create new payment term">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  {/* Show percentage field if the selected payment term requires it */}
+                  {masterData.paymentTerms.find((pt: any) => pt.code === paymentTermCode)?.requires_percentage && (
+                    <div className="space-y-1">
+                      <Label>Percentage (%)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        placeholder="e.g. 30"
+                        value={paymentPercentage}
+                        onChange={(e) => setPaymentPercentage(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Dates with FOB/DDP logic */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold">Important Dates</h3>
+
+                {(headerForm.shipping_term || 'FOB') === 'FOB' && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Label>ETD Date (Ship Date) *</Label>
+                          <StatusBadge status={getFieldStatus('etd_date')} />
+                        </div>
+                        <Input
+                          type="date"
+                          value={headerForm.etd_date || ''}
+                          onChange={(e) => handleEtdChange(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">Enter ETD to auto-calculate other dates</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-1">
+                        <Label>Ex-Factory (ETD - 7 days)</Label>
+                        <Input type="date" value={headerForm.ex_factory_date || ''} disabled className="bg-muted" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>ETA (ETD + Sailing)</Label>
+                        <Input type="date" value={headerForm.eta_date || ''} disabled className="bg-muted" />
+                        {headerForm.country_id && (
+                          <p className="text-xs text-muted-foreground">+{getSelectedCountrySailingDays()} sailing days</p>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <Label>IHD (ETA + 5 days)</Label>
+                        <Input type="date" value={headerForm.in_warehouse_date || ''} disabled className="bg-muted" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {headerForm.shipping_term === 'DDP' && (
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="space-y-1">
+                      <Label>In-Warehouse Date *</Label>
+                      <Input
+                        type="date"
+                        value={headerForm.in_warehouse_date || ''}
+                        onChange={(e) => handleInWarehouseChange(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>ETD (Auto)</Label>
+                      <Input type="date" value={headerForm.etd_date || ''} disabled className="bg-muted" />
+                      <p className="text-xs text-muted-foreground">= IHD - Sailing - 5d</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>ETA (Auto)</Label>
+                      <Input type="date" value={headerForm.eta_date || ''} disabled className="bg-muted" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Ex-Factory (Auto)</Label>
+                      <Input type="date" value={headerForm.ex_factory_date || ''} disabled className="bg-muted" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sample Schedule */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Sample Schedule (8 Milestones)</h3>
                   <Button
+                    type="button"
                     variant="outline"
-                    onClick={() => {
-                      window.open(`/purchase-orders/${createResult.purchase_order.id}`, '_blank');
-                    }}
+                    size="sm"
+                    onClick={handleGenerateSampleSchedule}
+                    disabled={!headerForm.po_date || !headerForm.etd_date}
                   >
-                    <Eye className="h-4 w-4 mr-1" /> View PO
+                    Auto-Generate Schedule
                   </Button>
-                )}
-                <Button onClick={() => {
-                  if (createResult?.success) {
-                    onImportComplete();
-                  }
-                  handleClose();
-                }}>
-                  {createResult?.success ? 'Done' : 'Close'}
-                </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">Based on PO Date and ETD Date</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label>Lab Dip Submission</Label>
+                    <Input type="date" value={sampleSchedule.lab_dip_submission || ''} disabled className="bg-muted" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Fit Sample Submission</Label>
+                    <Input type="date" value={sampleSchedule.fit_sample_submission || ''} disabled className="bg-muted" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Trim Approvals</Label>
+                    <Input type="date" value={sampleSchedule.trim_approvals || ''} disabled className="bg-muted" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>1st Proto Submission</Label>
+                    <Input type="date" value={sampleSchedule.first_proto_submission || ''} disabled className="bg-muted" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Bulk Fabric Inhouse</Label>
+                    <Input type="date" value={sampleSchedule.bulk_fabric_inhouse || ''} disabled className="bg-muted" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>PP Sample Submission</Label>
+                    <Input type="date" value={sampleSchedule.pp_sample_submission || ''} disabled className="bg-muted" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Production Start</Label>
+                    <Input type="date" value={sampleSchedule.production_start || ''} disabled className="bg-muted" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>TOP Approval</Label>
+                    <Input type="date" value={sampleSchedule.top_approval || ''} disabled className="bg-muted" />
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+
+              {/* Additional Info */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold">Additional Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Packing Method with type badge */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Packing Method</Label>
+                      <StatusBadge status={getFieldStatus('packing_method')} />
+                      {headerForm._packing_type && (
+                        <Badge variant="secondary" className="text-xs">
+                          {headerForm._packing_type === 'prepack' ? 'Prepack' : headerForm._packing_type === 'solid' ? 'Solid Pack' : 'Other'}
+                        </Badge>
+                      )}
+                    </div>
+                    <Input
+                      value={headerForm.packing_method || ''}
+                      onChange={(e) => updateHeader('packing_method', e.target.value)}
+                      placeholder="e.g. 8PREPACK INTO 1 POLYBAG"
+                    />
+                  </div>
+
+                  {/* Country of Origin text */}
+                  <div className="space-y-1">
+                    <Label>Country of Origin (text)</Label>
+                    <Input
+                      value={headerForm.country_of_origin || ''}
+                      onChange={(e) => updateHeader('country_of_origin', e.target.value)}
+                      placeholder="e.g. China, India, Bangladesh"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label>Packing Guidelines</Label>
+                  <Textarea
+                    value={headerForm.packing_guidelines || ''}
+                    onChange={(e) => updateHeader('packing_guidelines', e.target.value)}
+                    placeholder="Packing guidelines and instructions..."
+                    rows={2}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label>Other Terms & Conditions</Label>
+                  <Textarea
+                    value={headerForm.other_terms || ''}
+                    onChange={(e) => updateHeader('other_terms', e.target.value)}
+                    placeholder="e.g. Partial shipping is not allowed..."
+                    rows={2}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label>Additional Notes</Label>
+                  <Textarea
+                    value={headerForm.additional_notes || ''}
+                    onChange={(e) => updateHeader('additional_notes', e.target.value)}
+                    placeholder="Any special instructions or notes"
+                    rows={2}
+                  />
+                </div>
+              </div>
+
+              {/* Informational: Vendor / Buyer extracted */}
+              {(headerForm._vendor_name || headerForm._buyer_name) && (
+                <Card className="bg-muted/30">
+                  <CardHeader className="py-2 px-4">
+                    <CardTitle className="text-sm">Extracted Reference Info (not stored in PO)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="py-2 px-4 grid grid-cols-2 gap-2 text-sm">
+                    {headerForm._vendor_name && <div><span className="text-muted-foreground">Vendor:</span> {headerForm._vendor_name}</div>}
+                    {headerForm._buyer_name && <div><span className="text-muted-foreground">Buyer:</span> {headerForm._buyer_name}</div>}
+                    {headerForm._department && <div><span className="text-muted-foreground">Department:</span> {headerForm._department}</div>}
+                    {headerForm._division && <div><span className="text-muted-foreground">Division:</span> {headerForm._division}</div>}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Review Styles */}
+          {step === 'review-styles' && (
+            <div className="space-y-4 py-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {stylesForm.length} style(s) extracted. Edit any values below.
+                </p>
+                <div className="text-sm font-medium">
+                  Total: {calculatedTotals.quantity} pcs | ${calculatedTotals.value.toFixed(2)}
+                </div>
+              </div>
+
+              {/* Price = 0 warning */}
+              {zeroPriceCount > 0 && (
+                <Alert variant="default" className="border-orange-300 bg-orange-50">
+                  <AlertTriangle className="h-4 w-4 text-orange-600" />
+                  <AlertDescription className="text-orange-800">
+                    <strong>{zeroPriceCount} style(s) have price $0.00.</strong> Please ask the importer or agency to fill in the price manually. Rows are highlighted below.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="max-h-[400px] overflow-auto border rounded">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[40px]">#</TableHead>
+                      <TableHead className="min-w-[120px]">Style Number</TableHead>
+                      <TableHead className="min-w-[150px]">Description</TableHead>
+                      <TableHead className="min-w-[100px]">Color</TableHead>
+                      <TableHead className="min-w-[150px]">Size Breakdown</TableHead>
+                      <TableHead className="w-[90px] text-right">Qty</TableHead>
+                      <TableHead className="w-[100px] text-right">Unit Price</TableHead>
+                      <TableHead className="w-[100px] text-right">Total</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stylesForm.map((style, index) => {
+                      const isZeroPrice = Number(style.unit_price) === 0;
+                      return (
+                        <TableRow key={index} className={isZeroPrice ? 'bg-orange-50' : ''}>
+                          <TableCell className="text-muted-foreground text-xs">{index + 1}</TableCell>
+                          <TableCell>
+                            <Input
+                              value={style.style_number}
+                              onChange={(e) => updateStyle(index, 'style_number', e.target.value)}
+                              className="h-8 text-sm"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={style.description}
+                              onChange={(e) => updateStyle(index, 'description', e.target.value)}
+                              className="h-8 text-sm"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={style.color_name}
+                              onChange={(e) => updateStyle(index, 'color_name', e.target.value)}
+                              className="h-8 text-sm"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs text-muted-foreground">
+                              {style.size_breakdown && typeof style.size_breakdown === 'object' && Object.keys(style.size_breakdown).length > 0
+                                ? Object.entries(style.size_breakdown).map(([size, qty]) => `${size}:${qty}`).join(', ')
+                                : <span className="italic">None</span>
+                              }
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={style.quantity}
+                              onChange={(e) => updateStyle(index, 'quantity', e.target.value)}
+                              className="h-8 text-sm text-right"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={style.unit_price}
+                              onChange={(e) => updateStyle(index, 'unit_price', e.target.value)}
+                              className={`h-8 text-sm text-right ${isZeroPrice ? 'border-orange-400 bg-orange-100' : ''}`}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right text-sm font-medium">
+                            ${Number(style.total_amount || 0).toFixed(2)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeStyle(index)}
+                              className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {stylesForm.length === 0 && (
+                <Alert variant="destructive">
+                  <XCircle className="h-4 w-4" />
+                  <AlertDescription>No styles to import. Please go back and check the PDF or add styles manually.</AlertDescription>
+                </Alert>
+              )}
+            </div>
+          )}
+
+          {/* Step 4: Confirmation */}
+          {step === 'confirm' && (
+            <div className="space-y-4 py-2">
+              <Card>
+                <CardHeader className="py-3 px-4">
+                  <CardTitle className="text-sm">Purchase Order Summary</CardTitle>
+                </CardHeader>
+                <CardContent className="py-2 px-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                    <div><span className="text-muted-foreground">PO Number:</span> <strong>{headerForm.po_number}</strong></div>
+                    <div><span className="text-muted-foreground">PO Date:</span> {headerForm.po_date}</div>
+                    <div><span className="text-muted-foreground">Shipping Term:</span> {headerForm.shipping_term || 'FOB'}</div>
+                    <div><span className="text-muted-foreground">Retailer:</span> {masterData.retailers.find((r: any) => String(r.id) === String(headerForm.retailer_id))?.name || 'Not selected'}</div>
+                    <div><span className="text-muted-foreground">Season:</span> {masterData.seasons.find((s: any) => String(s.id) === String(headerForm.season_id))?.name || 'Not selected'}</div>
+                    <div><span className="text-muted-foreground">Currency:</span> {masterData.currencies.find((c: any) => String(c.id) === String(headerForm.currency_id))?.code || 'Not selected'}</div>
+                    {paymentTermCode && (
+                      <div><span className="text-muted-foreground">Payment:</span> {paymentTermCode}{paymentPercentage ? ` (${paymentPercentage}%)` : ''}</div>
+                    )}
+                    {headerForm.packing_method && (
+                      <div><span className="text-muted-foreground">Packing:</span> {headerForm.packing_method}</div>
+                    )}
+                  </div>
+                  {headerForm.etd_date && (
+                    <>
+                      <hr />
+                      <div className="grid grid-cols-4 gap-2 text-sm">
+                        <div><span className="text-muted-foreground">ETD:</span> {headerForm.etd_date}</div>
+                        <div><span className="text-muted-foreground">Ex-Factory:</span> {headerForm.ex_factory_date || '-'}</div>
+                        <div><span className="text-muted-foreground">ETA:</span> {headerForm.eta_date || '-'}</div>
+                        <div><span className="text-muted-foreground">IHD:</span> {headerForm.in_warehouse_date || '-'}</div>
+                      </div>
+                    </>
+                  )}
+                  <hr />
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">{stylesForm.length}</div>
+                      <div className="text-muted-foreground">Styles</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">{calculatedTotals.quantity.toLocaleString()}</div>
+                      <div className="text-muted-foreground">Total Quantity</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">${calculatedTotals.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                      <div className="text-muted-foreground">Total Value</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {zeroPriceCount > 0 && (
+                <Alert variant="default" className="border-orange-300 bg-orange-50">
+                  <AlertTriangle className="h-4 w-4 text-orange-600" />
+                  <AlertDescription className="text-orange-800">
+                    {zeroPriceCount} style(s) still have $0.00 price. The PO will be created but prices should be filled in by the importer or agency.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  This will create a new Purchase Order in <strong>draft</strong> status with {stylesForm.length} style(s).
+                  You can edit the PO further after creation.
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
+
+          {/* Step 5: Result */}
+          {step === 'result' && createResult && (
+            <div className="space-y-4 py-4">
+              {createResult.success ? (
+                <>
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <CheckCircle className="h-12 w-12 text-green-600" />
+                    <h3 className="text-lg font-semibold">Purchase Order Created!</h3>
+                    <p className="text-sm text-muted-foreground text-center">
+                      PO <strong>{createResult.purchase_order.po_number}</strong> has been created with {createResult.styles_created} style(s).
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4 text-sm text-center">
+                    <Card className="p-3">
+                      <div className="text-xl font-bold">{createResult.styles_created}</div>
+                      <div className="text-muted-foreground">Styles Created</div>
+                    </Card>
+                    <Card className="p-3">
+                      <div className="text-xl font-bold">{createResult.purchase_order.total_quantity?.toLocaleString()}</div>
+                      <div className="text-muted-foreground">Total Qty</div>
+                    </Card>
+                    <Card className="p-3">
+                      <div className="text-xl font-bold">${Number(createResult.purchase_order.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                      <div className="text-muted-foreground">Total Value</div>
+                    </Card>
+                  </div>
+
+                  {createResult.styles_errors && createResult.styles_errors.length > 0 && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        <p className="font-medium mb-1">{createResult.styles_errors.length} style(s) failed to import:</p>
+                        <ul className="list-disc list-inside text-sm">
+                          {createResult.styles_errors.map((e, i) => (
+                            <li key={i}>Row {e.row} ({e.style_number}): {e.error}</li>
+                          ))}
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <XCircle className="h-12 w-12 text-red-600" />
+                  <h3 className="text-lg font-semibold">Import Failed</h3>
+                  <p className="text-sm text-muted-foreground">{createResult.message}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Footer with navigation */}
+          <DialogFooter className="flex justify-between">
+            <div>
+              {step === 'review-header' && (
+                <Button variant="outline" onClick={() => setStep('upload')}>
+                  <ArrowLeft className="h-4 w-4 mr-1" /> Back
+                </Button>
+              )}
+              {step === 'review-styles' && (
+                <Button variant="outline" onClick={() => setStep('review-header')}>
+                  <ArrowLeft className="h-4 w-4 mr-1" /> Back
+                </Button>
+              )}
+              {step === 'confirm' && (
+                <Button variant="outline" onClick={() => setStep('review-styles')}>
+                  <ArrowLeft className="h-4 w-4 mr-1" /> Back
+                </Button>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              {step !== 'result' && (
+                <Button variant="outline" onClick={handleClose}>Cancel</Button>
+              )}
+
+              {step === 'review-header' && (
+                <Button onClick={() => setStep('review-styles')} disabled={!headerForm.po_number || !headerForm.po_date}>
+                  Next: Review Styles <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
+              )}
+
+              {step === 'review-styles' && (
+                <Button onClick={() => setStep('confirm')} disabled={stylesForm.length === 0}>
+                  Next: Confirm <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
+              )}
+
+              {step === 'confirm' && (
+                <Button onClick={handleCreatePO} disabled={isCreating}>
+                  {isCreating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Create Purchase Order
+                </Button>
+              )}
+
+              {step === 'result' && (
+                <div className="flex gap-2">
+                  {createResult?.success && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        window.open(`/purchase-orders/${createResult.purchase_order.id}`, '_blank');
+                      }}
+                    >
+                      <Eye className="h-4 w-4 mr-1" /> View PO
+                    </Button>
+                  )}
+                  <Button onClick={() => {
+                    if (createResult?.success) {
+                      onImportComplete();
+                    }
+                    handleClose();
+                  }}>
+                    {createResult?.success ? 'Done' : 'Close'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Master Data Dialogs */}
+      <CreateRetailerDialog
+        open={isCreateRetailerOpen}
+        onOpenChange={setIsCreateRetailerOpen}
+        onSuccess={handleMasterDataCreated}
+      />
+      <CreateSeasonDialog
+        open={isCreateSeasonOpen}
+        onOpenChange={setIsCreateSeasonOpen}
+        onSuccess={handleMasterDataCreated}
+      />
+      <CreateCurrencyDialog
+        open={isCreateCurrencyOpen}
+        onOpenChange={setIsCreateCurrencyOpen}
+        onSuccess={handleMasterDataCreated}
+      />
+      <CreatePaymentTermDialog
+        open={isCreatePaymentTermOpen}
+        onOpenChange={setIsCreatePaymentTermOpen}
+        onSuccess={handleMasterDataCreated}
+      />
+      <CreateCountryDialog
+        open={isCreateCountryOpen}
+        onOpenChange={setIsCreateCountryOpen}
+        onSuccess={handleMasterDataCreated}
+      />
+      <CreateWarehouseDialog
+        open={isCreateWarehouseOpen}
+        onOpenChange={setIsCreateWarehouseOpen}
+        onSuccess={handleMasterDataCreated}
+      />
+    </>
   );
 }

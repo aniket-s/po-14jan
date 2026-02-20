@@ -82,6 +82,20 @@ class PdfImportService
                 $warnings[] = 'No line items (styles) could be extracted from the PDF';
             }
 
+            // Check for styles with price = 0
+            $zeroPriceStyles = [];
+            foreach ($lineItems as $item) {
+                $price = $item['unit_price']['value'] ?? 0;
+                if ($price == 0) {
+                    $zeroPriceStyles[] = $item['style_number']['value'] ?? 'Unknown';
+                }
+            }
+            if (!empty($zeroPriceStyles)) {
+                $styleList = implode(', ', array_slice($zeroPriceStyles, 0, 5));
+                $more = count($zeroPriceStyles) > 5 ? ' and ' . (count($zeroPriceStyles) - 5) . ' more' : '';
+                $warnings[] = "Price is $0.00 for style(s): {$styleList}{$more} - please ask importer or agency to fill the price manually";
+            }
+
             return [
                 'success' => true,
                 'po_header' => $poHeader,
@@ -211,6 +225,15 @@ class PdfImportService
             ]
         );
 
+        // Customer / Retailer name (try to detect from header area)
+        $header['customer_name'] = $this->extractField(
+            $fullText,
+            [
+                '/(?:Customer|Retailer|Client|Buyer\s*Company|Bill\s*To)\s*(?:Name)?\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                '/(?:Sold\s*To|Ordered\s*By\s*Company)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+            ]
+        );
+
         // Buyer
         $header['buyer_name'] = $this->extractField(
             $fullText,
@@ -278,19 +301,15 @@ class PdfImportService
             ]
         );
 
-        // Packing Method
-        $header['packing_method'] = $this->extractField(
-            $fullText,
-            [
-                '/(?:Pack(?:ing|age)?\s*Method|Pack(?:ing)?\s*Type)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
-            ]
-        );
+        // Packing Method — detect prepack / solid pack patterns
+        $header['packing_method'] = $this->extractPackingMethod($fullText);
 
         return $header;
     }
 
     /**
      * Parse line items (styles) from PDF text
+     * Supports multi-row line items where description/color/sizes span multiple lines
      */
     private function parseLineItems(array $lines): array
     {
@@ -307,7 +326,8 @@ class PdfImportService
         $sizeColumns = $this->detectSizeColumns($headerLine);
 
         // Parse rows after the header
-        for ($i = $headerRowIndex + 1; $i < count($lines); $i++) {
+        $i = $headerRowIndex + 1;
+        while ($i < count($lines)) {
             $line = $lines[$i];
 
             // Stop at footer indicators
@@ -317,16 +337,90 @@ class PdfImportService
 
             // Skip empty or separator lines
             if (empty(trim($line)) || preg_match('/^[\-=_\s]+$/', $line)) {
+                $i++;
                 continue;
             }
 
             $parsed = $this->parseLineItemRow($line, $sizeColumns, $lines, $i);
             if ($parsed !== null) {
+                // Check if the next line(s) look like continuation rows (no style number, just text/numbers)
+                $j = $i + 1;
+                while ($j < count($lines)) {
+                    $nextLine = trim($lines[$j]);
+                    if (empty($nextLine) || preg_match('/^[\-=_\s]+$/', $nextLine) || $this->isFooterLine($nextLine)) {
+                        break;
+                    }
+                    // Continuation row: doesn't look like a new style row (no leading alphanumeric style number pattern)
+                    if ($this->isContinuationRow($nextLine, $sizeColumns)) {
+                        $this->mergeContinuationRow($parsed, $nextLine, $sizeColumns);
+                        $j++;
+                    } else {
+                        break;
+                    }
+                }
                 $styles[] = $parsed;
+                $i = $j;
+            } else {
+                $i++;
             }
         }
 
         return $styles;
+    }
+
+    /**
+     * Check if a line looks like a continuation of a previous line item
+     * (no style number at start, mostly text or size quantities)
+     */
+    private function isContinuationRow(string $line, array $sizeColumns): bool
+    {
+        $tokens = preg_split('/\s{2,}|\t/', $line);
+        $tokens = array_values(array_filter($tokens, fn($t) => trim($t) !== ''));
+
+        if (empty($tokens)) {
+            return false;
+        }
+
+        // If first token looks like a style number (alphanumeric with possible dashes), it's a new row
+        $firstToken = trim($tokens[0]);
+        if (preg_match('/^[A-Z]{1,5}[\-\s]?\d{3,}/i', $firstToken)) {
+            return false;
+        }
+
+        // If the line has very few tokens and they're all text, likely a description continuation
+        $allText = true;
+        foreach ($tokens as $token) {
+            $cleaned = preg_replace('/[,$]/', '', trim($token));
+            if (is_numeric($cleaned)) {
+                $allText = false;
+                break;
+            }
+        }
+
+        return $allText || count($tokens) <= 2;
+    }
+
+    /**
+     * Merge a continuation row's data into the existing parsed line item
+     */
+    private function mergeContinuationRow(array &$parsed, string $line, array $sizeColumns): void
+    {
+        $tokens = preg_split('/\s{2,}|\t/', $line);
+        $tokens = array_values(array_filter($tokens, fn($t) => trim($t) !== ''));
+
+        foreach ($tokens as $token) {
+            $token = trim($token);
+            $cleaned = preg_replace('/[,$]/', '', $token);
+
+            if (!is_numeric($cleaned)) {
+                // Text token — fill in missing description or color
+                if ($parsed['description']['value'] === null) {
+                    $parsed['description'] = $this->buildParsedField($token);
+                } elseif ($parsed['color_name']['value'] === null) {
+                    $parsed['color_name'] = $this->buildParsedField($token);
+                }
+            }
+        }
     }
 
     /**
@@ -518,14 +612,86 @@ class PdfImportService
     }
 
     /**
+     * Extract packing method with prepack / solid pack detection
+     */
+    private function extractPackingMethod(string $fullText): array
+    {
+        // Try to detect prepack patterns like "8PREPACK INTO 1 POLYBAG", "6-PREPACK", "PREPACK 12 PCS"
+        if (preg_match('/(\d+)\s*PREPACK\s*(?:INTO\s*\d+\s*\w+)?/i', $fullText, $m)) {
+            return [
+                'value' => trim($m[0]),
+                'packing_type' => 'prepack',
+                'prepack_qty' => (int) $m[1],
+                'status' => 'parsed',
+                'confidence' => 'high',
+            ];
+        }
+
+        if (preg_match('/PREPACK/i', $fullText)) {
+            return [
+                'value' => 'PREPACK',
+                'packing_type' => 'prepack',
+                'status' => 'parsed',
+                'confidence' => 'high',
+            ];
+        }
+
+        // Solid pack patterns
+        if (preg_match('/SOLID\s*PACK/i', $fullText)) {
+            return [
+                'value' => 'SOLID PACK',
+                'packing_type' => 'solid',
+                'status' => 'parsed',
+                'confidence' => 'high',
+            ];
+        }
+
+        // Generic packing method extraction
+        $patterns = [
+            '/(?:Pack(?:ing|age)?\s*Method|Pack(?:ing)?\s*Type|Packing)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+        ];
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $fullText, $m)) {
+                $value = trim($m[1]);
+                if (!empty($value)) {
+                    // Determine type from the extracted value
+                    $packingType = 'other';
+                    if (preg_match('/prepack/i', $value)) {
+                        $packingType = 'prepack';
+                    } elseif (preg_match('/solid/i', $value)) {
+                        $packingType = 'solid';
+                    }
+                    return [
+                        'value' => $value,
+                        'packing_type' => $packingType,
+                        'status' => 'parsed',
+                        'confidence' => 'high',
+                    ];
+                }
+            }
+        }
+
+        return ['value' => null, 'packing_type' => null, 'status' => 'missing'];
+    }
+
+    /**
      * Match extracted text values to master data records
      */
     private function matchMasterData(array $parsedHeader): array
     {
         $matches = [];
 
-        // Match Retailer
-        if (isset($parsedHeader['vendor_name']) && $parsedHeader['vendor_name']['value'] !== null) {
+        // Match Retailer - try customer_name first, then vendor_name as fallback
+        $retailerMatched = false;
+        if (isset($parsedHeader['customer_name']) && $parsedHeader['customer_name']['value'] !== null) {
+            $rawName = $parsedHeader['customer_name']['value'];
+            $match = $this->fuzzyMatchModel(Retailer::class, 'name', $rawName);
+            if ($match['status'] === 'matched') {
+                $matches['retailer_id'] = $match;
+                $retailerMatched = true;
+            }
+        }
+        if (!$retailerMatched && isset($parsedHeader['vendor_name']) && $parsedHeader['vendor_name']['value'] !== null) {
             $rawName = $parsedHeader['vendor_name']['value'];
             $matches['retailer_id'] = $this->fuzzyMatchModel(Retailer::class, 'name', $rawName);
         }
