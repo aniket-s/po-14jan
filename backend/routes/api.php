@@ -401,6 +401,12 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/statistics/overview', [PurchaseOrderController::class, 'statistics']);
             Route::get('/{id}/sample-schedule', [PurchaseOrderController::class, 'getSampleSchedule']);
             Route::get('/{id}/tna-chart/download', [PurchaseOrderController::class, 'downloadTNAChart']);
+            Route::get('/{id}/spreadsheet-data', [PurchaseOrderController::class, 'spreadsheetData']);
+        });
+
+        // Spreadsheet cell edit
+        Route::middleware('permission:po.edit')->group(function () {
+            Route::patch('/{poId}/styles/{styleId}/cell', [PurchaseOrderController::class, 'updateStyleCell']);
         });
 
         // Create POs
