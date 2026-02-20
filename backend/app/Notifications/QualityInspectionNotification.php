@@ -47,7 +47,7 @@ class QualityInspectionNotification extends Notification implements ShouldQueue
         switch ($this->action) {
             case 'created':
                 $mail->line('A new quality inspection has been scheduled.')
-                    ->line('**Inspection Date:** ' . $this->inspection->inspection_date->format('M d, Y'))
+                    ->line('**Inspection Date:** ' . $this->inspection->inspected_at->format('M d, Y'))
                     ->line('**Style:** ' . $this->inspection->style->style_number)
                     ->line('**PO Number:** ' . $this->inspection->style->purchaseOrder->po_number);
                 break;
@@ -103,7 +103,7 @@ class QualityInspectionNotification extends Notification implements ShouldQueue
             'action' => $this->action,
             'result' => $this->inspection->result,
             'defects_found' => $this->inspection->defects_found,
-            'inspection_date' => $this->inspection->inspection_date->toDateString(),
+            'inspected_at' => $this->inspection->inspected_at->toDateString(),
         ];
     }
 
