@@ -106,6 +106,8 @@ interface SpreadsheetToolbarProps {
   onSortAsc: () => void;
   onSortDesc: () => void;
   onSearch: () => void;
+  /** Optional column definitions override (defaults to SPREADSHEET_COLUMNS) */
+  columns?: SpreadsheetColumnDef[];
 }
 
 export function SpreadsheetToolbar({
@@ -125,8 +127,10 @@ export function SpreadsheetToolbar({
   onSortAsc,
   onSortDesc,
   onSearch,
+  columns: columnsProp,
 }: SpreadsheetToolbarProps) {
   const [activeTab, setActiveTab] = useState<ToolbarTab>('home');
+  const allColumns = columnsProp ?? SPREADSHEET_COLUMNS;
 
   return (
     <div className="border-b bg-[#f3f3f3] shrink-0 select-none" style={{ fontFamily: 'Calibri, "Segoe UI", Arial, sans-serif' }}>
@@ -314,7 +318,7 @@ export function SpreadsheetToolbar({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="max-h-80 overflow-y-auto">
-                  {SPREADSHEET_COLUMNS.map((col) => (
+                  {allColumns.map((col) => (
                     <DropdownMenuCheckboxItem
                       key={col.key}
                       checked={visibleColumnKeys.includes(col.key)}
