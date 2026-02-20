@@ -32,13 +32,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Plus, Search, Eye, Edit, Trash2, FileDown, FileUp, Loader2 } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Trash2, FileDown, FileUp, Loader2, List, Sheet } from 'lucide-react';
 import api from '@/lib/api';
 import { PurchaseOrder, PaginatedResponse } from '@/types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { ExcelImportDialog } from '@/components/purchase-orders/ExcelImportDialog';
+import { POExcelView } from '@/components/purchase-orders/POExcelView';
 import { CreateRetailerDialog } from '@/components/master-data/CreateRetailerDialog';
 import { CreateSeasonDialog } from '@/components/master-data/CreateSeasonDialog';
 import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseDialog';
@@ -99,6 +100,12 @@ export default function PurchaseOrdersPage() {
   const [isSelectPODialogOpen, setIsSelectPODialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedPOForImport, setSelectedPOForImport] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'excel'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('po-view-mode') as 'list' | 'excel') || 'list';
+    }
+    return 'list';
+  });
   const [isCreateRetailerDialogOpen, setIsCreateRetailerDialogOpen] = useState(false);
   const [isCreateSeasonDialogOpen, setIsCreateSeasonDialogOpen] = useState(false);
   const [isCreateWarehouseDialogOpen, setIsCreateWarehouseDialogOpen] = useState(false);
@@ -350,6 +357,31 @@ export default function PurchaseOrdersPage() {
             <p className="text-muted-foreground">Manage and track all purchase orders</p>
           </div>
           <div className="flex gap-2">
+            {/* View mode toggle */}
+            <div className="flex rounded-md border">
+              <Button
+                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                size="sm"
+                className="rounded-r-none h-8"
+                onClick={() => {
+                  setViewMode('list');
+                  localStorage.setItem('po-view-mode', 'list');
+                }}
+              >
+                <List className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'excel' ? 'default' : 'ghost'}
+                size="sm"
+                className="rounded-l-none h-8"
+                onClick={() => {
+                  setViewMode('excel');
+                  localStorage.setItem('po-view-mode', 'excel');
+                }}
+              >
+                <Sheet className="h-4 w-4" />
+              </Button>
+            </div>
             {can('po.export') && (
               <Button variant="outline" size="sm">
                 <FileDown className="mr-2 h-4 w-4" />
@@ -1041,135 +1073,134 @@ export default function PurchaseOrdersPage() {
           </div>
         </div>
 
-        {/* Filters */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Filters</CardTitle>
-            <CardDescription>Search and filter purchase orders</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by PO number, style..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8"
-                  />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Search bar (shared between views) */}
+        <div className="relative max-w-md">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by PO number..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-8"
+          />
+        </div>
 
-        {/* Table */}
-        <Card>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="flex h-96 items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>PO Number</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
-                    <TableHead>Styles</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {purchaseOrders.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
-                        No purchase orders found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    purchaseOrders.map((po) => (
-                      <TableRow key={po.id}>
-                        <TableCell className="font-medium">
-                          <div className="flex flex-col">
-                            <span>{po.po_number}</span>
-                            {po.headline && (
-                              <span className="text-sm text-muted-foreground font-normal">
-                                {po.headline}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>{formatDate(po.po_date)}</TableCell>
-                        <TableCell className="text-right">
-                          {po.total_quantity.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(po.total_value, po.currency)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{po.styles_count || 0} styles</Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Link href={`/purchase-orders/${po.id}`}>
-                              <Button variant="ghost" size="icon">
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </Link>
-                            {can('po.edit') && (
-                              <Link href={`/purchase-orders/${po.id}`}>
-                                <Button variant="ghost" size="icon">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                            )}
-                            {can('po.delete') && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDelete(po.id)}
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
+        {viewMode === 'excel' ? (
+          <POExcelView
+            searchTerm={searchTerm}
+            retailers={retailers}
+            seasons={seasons}
+            countries={countries}
+          />
+        ) : (
+          <>
+            {/* Table */}
+            <Card>
+              <CardContent className="p-0">
+                {loading ? (
+                  <div className="flex h-96 items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>PO Number</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead>Styles</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {purchaseOrders.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground">
+                            No purchase orders found
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        purchaseOrders.map((po) => (
+                          <TableRow key={po.id}>
+                            <TableCell className="font-medium">
+                              <div className="flex flex-col">
+                                <span>{po.po_number}</span>
+                                {po.headline && (
+                                  <span className="text-sm text-muted-foreground font-normal">
+                                    {po.headline}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{formatDate(po.po_date)}</TableCell>
+                            <TableCell className="text-right">
+                              {po.total_quantity.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(po.total_value, po.currency)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{po.styles_count || 0} styles</Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Link href={`/purchase-orders/${po.id}`}>
+                                  <Button variant="ghost" size="icon">
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                                {can('po.edit') && (
+                                  <Link href={`/purchase-orders/${po.id}`}>
+                                    <Button variant="ghost" size="icon">
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </Link>
+                                )}
+                                {can('po.delete') && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDelete(po.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Page {currentPage} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              Next
-            </Button>
-          </div>
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
+          </>
         )}
 
         {/* Select PO for Import Dialog */}

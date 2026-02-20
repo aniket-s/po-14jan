@@ -33,7 +33,18 @@ class PurchaseOrderController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = PurchaseOrder::with(['importer', 'agency', 'styles']);
+        $isExcelView = $request->get('view') === 'excel';
+
+        // Eager-load relationships based on view mode
+        if ($isExcelView) {
+            $query = PurchaseOrder::with([
+                'importer', 'agency',
+                'retailer', 'season', 'country', 'warehouse', 'currency',
+                'styles.assignedFactory',
+            ]);
+        } else {
+            $query = PurchaseOrder::with(['importer', 'agency', 'styles']);
+        }
 
         // Apply permission-based filtering
         if ($user->hasPermissionTo('po.view_all')) {
@@ -70,6 +81,26 @@ class PurchaseOrderController extends Controller
             }
         }
 
+        // Shipping term filter
+        if ($request->has('shipping_term')) {
+            $query->where('shipping_term', $request->shipping_term);
+        }
+
+        // Retailer filter
+        if ($request->has('retailer_id')) {
+            $query->where('retailer_id', $request->retailer_id);
+        }
+
+        // Season filter
+        if ($request->has('season_id')) {
+            $query->where('season_id', $request->season_id);
+        }
+
+        // Country filter
+        if ($request->has('country_id')) {
+            $query->where('country_id', $request->country_id);
+        }
+
         // Search filter
         if ($request->has('search')) {
             $search = $request->search;
@@ -87,14 +118,106 @@ class PurchaseOrderController extends Controller
             $query->where('po_date', '<=', $request->date_to);
         }
 
-        // Sorting
+        // Sorting — handle join-based sorting for related fields
         $sortBy = $request->get('sort_by', 'created_at');
         $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
 
-        // Pagination
-        $perPage = $request->get('per_page', 15);
+        $joinSortFields = [
+            'retailer' => ['retailers', 'retailer_id'],
+            'season' => ['seasons', 'season_id'],
+        ];
+
+        if (isset($joinSortFields[$sortBy])) {
+            [$joinTable, $foreignKey] = $joinSortFields[$sortBy];
+            $query->leftJoin($joinTable, "purchase_orders.{$foreignKey}", '=', "{$joinTable}.id")
+                ->orderBy("{$joinTable}.name", $sortOrder)
+                ->select('purchase_orders.*');
+        } else {
+            $query->orderBy($sortBy, $sortOrder);
+        }
+
+        // Pagination — allow up to 100 for Excel view
+        $perPage = min((int) $request->get('per_page', $isExcelView ? 50 : 15), $isExcelView ? 100 : 50);
         $pos = $query->paginate($perPage);
+
+        // Return enriched data for Excel view
+        if ($isExcelView) {
+            return response()->json([
+                'data' => $pos->map(function ($po) {
+                    return [
+                        'id' => $po->id,
+                        'po_number' => $po->po_number,
+                        'headline' => $po->headline,
+                        'status' => $po->status,
+                        'po_date' => $po->po_date?->format('Y-m-d'),
+                        'revision_date' => $po->revision_date?->format('Y-m-d'),
+                        'shipping_term' => $po->shipping_term,
+                        'etd_date' => $po->etd_date?->format('Y-m-d'),
+                        'eta_date' => $po->eta_date?->format('Y-m-d'),
+                        'ex_factory_date' => $po->ex_factory_date?->format('Y-m-d'),
+                        'in_warehouse_date' => $po->in_warehouse_date?->format('Y-m-d'),
+                        'total_quantity' => $po->total_quantity,
+                        'total_value' => $po->total_value,
+                        'styles_count' => $po->styles->count(),
+                        'payment_terms' => $po->payment_term,
+                        'ship_to' => $po->ship_to,
+                        'importer' => [
+                            'id' => $po->importer->id,
+                            'name' => $po->importer->name,
+                            'company' => $po->importer->company,
+                        ],
+                        'agency' => $po->agency ? [
+                            'id' => $po->agency->id,
+                            'name' => $po->agency->name,
+                            'company' => $po->agency->company,
+                        ] : null,
+                        'retailer' => $po->retailer ? [
+                            'id' => $po->retailer->id,
+                            'name' => $po->retailer->name,
+                        ] : null,
+                        'season' => $po->season ? [
+                            'id' => $po->season->id,
+                            'name' => $po->season->name,
+                        ] : null,
+                        'country' => $po->country ? [
+                            'id' => $po->country->id,
+                            'name' => $po->country->name,
+                        ] : null,
+                        'warehouse' => $po->warehouse ? [
+                            'id' => $po->warehouse->id,
+                            'name' => $po->warehouse->name,
+                        ] : null,
+                        'currency' => $po->currency ? [
+                            'id' => $po->currency->id,
+                            'code' => $po->currency->code,
+                            'symbol' => $po->currency->symbol ?? '',
+                        ] : null,
+                        'styles' => $po->styles->map(function ($style) {
+                            return [
+                                'id' => $style->id,
+                                'style_number' => $style->style_number,
+                                'description' => $style->description,
+                                'color_name' => $style->color['name'] ?? null,
+                                'quantity_in_po' => $style->pivot->quantity_in_po,
+                                'unit_price_in_po' => $style->pivot->unit_price_in_po,
+                                'total_price' => ($style->pivot->quantity_in_po ?? 0) * ($style->pivot->unit_price_in_po ?? 0),
+                                'production_status' => $style->pivot->status,
+                                'shipping_approval_status' => null,
+                                'assigned_factory' => $style->assignedFactory?->name ?? null,
+                                'assignment_type' => $style->pivot->assignment_type,
+                                'ex_factory_date' => $style->pivot->ex_factory_date,
+                                'target_shipment_date' => $style->pivot->target_shipment_date,
+                            ];
+                        }),
+                        'created_at' => $po->created_at,
+                    ];
+                }),
+                'current_page' => $pos->currentPage(),
+                'last_page' => $pos->lastPage(),
+                'per_page' => $pos->perPage(),
+                'total' => $pos->total(),
+            ]);
+        }
 
         return response()->json([
             'data' => $pos->map(function ($po) {
