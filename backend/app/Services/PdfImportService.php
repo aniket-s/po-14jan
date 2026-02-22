@@ -31,9 +31,7 @@ class PdfImportService
     public function analyzePdf(string $filePath): array
     {
         try {
-            $parser = new Parser();
-            $pdf = $parser->parseFile($filePath);
-            $text = $pdf->getText();
+            $text = $this->extractTextPreservingLayout($filePath);
 
             if (empty(trim($text))) {
                 return [
@@ -167,6 +165,151 @@ class PdfImportService
         }
     }
 
+    // ========================================================================
+    // TEXT EXTRACTION PIPELINE
+    // ========================================================================
+
+    /**
+     * Extract text from PDF preserving visual layout.
+     * Tries multiple strategies in order of quality.
+     */
+    private function extractTextPreservingLayout(string $filePath): string
+    {
+        // Strategy 1: pdftotext -layout (best quality when available)
+        $text = $this->extractWithPdftotext($filePath);
+        if ($text !== null) {
+            Log::debug('PDF text extracted via pdftotext -layout');
+            return $text;
+        }
+
+        // Strategy 2: Smalot position-aware reconstruction
+        $text = $this->extractWithSmalotPositionAware($filePath);
+        if ($text !== null) {
+            Log::debug('PDF text extracted via Smalot position-aware reconstruction');
+            return $text;
+        }
+
+        // Strategy 3: Smalot basic getText() (original fallback)
+        Log::debug('PDF text extracted via Smalot getText() fallback');
+        $parser = new Parser();
+        $pdf = $parser->parseFile($filePath);
+        return $pdf->getText();
+    }
+
+    /**
+     * Extract text using pdftotext -layout (poppler-utils).
+     * Produces the best layout-preserving output.
+     */
+    private function extractWithPdftotext(string $filePath): ?string
+    {
+        try {
+            $escaped = escapeshellarg($filePath);
+            $output = [];
+            $returnCode = null;
+            exec("pdftotext -layout {$escaped} - 2>/dev/null", $output, $returnCode);
+            if ($returnCode === 0 && !empty($output)) {
+                $text = implode("\n", $output);
+                if (!empty(trim($text))) {
+                    return $text;
+                }
+            }
+        } catch (\Exception $e) {
+            Log::debug('pdftotext not available: ' . $e->getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Extract text using Smalot PdfParser with position-aware reconstruction.
+     * Groups text elements by Y-coordinate and sorts by X-coordinate
+     * to reconstruct the visual layout of the PDF.
+     */
+    private function extractWithSmalotPositionAware(string $filePath): ?string
+    {
+        try {
+            $parser = new Parser();
+            $pdf = $parser->parseFile($filePath);
+            $pages = $pdf->getPages();
+            $allLines = [];
+
+            foreach ($pages as $page) {
+                $dataTm = $page->getDataTm();
+                if (empty($dataTm)) {
+                    continue;
+                }
+
+                // Group text elements by y-coordinate (with tolerance)
+                $rows = [];
+                foreach ($dataTm as $item) {
+                    if (!is_array($item) || count($item) < 2) {
+                        continue;
+                    }
+                    $matrix = $item[0];
+                    $text = $item[1] ?? '';
+                    if (empty(trim($text))) {
+                        continue;
+                    }
+
+                    $x = is_array($matrix) && isset($matrix[4]) ? (float) $matrix[4] : 0;
+                    $y = is_array($matrix) && isset($matrix[5]) ? (float) $matrix[5] : 0;
+
+                    // Find existing row group within tolerance (3 points)
+                    $foundRow = false;
+                    foreach ($rows as &$row) {
+                        if (abs($row['y'] - $y) < 3.0) {
+                            $row['items'][] = ['x' => $x, 'text' => $text];
+                            $foundRow = true;
+                            break;
+                        }
+                    }
+                    unset($row);
+
+                    if (!$foundRow) {
+                        $rows[] = ['y' => $y, 'items' => [['x' => $x, 'text' => $text]]];
+                    }
+                }
+
+                // Sort rows top-to-bottom (PDF y-axis is bottom-up, so descending)
+                usort($rows, fn ($a, $b) => $b['y'] <=> $a['y']);
+
+                // Build lines: sort items left-to-right, join with spacing based on gap
+                foreach ($rows as $row) {
+                    $items = $row['items'];
+                    usort($items, fn ($a, $b) => $a['x'] <=> $b['x']);
+
+                    $lineText = '';
+                    $prevEnd = 0;
+                    foreach ($items as $idx => $item) {
+                        if ($idx > 0) {
+                            $gap = $item['x'] - $prevEnd;
+                            if ($gap > 50) {
+                                $lineText .= '    '; // large gap = column separator
+                            } elseif ($gap > 15) {
+                                $lineText .= '  '; // medium gap
+                            } elseif ($gap > 2) {
+                                $lineText .= ' '; // small gap
+                            }
+                        }
+                        $lineText .= $item['text'];
+                        // Estimate end position (rough: x + text length * average char width)
+                        $prevEnd = $item['x'] + strlen($item['text']) * 5.5;
+                    }
+                    $allLines[] = $lineText;
+                }
+            }
+
+            $result = implode("\n", $allLines);
+            return empty(trim($result)) ? null : $result;
+        } catch (\Exception $e) {
+            Log::debug('Smalot position-aware extraction failed: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    // ========================================================================
+    // HEADER PARSING
+    // ========================================================================
+
     /**
      * Parse header section from PDF text lines.
      * Handles SCI "Master Cut Ticket" format and standard PO formats.
@@ -182,7 +325,8 @@ class PdfImportService
         $header['po_number'] = $this->extractField(
             $fullText,
             [
-                '/PO\s*#\s*[:\-]?\s*(\d{3,10})/i',
+                '/(?:VC\s+)?PO\s*#\s*[:\-]?\s*(\d{3,10})/i',
+                '/\b(\d{4,10})\s+ORIGINAL\b/i',
                 '/(?:P\.?O\.?\s*(?:Number|No\.?|#)?|Purchase\s*Order\s*(?:Number|No\.?|#)?)\s*[:\-]?\s*([A-Za-z0-9][\w\-\/\.]{1,49})/i',
                 '/\b(PO[\-\s]?\d{4}[\-\s]?\d{2,10})\b/i',
                 '/\bOrder\s*(?:Number|No\.?|#)\s*[:\-]?\s*([A-Za-z0-9][\w\-\/\.]{1,49})/i',
@@ -196,6 +340,7 @@ class PdfImportService
             $fullText,
             [
                 '/(?:ISSUE\s*DATE|ISSUED?\s*(?:DATE|DT\.?))\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                '/ORIGINAL\s+(\d{1,2}[\/-]\w{3}[\/-]\d{2,4})/i',
                 '/(?:P\.?O\.?\s*Date|Order\s*Date)\s*[:\-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i',
                 '/(?:P\.?O\.?\s*Date|Order\s*Date)\s*[:\-]?\s*(\w+\s+\d{1,2},?\s+\d{4})/i',
                 '/(?:Date)\s*[:\-]?\s*(\d{4}[\/-]\d{1,2}[\/-]\d{1,2})/i',
@@ -203,44 +348,118 @@ class PdfImportService
         );
 
         // ── Customer / Retailer ──
-        // SCI format: "CUST: CITITRENDS"
+        // SCI format: two-row header (CUST label above, value below) or "CUST: CITITRENDS"
         // Standard: "Customer: XXX", "Bill To: XXX"
         $header['customer_name'] = $this->extractField(
             $fullText,
             [
-                '/(?:CUST|CUSTOMER|CLIENT)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                '/(?:CUST|CUSTOMER|CLIENT)\s*[:\-]\s*(.+?)(?:\n|$)/i',
                 '/(?:Retailer|Buyer\s*Company|Bill\s*To|Sold\s*To)\s*(?:Name)?\s*[:\-]?\s*(.+?)(?:\n|$)/i',
             ]
         );
+
+        // If label-based extraction failed or captured a header label, try SCI two-row header
+        if ($header['customer_name']['value'] === null
+            || preg_match('/^(LABELS|SAMPLE|PRE|SHIP|CANCEL)/i', $header['customer_name']['value'])) {
+            $sciHeader = $this->parseSciTwoRowHeader($lines);
+            if (!empty($sciHeader['customer'])) {
+                $header['customer_name'] = [
+                    'value' => $sciHeader['customer'],
+                    'status' => 'parsed',
+                    'confidence' => 'high',
+                ];
+            }
+        }
+
+        // Last resort: detect well-known retailer names directly in text
+        if ($header['customer_name']['value'] === null) {
+            $retailerPatterns = '/\b(CITITRENDS|CITI\s*TRENDS|WALMART|TARGET|ROSS\s*STORES?|TJX|MARSHALLS|BURLINGTON|NORDSTROM|MACYS|KOHLS|JC\s*PENNEY|OLD\s*NAVY|GAP|PRIMARK|SHEIN|FIVE\s*BELOW|DOLLAR\s*TREE|FAMILY\s*DOLLAR)\b/i';
+            if (preg_match($retailerPatterns, $fullText, $rm)) {
+                $header['customer_name'] = [
+                    'value' => strtoupper(trim($rm[1])),
+                    'status' => 'parsed',
+                    'confidence' => 'medium',
+                ];
+            }
+        }
 
         // ── Vendor / Factory ──
         $header['vendor_name'] = $this->extractField(
             $fullText,
             [
                 '/(?:Vendor|Supplier|Factory|Manufacturer)\s*(?:Name)?\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                '/Purchase\s*Vendor\s*[:\-]?\s*(.+?)(?:\n|$)/i',
             ]
         );
 
+        // If no vendor found, try to find factory name near country or totals
+        if ($header['vendor_name']['value'] === null) {
+            // Look for "CompanyName" right before totals line
+            if (preg_match('/^([A-Z][A-Za-z\s]+(?:Apparels?|Garments?|Textiles?|Fashions?|Clothing|Industries|Exports?|Int(?:ernational|l)?|Ltd|Pvt|Inc)[\w\s.]*?)[\r\n]/m', $fullText, $vm)) {
+                $header['vendor_name'] = [
+                    'value' => trim($vm[1]),
+                    'status' => 'parsed',
+                    'confidence' => 'medium',
+                ];
+            }
+        }
+
         // ── ETD / Ship Date ──
-        // SCI format: "SHIP: 25-MAY-26"
+        // SCI format: "SHIP: 25-MAY-26" or SCI two-row header
         // Standard: "ETD: 05/25/2026", "Ship Date: May 25, 2026"
         $header['etd_date'] = $this->extractDateField(
             $fullText,
             [
-                '/(?:SHIP|SHIP\s*DATE|SHIPPING\s*DATE)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                '/(?:SHIP\s*DATE|SHIPPING\s*DATE)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
                 '/(?:ETD|Estimated\s*Time\s*(?:of\s*)?Departure)\s*[:\-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i',
                 '/(?:ETD)\s*[:\-]?\s*(\w+\s+\d{1,2},?\s+\d{4})/i',
             ]
         );
 
+        // If label-based extraction failed, try SCI two-row header for ship date
+        if ($header['etd_date']['value'] === null) {
+            if (!isset($sciHeader)) {
+                $sciHeader = $this->parseSciTwoRowHeader($lines);
+            }
+            if (!empty($sciHeader['ship_date'])) {
+                $parsed = $this->parseDate($sciHeader['ship_date']);
+                if ($parsed) {
+                    $header['etd_date'] = [
+                        'value' => $parsed,
+                        'raw_text' => $sciHeader['ship_date'],
+                        'status' => 'parsed',
+                        'confidence' => 'high',
+                    ];
+                }
+            }
+        }
+
         // ── Cancel Date ──
-        // SCI format: "CANCEL: 01-JUN-26"
+        // SCI format: "CANCEL: 01-JUN-26" or SCI two-row header
         $header['cancel_date'] = $this->extractDateField(
             $fullText,
             [
-                '/(?:CANCEL|CANCEL\s*DATE|CANCELLATION)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                '/(?:CANCEL\s*DATE|CANCELLATION\s*DATE)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
             ]
         );
+
+        // Try SCI two-row header for cancel date
+        if ($header['cancel_date']['value'] === null) {
+            if (!isset($sciHeader)) {
+                $sciHeader = $this->parseSciTwoRowHeader($lines);
+            }
+            if (!empty($sciHeader['cancel_date'])) {
+                $parsed = $this->parseDate($sciHeader['cancel_date']);
+                if ($parsed) {
+                    $header['cancel_date'] = [
+                        'value' => $parsed,
+                        'raw_text' => $sciHeader['cancel_date'],
+                        'status' => 'parsed',
+                        'confidence' => 'high',
+                    ];
+                }
+            }
+        }
 
         // ── In-Warehouse / In-House Date ──
         // SCI format: "NEED 05/22/26 IN HOUSE" (in footer area)
@@ -260,8 +479,10 @@ class PdfImportService
         $header['payment_terms_raw'] = $this->extractField(
             $fullText,
             [
+                '/TERMS\s*[:\-]?\s*(NET\s+\d+[^,\n]*)/i',
                 '/TERMS\s*[:\-]?\s*(.+?)(?:\n|$)/i',
                 '/(?:Payment\s*Terms?|Terms?\s*of\s*Payment|Pay(?:ment)?\s*Cond(?:ition)?s?)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                '/\b(NET\s+\d+(?:\s*DAYS?)?)\b/i',
             ]
         );
 
@@ -397,6 +618,86 @@ class PdfImportService
         return $header;
     }
 
+    /**
+     * Parse SCI two-row column header format.
+     *
+     * Detects rows like:
+     *   SHIP        CANCEL      CUST          LABELS          SAMPLE  PRE-TICKET
+     *   01-JUL-26               CITITRENDS    SAINT ARCHIVES  Y       Y
+     *
+     * Returns associative array with extracted values.
+     */
+    private function parseSciTwoRowHeader(array $lines): array
+    {
+        $result = [];
+
+        foreach ($lines as $index => $line) {
+            // Look for the header row containing SHIP + CANCEL + CUST
+            if (preg_match('/\bSHIP\b/i', $line)
+                && preg_match('/\bCANCEL\b/i', $line)
+                && preg_match('/\bCUST\b/i', $line)) {
+
+                // Found the label row — get the value row (next non-empty line)
+                $valueRow = null;
+                for ($j = $index + 1; $j < min($index + 3, count($lines)); $j++) {
+                    if (!empty(trim($lines[$j]))) {
+                        $valueRow = $lines[$j];
+                        break;
+                    }
+                }
+                if ($valueRow === null) {
+                    break;
+                }
+
+                // Find column positions of headers
+                $shipPos = stripos($line, 'SHIP');
+                $cancelPos = stripos($line, 'CANCEL');
+                $custPos = stripos($line, 'CUST');
+                $labelsPos = stripos($line, 'LABEL');
+
+                // Extract values by column position
+                // Ship date: from SHIP position to CANCEL position
+                if ($shipPos !== false && $cancelPos !== false) {
+                    $shipVal = trim(substr($valueRow, $shipPos, $cancelPos - $shipPos));
+                    if (!empty($shipVal) && preg_match('/\d/', $shipVal)) {
+                        $result['ship_date'] = $shipVal;
+                    }
+                }
+
+                // Cancel date: from CANCEL position to CUST position
+                if ($cancelPos !== false && $custPos !== false) {
+                    $cancelVal = trim(substr($valueRow, $cancelPos, $custPos - $cancelPos));
+                    if (!empty($cancelVal) && preg_match('/\d/', $cancelVal)) {
+                        $result['cancel_date'] = $cancelVal;
+                    }
+                }
+
+                // Customer: from CUST position to LABELS position (or end)
+                if ($custPos !== false) {
+                    $endPos = $labelsPos !== false ? $labelsPos : strlen($valueRow);
+                    $custVal = trim(substr($valueRow, $custPos, $endPos - $custPos));
+                    if (!empty($custVal) && !preg_match('/^(LABELS|SAMPLE|PRE)/i', $custVal)) {
+                        $result['customer'] = $custVal;
+                    }
+                }
+
+                // Labels: from LABELS position onwards
+                if ($labelsPos !== false) {
+                    $samplePos = stripos($line, 'SAMPLE');
+                    $endPos = $samplePos !== false ? $samplePos : strlen($valueRow);
+                    $labelsVal = trim(substr($valueRow, $labelsPos, $endPos - $labelsPos));
+                    if (!empty($labelsVal) && !preg_match('/^(SAMPLE|PRE)/i', $labelsVal)) {
+                        $result['labels'] = $labelsVal;
+                    }
+                }
+
+                break;
+            }
+        }
+
+        return $result;
+    }
+
     // ========================================================================
     // LINE ITEM PARSING — Multi-row block approach for SCI format
     // ========================================================================
@@ -419,7 +720,8 @@ class PdfImportService
         // Find the table header row
         $headerRowIndex = $this->findTableHeaderRow($lines);
         if ($headerRowIndex === null) {
-            return $styles;
+            // No table header found — try columnar fallback for scrambled text
+            return $this->parseColumnarLineItems($lines);
         }
 
         // Detect size columns from header row (for standard single-row formats)
@@ -468,6 +770,197 @@ class PdfImportService
             } else {
                 $i++;
             }
+        }
+
+        // If block-based parsing found nothing, try columnar fallback
+        if (empty($styles)) {
+            $styles = $this->parseColumnarLineItems($lines);
+        }
+
+        return $styles;
+    }
+
+    /**
+     * Parse line items from columnar/scrambled SCI text.
+     *
+     * Detects repeated style numbers, parallel color/quantity/price arrays,
+     * and reconstructs individual line items from the columnar data.
+     *
+     * Example scrambled text patterns:
+     *   "SAT301SBCX SAT301SBCX SAT301SBCX"  → 3 items with same style
+     *   "017 100 104"                         → color codes
+     *   "CHARCOAL WHITE CREAM"                → color names
+     *   "600 720 600"                         → quantities
+     *   "3.76  3.76  3.76"                   → prices
+     */
+    private function parseColumnarLineItems(array $lines): array
+    {
+        $fullText = implode("\n", $lines);
+        $styles = [];
+
+        // Detect repeated style numbers on a single line
+        // Pattern: same alphanumeric style code repeated 2+ times
+        $repeatedStyleLine = null;
+        $styleNumber = null;
+        $itemCount = 0;
+
+        foreach ($lines as $line) {
+            $tokens = preg_split('/\s+/', trim($line));
+            $tokens = array_values(array_filter($tokens, fn($t) => !empty($t)));
+            if (count($tokens) >= 2) {
+                // Check if all tokens are the same and look like style numbers
+                $unique = array_unique($tokens);
+                if (count($unique) === 1
+                    && preg_match('/^[A-Z]{2,}\d{2,}/i', $unique[0])
+                    && count($tokens) >= 2) {
+                    $styleNumber = $unique[0];
+                    $itemCount = count($tokens);
+                    $repeatedStyleLine = $line;
+                    break;
+                }
+            }
+        }
+
+        if ($styleNumber === null || $itemCount < 2) {
+            return $styles;
+        }
+
+        // Now search for parallel arrays of color codes, color names, quantities, prices, etc.
+        $colorCodes = [];
+        $colorNames = [];
+        $quantities = [];
+        $prices = [];
+        $extensions = [];
+        $description = null;
+        $etaDates = [];
+
+        // Known color name patterns
+        $colorNamePattern = '/^(BLACK|WHITE|RED|BLUE|GREEN|NAVY|GREY|GRAY|PINK|TAN|CREAM|CHARCOAL|CHAR|PINE|KHAKI|BROWN|ORANGE|YELLOW|PURPLE|OLIVE|CORAL|TEAL|BURGUNDY|IVORY|BEIGE|MAUVE|SAGE|ROSE|FUCHSIA|HEATHER|OATMEAL|MUSTARD|INDIGO|LAVENDER|PLUM|MINT|MOSS|SAND|TAUPE|LILAC|ECRU|WHEAT|STONE|HUNTER|DENIM|RUST|WINE|LEMON|BERRY|BONE|ASH|SLATE|STEEL|PEWTER)/i';
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if (empty($trimmed) || $trimmed === $repeatedStyleLine) {
+                continue;
+            }
+
+            $tokens = preg_split('/\s+/', $trimmed);
+            $tokens = array_values(array_filter($tokens, fn($t) => !empty($t)));
+
+            if (count($tokens) !== $itemCount) {
+                // Check for description lines (repeated description)
+                if (count($tokens) >= 3 && $description === null) {
+                    // Look for repeated multi-word descriptions
+                    $descText = $trimmed;
+                    if (preg_match('/^((?:[A-Z]+\s+){2,}[A-Z]+)\s+\1/i', $descText)) {
+                        // Repeated description — extract just one copy
+                        $words = preg_split('/\s+/', $trimmed);
+                        $chunkSize = intval(count($words) / $itemCount);
+                        if ($chunkSize >= 2) {
+                            $description = implode(' ', array_slice($words, 0, $chunkSize));
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Check if all tokens are 3-digit color codes
+            if (empty($colorCodes) && count(array_filter($tokens, fn($t) => preg_match('/^\d{3}$/', $t))) === $itemCount) {
+                $colorCodes = $tokens;
+                continue;
+            }
+
+            // Check if all tokens are color names
+            if (empty($colorNames) && count(array_filter($tokens, fn($t) => preg_match($colorNamePattern, $t))) === $itemCount) {
+                $colorNames = $tokens;
+                continue;
+            }
+
+            // Check if all tokens are integers (potential quantities)
+            $allIntegers = count(array_filter($tokens, fn($t) => preg_match('/^\d+$/', $t))) === $itemCount;
+
+            // Check if all tokens are decimal numbers (potential prices)
+            $allDecimals = count(array_filter($tokens, fn($t) => preg_match('/^\d+\.\d{2}$/', $t))) === $itemCount;
+
+            // Check if all tokens are formatted amounts (potential extensions)
+            $allAmounts = count(array_filter($tokens, fn($t) => preg_match('/^[\d,]+\.\d{2}$/', $t))) === $itemCount;
+
+            if ($allAmounts && empty($extensions)) {
+                $extensions = array_map(fn($t) => (float) str_replace(',', '', $t), $tokens);
+                continue;
+            }
+
+            if ($allDecimals && empty($prices)) {
+                $prices = array_map('floatval', $tokens);
+                continue;
+            }
+
+            // For integers: could be quantities — pick the set with largest values
+            if ($allIntegers) {
+                $vals = array_map('intval', $tokens);
+                $maxVal = max($vals);
+                if (empty($quantities) || $maxVal > max($quantities)) {
+                    // If quantities already set with smaller values, those were likely something else
+                    if (!empty($quantities) && max($quantities) < 100 && $maxVal >= 100) {
+                        $quantities = $vals;
+                    } elseif (empty($quantities) && $maxVal >= 50) {
+                        $quantities = $vals;
+                    }
+                }
+                continue;
+            }
+        }
+
+        // Try to extract description from repeated text blocks
+        if ($description === null) {
+            // Look for lines with the same description repeated N times
+            foreach ($lines as $line) {
+                $trimmed = trim($line);
+                if (preg_match('/^((?:[A-Z][A-Z\s]{5,}?))\s{2,}\1/i', $trimmed, $dm)) {
+                    $description = trim($dm[1]);
+                    break;
+                }
+            }
+        }
+
+        // Look for dates that appear N times or a single ETA date
+        if (preg_match_all('/(\d{1,2}[\/-]\w{3}[\/-]\d{2,4})/i', $fullText, $dateMatches)) {
+            foreach (array_count_values($dateMatches[1]) as $date => $count) {
+                if ($count >= $itemCount) {
+                    $etaDates = array_fill(0, $itemCount, $date);
+                    break;
+                }
+            }
+        }
+
+        // Build the line items
+        for ($i = 0; $i < $itemCount; $i++) {
+            $colorDisplay = null;
+            if (isset($colorCodes[$i]) && isset($colorNames[$i])) {
+                $colorDisplay = $colorCodes[$i] . ' ' . strtoupper($colorNames[$i]);
+            } elseif (isset($colorNames[$i])) {
+                $colorDisplay = strtoupper($colorNames[$i]);
+            } elseif (isset($colorCodes[$i])) {
+                $colorDisplay = $colorCodes[$i];
+            }
+
+            $qty = $quantities[$i] ?? null;
+            $price = $prices[$i] ?? null;
+            $extn = $extensions[$i] ?? null;
+
+            // Calculate extension if missing
+            if ($extn === null && $qty !== null && $price !== null) {
+                $extn = round($qty * $price, 2);
+            }
+
+            $styles[] = [
+                'style_number' => $this->buildParsedField($styleNumber),
+                'description' => $this->buildParsedField($description),
+                'color_name' => $this->buildParsedField($colorDisplay),
+                'size_breakdown' => $this->buildParsedField(null, 'missing'),
+                'quantity' => $this->buildParsedField($qty),
+                'unit_price' => $this->buildParsedField($price),
+                'total_amount' => $this->buildParsedField($extn),
+            ];
         }
 
         return $styles;
@@ -682,23 +1175,58 @@ class PdfImportService
 
     /**
      * Find the table header row index.
-     * Looks for rows containing "STYLE" + ("QTY" or "PRICE").
+     * Uses bidirectional search: first forward from start, then backward from end.
+     * Looks for rows containing "STYLE" + ("QTY" or "PRICE" or "EXTN").
      */
     private function findTableHeaderRow(array $lines): ?int
     {
+        // Forward search (original behavior — finds first matching row)
         foreach ($lines as $index => $line) {
-            $lower = strtolower($line);
-
-            $hasStyleCol = preg_match('/(style|item|sku|product)/i', $lower);
-            $hasQtyCol = preg_match('/(qty|quantity|total\s*qty|pcs)/i', $lower);
-            $hasPriceCol = preg_match('/(price|cost|rate|amount|fob|extn)/i', $lower);
-
-            if ($hasStyleCol && ($hasQtyCol || $hasPriceCol)) {
+            if ($this->isTableHeaderLine($line)) {
                 return $index;
             }
         }
 
+        // Backward search — some PDFs place the header row after the data
+        // (e.g., SCI format with scrambled text extraction)
+        for ($i = count($lines) - 1; $i >= 0; $i--) {
+            if ($this->isTableHeaderLine($lines[$i])) {
+                return $i;
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * Check if a line looks like a table header row.
+     */
+    private function isTableHeaderLine(string $line): bool
+    {
+        $lower = strtolower($line);
+
+        $hasStyleCol = preg_match('/(style|item|sku|product)\b/i', $lower);
+        $hasQtyCol = preg_match('/(qty|quantity|total\s*qty|pcs)\b/i', $lower);
+        $hasPriceCol = preg_match('/(price|cost|rate|amount|fob|extn)\b/i', $lower);
+        $hasColorCol = preg_match('/(color|colour)\b/i', $lower);
+        $hasDescCol = preg_match('/(desc|description)\b/i', $lower);
+
+        // Standard: STYLE + (QTY or PRICE)
+        if ($hasStyleCol && ($hasQtyCol || $hasPriceCol)) {
+            return true;
+        }
+
+        // SCI: STYLE + COLOR + DESCRIPTION
+        if ($hasStyleCol && $hasColorCol && $hasDescCol) {
+            return true;
+        }
+
+        // SCI compact: has Ln + STYLE + EXTN on same line
+        if ($hasStyleCol && preg_match('/\bLn\b/', $line) && $hasPriceCol) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -935,11 +1463,22 @@ class PdfImportService
             $matches['country_id'] = $match;
         }
 
+        // Match Warehouse — from ship_to field (e.g., "FE", "FTDI-EAST")
+        if (isset($parsedHeader['ship_to']) && $parsedHeader['ship_to']['value'] !== null) {
+            $rawWarehouse = $parsedHeader['ship_to']['value'];
+            $match = $this->fuzzyMatchModel(Warehouse::class, 'name', $rawWarehouse);
+            if ($match['status'] === 'unrecognized') {
+                $match = $this->fuzzyMatchModel(Warehouse::class, 'code', $rawWarehouse);
+            }
+            $matches['warehouse_id'] = $match;
+        }
+
         return $matches;
     }
 
     /**
-     * Fuzzy match a value against a model's field
+     * Fuzzy match a value against a model's field.
+     * Tries: exact → case-insensitive → normalized → partial → reverse partial.
      */
     private function fuzzyMatchModel(string $modelClass, string $field, string $rawValue): array
     {
@@ -967,6 +1506,25 @@ class PdfImportService
             ];
         }
 
+        // Try normalized match (strip spaces, hyphens, dots for comparison)
+        $normalized = strtolower(preg_replace('/[\s\-\.]+/', '', $rawValue));
+        try {
+            $allRecords = $modelClass::all();
+            foreach ($allRecords as $record) {
+                $dbNormalized = strtolower(preg_replace('/[\s\-\.]+/', '', $record->$field ?? ''));
+                if ($normalized === $dbNormalized && !empty($normalized)) {
+                    return [
+                        'value' => $record->id,
+                        'raw_text' => $rawValue,
+                        'status' => 'matched',
+                        'confidence' => 'high',
+                    ];
+                }
+            }
+        } catch (\Exception $e) {
+            // Model may not support this query
+        }
+
         // Try partial match (LIKE)
         $record = $modelClass::whereRaw('LOWER(' . $field . ') LIKE ?', ['%' . strtolower($rawValue) . '%'])->first();
         if ($record) {
@@ -982,7 +1540,8 @@ class PdfImportService
         try {
             $records = $modelClass::where('is_active', true)->get();
             foreach ($records as $record) {
-                if (stripos($rawValue, $record->$field) !== false) {
+                $dbVal = $record->$field ?? '';
+                if (!empty($dbVal) && stripos($rawValue, $dbVal) !== false) {
                     return [
                         'value' => $record->id,
                         'raw_text' => $rawValue,
@@ -993,6 +1552,26 @@ class PdfImportService
             }
         } catch (\Exception $e) {
             // is_active column may not exist on all models
+        }
+
+        // Try word-boundary matching for the raw value
+        try {
+            $records = $allRecords ?? $modelClass::all();
+            foreach ($records as $record) {
+                $dbVal = $record->$field ?? '';
+                if (!empty($dbVal) && strlen($dbVal) >= 3) {
+                    if (preg_match('/\b' . preg_quote($dbVal, '/') . '\b/i', $rawValue)) {
+                        return [
+                            'value' => $record->id,
+                            'raw_text' => $rawValue,
+                            'status' => 'matched',
+                            'confidence' => 'medium',
+                        ];
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // Fallthrough
         }
 
         return [
