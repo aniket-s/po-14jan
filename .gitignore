@@ -7,3 +7,6 @@ frontend/.next/
 
 # Next.js auto-generated types
 frontend/next-env.d.ts
+
+# TypeScript build info
+*.tsbuildinfo
