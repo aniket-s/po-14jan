@@ -42,6 +42,8 @@ import {
   ArrowRight,
   Eye,
   Plus,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { analyzePdfForPOImport, createPOFromPdf } from '@/services/styles';
 import api from '@/lib/api';
@@ -117,6 +119,9 @@ export function PdfImportDialog({
   const [isCreateCountryOpen, setIsCreateCountryOpen] = useState(false);
   const [isCreateWarehouseOpen, setIsCreateWarehouseOpen] = useState(false);
 
+  // Raw text viewer toggle
+  const [showRawText, setShowRawText] = useState(false);
+
   // Payment terms structured state
   const [paymentTermCode, setPaymentTermCode] = useState<string>('');
   const [paymentPercentage, setPaymentPercentage] = useState<string>('');
@@ -136,6 +141,7 @@ export function PdfImportDialog({
     setPaymentTermCode('');
     setPaymentPercentage('');
     setSampleSchedule({});
+    setShowRawText(false);
   }, []);
 
   const handleClose = () => {
@@ -539,6 +545,25 @@ export function PdfImportDialog({
                 </ul>
               </AlertDescription>
             </Alert>
+          )}
+
+          {/* Raw Extracted Text (collapsible — for debugging parsing issues) */}
+          {analysisResult?.raw_text && step !== 'upload' && step !== 'result' && (
+            <div className="border rounded-md">
+              <button
+                type="button"
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                onClick={() => setShowRawText(prev => !prev)}
+              >
+                {showRawText ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                View Raw Extracted Text from PDF
+              </button>
+              {showRawText && (
+                <pre className="px-3 pb-3 text-xs text-muted-foreground whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto border-t bg-muted/20 font-mono">
+                  {analysisResult.raw_text}
+                </pre>
+              )}
+            </div>
           )}
 
           {/* Error */}
