@@ -108,6 +108,41 @@ class PdfImportService
                 $warnings[] = "Price is \$0.00 for style(s): {$styleList}{$more} - please ask importer or agency to fill the price manually";
             }
 
+            // Check for duplicate style numbers
+            $styleNumbers = [];
+            foreach ($lineItems as $item) {
+                $sn = $item['style_number']['value'] ?? '';
+                if (!empty($sn)) {
+                    $styleNumbers[] = $sn;
+                }
+            }
+            $duplicates = array_unique(array_diff_assoc($styleNumbers, array_unique($styleNumbers)));
+            if (!empty($duplicates)) {
+                $warnings[] = 'Duplicate style number(s) found: ' . implode(', ', array_unique($duplicates)) . ' - please review';
+            }
+
+            // Cross-validate size breakdown sums against total quantity per style
+            foreach ($lineItems as $idx => $item) {
+                $sizeBreakdown = $item['size_breakdown']['value'] ?? null;
+                $totalQty = $item['quantity']['value'] ?? 0;
+                if (is_array($sizeBreakdown) && !empty($sizeBreakdown) && $totalQty > 0) {
+                    $sizeSum = array_sum($sizeBreakdown);
+                    if ($sizeSum !== $totalQty) {
+                        $styleName = $item['style_number']['value'] ?? 'Row ' . ($idx + 1);
+                        $warnings[] = "Style '{$styleName}': size breakdown total ({$sizeSum}) does not match quantity ({$totalQty})";
+                    }
+                }
+            }
+
+            // Cross-validate parsed totals vs calculated totals
+            if ($totalQty > 0 && $calculatedQty > 0 && abs($totalQty - $calculatedQty) >= 2) {
+                $warnings[] = "PDF footer total quantity ({$totalQty}) differs from calculated sum ({$calculatedQty}) - please verify";
+            }
+            if ($totalValue > 0 && $calculatedValue > 0 && abs($totalValue - $calculatedValue) > 0.01) {
+                $diff = round(abs($totalValue - $calculatedValue), 2);
+                $warnings[] = "PDF footer total value (\${$totalValue}) differs from calculated sum (\${$calculatedValue}) by \${$diff} - please verify";
+            }
+
             return [
                 'success' => true,
                 'po_header' => $poHeader,
@@ -147,10 +182,10 @@ class PdfImportService
         $header['po_number'] = $this->extractField(
             $fullText,
             [
-                '/PO\s*#\s*[:\-]?\s*(\d{3,6})/i',
-                '/(?:P\.?O\.?\s*(?:Number|No\.?|#)?|Purchase\s*Order\s*(?:Number|No\.?|#)?)\s*[:\-]?\s*([A-Za-z0-9\-\/]+)/i',
-                '/\b(PO[\-\s]?\d{4}[\-\s]?\d{2,6})\b/i',
-                '/\bOrder\s*(?:Number|No\.?|#)\s*[:\-]?\s*([A-Za-z0-9\-\/]+)/i',
+                '/PO\s*#\s*[:\-]?\s*(\d{3,10})/i',
+                '/(?:P\.?O\.?\s*(?:Number|No\.?|#)?|Purchase\s*Order\s*(?:Number|No\.?|#)?)\s*[:\-]?\s*([A-Za-z0-9][\w\-\/\.]{1,49})/i',
+                '/\b(PO[\-\s]?\d{4}[\-\s]?\d{2,10})\b/i',
+                '/\bOrder\s*(?:Number|No\.?|#)\s*[:\-]?\s*([A-Za-z0-9][\w\-\/\.]{1,49})/i',
             ]
         );
 
@@ -700,21 +735,35 @@ class PdfImportService
         $fullText = implode("\n", $lines);
 
         // Total Quantity — various formats
-        if (preg_match('/Total\s+(?:Order\s+)?(?:Qty|Quantity|Pcs|Pieces)\s*[:\-]?\s*([\d,]+)/i', $fullText, $m)) {
-            $footer['total_quantity'] = (int) str_replace(',', '', $m[1]);
-        } elseif (preg_match('/Total\s+Pcs\s*[:\-]?\s*([\d,]+)/i', $fullText, $m)) {
-            $footer['total_quantity'] = (int) str_replace(',', '', $m[1]);
+        $qtyPatterns = [
+            '/Total\s+(?:Order\s+)?(?:Qty|Quantity|Pcs|Pieces|Units)\s*[:\-]?\s*([\d,]+)/i',
+            '/Total\s+Pcs\s*[:\-]?\s*([\d,]+)/i',
+            '/(?:Grand|Sub)[\s\-]?Total\s+(?:Qty|Quantity|Pcs)\s*[:\-]?\s*([\d,]+)/i',
+            '/(?:Qty|Quantity)\s+Total\s*[:\-]?\s*([\d,]+)/i',
+        ];
+        foreach ($qtyPatterns as $pattern) {
+            if (preg_match($pattern, $fullText, $m)) {
+                $footer['total_quantity'] = (int) str_replace(',', '', $m[1]);
+                break;
+            }
         }
 
         // Total Value — various formats
-        if (preg_match('/Total\s+Extn\s*[:\-]?\s*[\$]?\s*([\d,]+\.?\d*)/i', $fullText, $m)) {
-            $footer['total_value'] = (float) str_replace(',', '', $m[1]);
-        } elseif (preg_match('/(?:Total|Grand\s*Total)\s*(?:Value|Amount|Cost)\s*[:\-]?\s*[\$]?\s*([\d,]+\.?\d*)/i', $fullText, $m)) {
-            $footer['total_value'] = (float) str_replace(',', '', $m[1]);
+        $valuePatterns = [
+            '/Total\s+Extn\s*[:\-]?\s*[\$]?\s*([\d,]+\.?\d*)/i',
+            '/(?:Total|Grand\s*Total)\s*(?:Value|Amount|Cost|Price|Extn?)\s*[:\-]?\s*[\$]?\s*([\d,]+\.?\d*)/i',
+            '/(?:Grand|Sub)[\s\-]?Total\s*[:\-]?\s*[\$]?\s*([\d,]+\.?\d*)/i',
+            '/(?:Total|Net)\s+(?:FOB|Order)\s*(?:Value|Amount)?\s*[:\-]?\s*[\$]?\s*([\d,]+\.?\d*)/i',
+        ];
+        foreach ($valuePatterns as $pattern) {
+            if (preg_match($pattern, $fullText, $m)) {
+                $footer['total_value'] = (float) str_replace(',', '', $m[1]);
+                break;
+            }
         }
 
         // Total Items count
-        if (preg_match('/Total\s+Items\s*[:\-]?\s*(\d+)/i', $fullText, $m)) {
+        if (preg_match('/Total\s+(?:Items|Styles|Line\s*Items?)\s*[:\-]?\s*(\d+)/i', $fullText, $m)) {
             $footer['total_items'] = (int) $m[1];
         }
 
@@ -1015,6 +1064,9 @@ class PdfImportService
     private function parseDate(string $dateStr): ?string
     {
         $dateStr = trim($dateStr);
+        if (empty($dateStr)) {
+            return null;
+        }
 
         // Normalize uppercase month abbreviations: "12-FEB-26" → "12-Feb-26"
         $normalized = preg_replace_callback('/[A-Z]{3,}/', function ($m) {
@@ -1034,55 +1086,52 @@ class PdfImportService
             'm/d/y',    // 01/15/25
             'd/m/y',    // 15/01/25
             'Y/m/d',    // 2025/01/15
+            'n/j/Y',    // 1/15/2025 (no leading zeros)
+            'j/n/Y',    // 15/1/2025 (no leading zeros)
+            'n/j/y',    // 1/15/25 (no leading zeros, 2-digit year)
+            'n-j-Y',    // 1-15-2025 (no leading zeros)
             'M d, Y',   // Jan 15, 2025
             'F d, Y',   // January 15, 2025
             'M d Y',    // Jan 15 2025
             'F d Y',    // January 15 2025
             'd M Y',    // 15 Jan 2025
             'd F Y',    // 15 January 2025
-            'd-M-Y',    // 15-Jan-2025 (already above but for clarity)
+            'd M y',    // 15 Jan 25
             'd-F-Y',    // 15-January-2025
         ];
 
-        foreach ($formats as $format) {
-            try {
-                $date = \DateTime::createFromFormat($format, $normalized);
-                if ($date) {
-                    // Verify the parsed date matches (avoid false positives)
-                    $formatted = $date->format($format);
-                    if ($formatted === $normalized) {
-                        return $date->format('Y-m-d');
+        // Try each format with lenient validation (check errors instead of roundtrip)
+        foreach ([$normalized, $dateStr] as $candidate) {
+            foreach ($formats as $format) {
+                try {
+                    $date = \DateTime::createFromFormat($format, $candidate);
+                    if ($date) {
+                        $errors = \DateTime::getLastErrors();
+                        // Accept if no warnings/errors, or only minor ones
+                        if ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0)) {
+                            $result = $date->format('Y-m-d');
+                            // Sanity check: year should be reasonable (1990-2099)
+                            $year = (int) $date->format('Y');
+                            if ($year >= 1990 && $year <= 2099) {
+                                return $result;
+                            }
+                        }
                     }
+                } catch (\Exception $e) {
+                    continue;
                 }
-            } catch (\Exception $e) {
-                continue;
-            }
-        }
-
-        // Also try with the original (non-normalized) string
-        foreach ($formats as $format) {
-            try {
-                $date = \DateTime::createFromFormat($format, $dateStr);
-                if ($date) {
-                    $formatted = $date->format($format);
-                    if ($formatted === $dateStr) {
-                        return $date->format('Y-m-d');
-                    }
-                }
-            } catch (\Exception $e) {
-                continue;
             }
         }
 
         // Try strtotime as fallback (handles "February 12, 2026", etc.)
-        $timestamp = strtotime($normalized);
-        if ($timestamp !== false && $timestamp > 0) {
-            return date('Y-m-d', $timestamp);
-        }
-
-        $timestamp = strtotime($dateStr);
-        if ($timestamp !== false && $timestamp > 0) {
-            return date('Y-m-d', $timestamp);
+        foreach ([$normalized, $dateStr] as $candidate) {
+            $timestamp = strtotime($candidate);
+            if ($timestamp !== false && $timestamp > 0) {
+                $year = (int) date('Y', $timestamp);
+                if ($year >= 1990 && $year <= 2099) {
+                    return date('Y-m-d', $timestamp);
+                }
+            }
         }
 
         return null;
@@ -1133,7 +1182,7 @@ class PdfImportService
      */
     private function isFooterLine(string $line): bool
     {
-        return (bool) preg_match('/^(Total\s+Items|Total\s+Extn|Total\s+Order|Total\s+Pcs|Total\s+Qty|Grand\s*Total|Sub[\s\-]?Total|Special\s*Instructions?|Notes?|Remarks?|Authorized|Signature|Approval|NEED\s+\d)/i', trim($line));
+        return (bool) preg_match('/^(Total\s+Items|Total\s+Extn|Total\s+Order|Total\s+Pcs|Total\s+Qty|Total\s+Quantity|Total\s+Units|Total\s+Amount|Total\s+Value|Total\s+FOB|Net\s+Total|Grand\s*Total|Sub[\s\-]?Total|Special\s*Instructions?|Notes?|Remarks?|Authorized|Signature|Approval|NEED\s+\d)/i', trim($line));
     }
 
     /**

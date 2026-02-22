@@ -381,6 +381,45 @@ export function PdfImportDialog({
   // Check if any styles have price = 0
   const zeroPriceCount = stylesForm.filter(s => Number(s.unit_price) === 0).length;
 
+  // Detect duplicate style numbers
+  const duplicateStyleNumbers = (() => {
+    const counts: Record<string, number> = {};
+    stylesForm.forEach(s => {
+      const sn = (s.style_number || '').trim().toUpperCase();
+      if (sn) counts[sn] = (counts[sn] || 0) + 1;
+    });
+    return Object.entries(counts).filter(([, c]) => c > 1).map(([sn]) => sn);
+  })();
+
+  // Validate size breakdown sums match quantity
+  const sizeBreakdownMismatches = stylesForm
+    .map((s, idx) => {
+      if (s.size_breakdown && typeof s.size_breakdown === 'object' && Object.keys(s.size_breakdown).length > 0) {
+        const sizeSum = Object.values(s.size_breakdown as Record<string, number>).reduce((a: number, b: number) => a + Number(b), 0);
+        const qty = Number(s.quantity || 0);
+        if (sizeSum > 0 && qty > 0 && sizeSum !== qty) {
+          return { index: idx, style_number: s.style_number, sizeSum, qty };
+        }
+      }
+      return null;
+    })
+    .filter(Boolean) as Array<{ index: number; style_number: string; sizeSum: number; qty: number }>;
+
+  // Header validation for required fields
+  const headerValidationErrors: string[] = [];
+  if (!headerForm.po_number?.trim()) headerValidationErrors.push('PO Number is required');
+  if (!headerForm.po_date) headerValidationErrors.push('PO Date is required');
+
+  // Style-level validation
+  const stylesValidationErrors: string[] = [];
+  stylesForm.forEach((s, idx) => {
+    if (!s.style_number?.trim()) stylesValidationErrors.push(`Row ${idx + 1}: Style number is required`);
+    if (Number(s.quantity || 0) <= 0) stylesValidationErrors.push(`Row ${idx + 1} (${s.style_number || '?'}): Quantity must be greater than 0`);
+  });
+  if (duplicateStyleNumbers.length > 0) {
+    stylesValidationErrors.push(`Duplicate style numbers: ${duplicateStyleNumbers.join(', ')}`);
+  }
+
   // Step 4: Create PO
   const handleCreatePO = async () => {
     setIsCreating(true);
@@ -996,6 +1035,43 @@ export function PdfImportDialog({
                 </Alert>
               )}
 
+              {/* Duplicate style numbers warning */}
+              {duplicateStyleNumbers.length > 0 && (
+                <Alert variant="default" className="border-red-300 bg-red-50">
+                  <XCircle className="h-4 w-4 text-red-600" />
+                  <AlertDescription className="text-red-800">
+                    <strong>Duplicate style numbers detected:</strong> {duplicateStyleNumbers.join(', ')}. Each style number should be unique within a PO.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Size breakdown mismatch warnings */}
+              {sizeBreakdownMismatches.length > 0 && (
+                <Alert variant="default" className="border-yellow-300 bg-yellow-50">
+                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                  <AlertDescription className="text-yellow-800">
+                    <strong>Size breakdown mismatch:</strong>
+                    <ul className="list-disc list-inside mt-1">
+                      {sizeBreakdownMismatches.map((m, i) => (
+                        <li key={i}>Row {m.index + 1} ({m.style_number}): sizes total {m.sizeSum} but quantity is {m.qty}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Styles validation errors */}
+              {stylesValidationErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <XCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <ul className="list-disc list-inside text-sm">
+                      {stylesValidationErrors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+
               <div className="max-h-[400px] overflow-auto border rounded">
                 <Table>
                   <TableHeader>
@@ -1039,12 +1115,30 @@ export function PdfImportDialog({
                             />
                           </TableCell>
                           <TableCell>
-                            <div className="text-xs text-muted-foreground">
-                              {style.size_breakdown && typeof style.size_breakdown === 'object' && Object.keys(style.size_breakdown).length > 0
-                                ? Object.entries(style.size_breakdown).map(([size, qty]) => `${size}:${qty}`).join(', ')
-                                : <span className="italic">None</span>
-                              }
-                            </div>
+                            {style.size_breakdown && typeof style.size_breakdown === 'object' && Object.keys(style.size_breakdown).length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {Object.entries(style.size_breakdown).map(([size, qty]) => (
+                                  <div key={size} className="flex items-center gap-0.5 text-xs">
+                                    <span className="text-muted-foreground">{size}:</span>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={qty as number}
+                                      onChange={(e) => {
+                                        const newBreakdown = { ...style.size_breakdown, [size]: Number(e.target.value) || 0 };
+                                        updateStyle(index, 'size_breakdown', newBreakdown);
+                                        // Recalculate quantity from size sum
+                                        const newTotal = Object.values(newBreakdown).reduce((a: number, b) => a + Number(b), 0);
+                                        updateStyle(index, 'quantity', newTotal);
+                                      }}
+                                      className="h-6 w-14 text-xs px-1"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic">None</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Input
@@ -1242,19 +1336,42 @@ export function PdfImportDialog({
               )}
 
               {step === 'review-header' && (
-                <Button onClick={() => setStep('review-styles')} disabled={!headerForm.po_number || !headerForm.po_date}>
+                <Button
+                  onClick={() => {
+                    if (headerValidationErrors.length > 0) {
+                      setError(headerValidationErrors.join('. '));
+                      return;
+                    }
+                    setError(null);
+                    setStep('review-styles');
+                  }}
+                  disabled={!headerForm.po_number || !headerForm.po_date}
+                >
                   Next: Review Styles <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
               )}
 
               {step === 'review-styles' && (
-                <Button onClick={() => setStep('confirm')} disabled={stylesForm.length === 0}>
+                <Button
+                  onClick={() => {
+                    if (stylesValidationErrors.length > 0) {
+                      setError('Please fix validation errors before proceeding');
+                      return;
+                    }
+                    setError(null);
+                    setStep('confirm');
+                  }}
+                  disabled={stylesForm.length === 0 || stylesValidationErrors.length > 0}
+                >
                   Next: Confirm <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
               )}
 
               {step === 'confirm' && (
-                <Button onClick={handleCreatePO} disabled={isCreating}>
+                <Button
+                  onClick={handleCreatePO}
+                  disabled={isCreating || headerValidationErrors.length > 0 || stylesValidationErrors.length > 0}
+                >
                   {isCreating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   Create Purchase Order
                 </Button>

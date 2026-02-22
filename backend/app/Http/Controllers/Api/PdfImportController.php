@@ -132,6 +132,36 @@ class PdfImportController extends Controller
         $headerData = $request->input('po_header');
         $stylesData = $request->input('styles');
 
+        // Additional cross-validation
+        $crossErrors = [];
+
+        // Check for duplicate style numbers within this PO
+        $styleNumbers = array_column($stylesData, 'style_number');
+        $duplicates = array_unique(array_diff_assoc($styleNumbers, array_unique($styleNumbers)));
+        if (!empty($duplicates)) {
+            $crossErrors['styles'] = ['Duplicate style numbers found: ' . implode(', ', array_unique($duplicates))];
+        }
+
+        // Validate size breakdown sums match quantity for each style
+        foreach ($stylesData as $index => $styleData) {
+            if (!empty($styleData['size_breakdown']) && is_array($styleData['size_breakdown'])) {
+                $sizeSum = array_sum($styleData['size_breakdown']);
+                $qty = (int) ($styleData['quantity'] ?? 0);
+                if ($sizeSum > 0 && $qty > 0 && $sizeSum !== $qty) {
+                    $crossErrors["styles.{$index}.quantity"] = [
+                        "Size breakdown total ({$sizeSum}) does not match quantity ({$qty}) for style '{$styleData['style_number']}'"
+                    ];
+                }
+            }
+        }
+
+        if (!empty($crossErrors)) {
+            return response()->json([
+                'message' => 'Data validation failed',
+                'errors' => $crossErrors,
+            ], 422);
+        }
+
         try {
             return DB::transaction(function () use ($headerData, $stylesData, $user) {
                 // Create the Purchase Order
