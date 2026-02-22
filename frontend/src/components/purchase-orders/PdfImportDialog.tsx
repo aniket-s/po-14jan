@@ -419,6 +419,11 @@ export function PdfImportDialog({
   if (duplicateStyleNumbers.length > 0) {
     stylesValidationErrors.push(`Duplicate style numbers: ${duplicateStyleNumbers.join(', ')}`);
   }
+  if (sizeBreakdownMismatches.length > 0) {
+    sizeBreakdownMismatches.forEach(m => {
+      stylesValidationErrors.push(`Row ${m.index + 1} (${m.style_number}): size breakdown total (${m.sizeSum}) does not match quantity (${m.qty})`);
+    });
+  }
 
   // Step 4: Create PO
   const handleCreatePO = async () => {
@@ -1045,12 +1050,12 @@ export function PdfImportDialog({
                 </Alert>
               )}
 
-              {/* Size breakdown mismatch warnings */}
+              {/* Size breakdown mismatch errors */}
               {sizeBreakdownMismatches.length > 0 && (
-                <Alert variant="default" className="border-yellow-300 bg-yellow-50">
-                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                  <AlertDescription className="text-yellow-800">
-                    <strong>Size breakdown mismatch:</strong>
+                <Alert variant="default" className="border-red-300 bg-red-50">
+                  <XCircle className="h-4 w-4 text-red-600" />
+                  <AlertDescription className="text-red-800">
+                    <strong>Size breakdown mismatch:</strong> Edit the size quantities or total quantity to resolve.
                     <ul className="list-disc list-inside mt-1">
                       {sizeBreakdownMismatches.map((m, i) => (
                         <li key={i}>Row {m.index + 1} ({m.style_number}): sizes total {m.sizeSum} but quantity is {m.qty}</li>

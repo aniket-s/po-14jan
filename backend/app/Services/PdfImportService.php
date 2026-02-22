@@ -124,12 +124,12 @@ class PdfImportService
             // Cross-validate size breakdown sums against total quantity per style
             foreach ($lineItems as $idx => $item) {
                 $sizeBreakdown = $item['size_breakdown']['value'] ?? null;
-                $totalQty = $item['quantity']['value'] ?? 0;
-                if (is_array($sizeBreakdown) && !empty($sizeBreakdown) && $totalQty > 0) {
+                $itemQty = $item['quantity']['value'] ?? 0;
+                if (is_array($sizeBreakdown) && !empty($sizeBreakdown) && $itemQty > 0) {
                     $sizeSum = array_sum($sizeBreakdown);
-                    if ($sizeSum !== $totalQty) {
+                    if ($sizeSum !== $itemQty) {
                         $styleName = $item['style_number']['value'] ?? 'Row ' . ($idx + 1);
-                        $warnings[] = "Style '{$styleName}': size breakdown total ({$sizeSum}) does not match quantity ({$totalQty})";
+                        $warnings[] = "Style '{$styleName}': size breakdown total ({$sizeSum}) does not match quantity ({$itemQty})";
                     }
                 }
             }
