@@ -10,6 +10,9 @@ use App\Models\Season;
 use App\Models\Warehouse;
 use Illuminate\Support\Facades\Log;
 use Smalot\PdfParser\Parser;
+use Spatie\PdfToText\Pdf;
+use Spatie\PdfToText\Exceptions\BinaryNotFoundException;
+use Spatie\PdfToText\Exceptions\CouldNotExtractText;
 
 class PdfImportService
 {
@@ -175,10 +178,10 @@ class PdfImportService
      */
     private function extractTextPreservingLayout(string $filePath): string
     {
-        // Strategy 1: pdftotext -layout (best quality when available)
-        $text = $this->extractWithPdftotext($filePath);
+        // Strategy 1: spatie/pdf-to-text with -layout (best quality when available)
+        $text = $this->extractWithSpatiePdfToText($filePath);
         if ($text !== null) {
-            Log::debug('PDF text extracted via pdftotext -layout');
+            Log::debug('PDF text extracted via spatie/pdf-to-text (pdftotext -layout)');
             return $text;
         }
 
@@ -197,24 +200,22 @@ class PdfImportService
     }
 
     /**
-     * Extract text using pdftotext -layout (poppler-utils).
-     * Produces the best layout-preserving output.
+     * Extract text using spatie/pdf-to-text with layout option (poppler-utils).
+     * Produces the best layout-preserving output with properly aligned columns.
      */
-    private function extractWithPdftotext(string $filePath): ?string
+    private function extractWithSpatiePdfToText(string $filePath): ?string
     {
         try {
-            $escaped = escapeshellarg($filePath);
-            $output = [];
-            $returnCode = null;
-            exec("pdftotext -layout {$escaped} - 2>/dev/null", $output, $returnCode);
-            if ($returnCode === 0 && !empty($output)) {
-                $text = implode("\n", $output);
-                if (!empty(trim($text))) {
-                    return $text;
-                }
+            $text = Pdf::getText($filePath, null, ['layout']);
+            if (!empty(trim($text))) {
+                return $text;
             }
+        } catch (BinaryNotFoundException $e) {
+            Log::debug('pdftotext binary not found (poppler-utils not installed): ' . $e->getMessage());
+        } catch (CouldNotExtractText $e) {
+            Log::debug('pdftotext could not extract text: ' . $e->getMessage());
         } catch (\Exception $e) {
-            Log::debug('pdftotext not available: ' . $e->getMessage());
+            Log::debug('spatie/pdf-to-text extraction failed: ' . $e->getMessage());
         }
         return null;
     }
@@ -349,11 +350,14 @@ class PdfImportService
 
         // ── Customer / Retailer ──
         // SCI format: two-row header (CUST label above, value below) or "CUST: CITITRENDS"
+        // With pdftotext -layout: "CUST            CITITRENDS    ISSUE DATE..."
         // Standard: "Customer: XXX", "Bill To: XXX"
         $header['customer_name'] = $this->extractField(
             $fullText,
             [
                 '/(?:CUST|CUSTOMER|CLIENT)\s*[:\-]\s*(.+?)(?:\n|$)/i',
+                // SCI layout: CUST followed by spaces then name, stop before next label
+                '/\bCUST\s{2,}([A-Z][A-Z\s]*?)(?:\s{2,}|ISSUE|LABELS|SHIP|CANCEL|\n|$)/i',
                 '/(?:Retailer|Buyer\s*Company|Bill\s*To|Sold\s*To)\s*(?:Name)?\s*[:\-]?\s*(.+?)(?:\n|$)/i',
             ]
         );
@@ -405,12 +409,14 @@ class PdfImportService
         }
 
         // ── ETD / Ship Date ──
-        // SCI format: "SHIP: 25-MAY-26" or SCI two-row header
-        // Standard: "ETD: 05/25/2026", "Ship Date: May 25, 2026"
+        // SCI format: "SHIP25-MAY-26" or "SHIP 25-MAY-26" (standalone keyword, no "DATE")
+        // Standard: "Ship Date: May 25, 2026", "ETD: 05/25/2026"
         $header['etd_date'] = $this->extractDateField(
             $fullText,
             [
                 '/(?:SHIP\s*DATE|SHIPPING\s*DATE)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                // SCI: standalone SHIP followed by date (with or without space/colon)
+                '/\bSHIP\s*[:\-]?\s*(\d{1,2}[\/-]\w{3}[\/-]\d{2,4})/i',
                 '/(?:ETD|Estimated\s*Time\s*(?:of\s*)?Departure)\s*[:\-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i',
                 '/(?:ETD)\s*[:\-]?\s*(\w+\s+\d{1,2},?\s+\d{4})/i',
             ]
@@ -435,11 +441,13 @@ class PdfImportService
         }
 
         // ── Cancel Date ──
-        // SCI format: "CANCEL: 01-JUN-26" or SCI two-row header
+        // SCI format: "CANCEL01-JUN-26" or "CANCEL 01-JUN-26" (standalone keyword)
         $header['cancel_date'] = $this->extractDateField(
             $fullText,
             [
                 '/(?:CANCEL\s*DATE|CANCELLATION\s*DATE)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                // SCI: standalone CANCEL followed by date (with or without space/colon)
+                '/\bCANCEL\s*[:\-]?\s*(\d{1,2}[\/-]\w{3}[\/-]\d{2,4})/i',
             ]
         );
 
@@ -474,15 +482,17 @@ class PdfImportService
         );
 
         // ── Payment Terms ──
-        // SCI format: "TERMS: NET 30"
+        // SCI format: "TERMS: NET 30" or "TERMS    DDP    SHIP MODE NET 30"
         // Standard: "Payment Terms: Net 30 days"
         $header['payment_terms_raw'] = $this->extractField(
             $fullText,
             [
                 '/TERMS\s*[:\-]?\s*(NET\s+\d+[^,\n]*)/i',
-                '/TERMS\s*[:\-]?\s*(.+?)(?:\n|$)/i',
                 '/(?:Payment\s*Terms?|Terms?\s*of\s*Payment|Pay(?:ment)?\s*Cond(?:ition)?s?)\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                // Standalone NET pattern — works even when embedded in a noisy line
                 '/\b(NET\s+\d+(?:\s*DAYS?)?)\b/i',
+                // Broad TERMS capture only as last resort
+                '/TERMS\s*[:\-]?\s*(.+?)(?:\n|$)/i',
             ]
         );
 
@@ -533,7 +543,9 @@ class PdfImportService
         $header['shipping_mode'] = $this->extractField(
             $fullText,
             [
-                '/AIR[\s\/]*SEA\s*[:\-]?\s*(.+?)(?:\n|$)/i',
+                '/SHIP\s*MODE\s*[:\-]?\s*(AIR|SEA)\b/i',
+                '/AIR[\s\/]*SEA\s*[:\-]?\s*(AIR|SEA)\b/i',
+                '/AIR[\s\/]*SEA\s*[:\-]?\s*(.+?)(?:\s{2,}|\n|$)/i',
             ]
         );
 
@@ -621,9 +633,16 @@ class PdfImportService
     /**
      * Parse SCI two-row column header format.
      *
-     * Detects rows like:
+     * Handles two layouts:
+     *
+     * Layout A (all labels on one line):
      *   SHIP        CANCEL      CUST          LABELS          SAMPLE  PRE-TICKET
      *   01-JUL-26               CITITRENDS    SAINT ARCHIVES  Y       Y
+     *
+     * Layout B (pdftotext -layout, labels spread across multiple lines):
+     *   Vendor :                          CUST          CITITRENDS    ISSUE DATE12-FEB-26
+     *   Crystal Apparels India            LABELS        SAINT ARCHIVES    SHIP25-MAY-26
+     *   ...                               PRE-TICKET Y  SAMPLE Y         CANCEL01-JUN-26
      *
      * Returns associative array with extracted values.
      */
@@ -631,13 +650,12 @@ class PdfImportService
     {
         $result = [];
 
+        // ── Layout A: All on one line (SHIP + CANCEL + CUST) ──
         foreach ($lines as $index => $line) {
-            // Look for the header row containing SHIP + CANCEL + CUST
             if (preg_match('/\bSHIP\b/i', $line)
                 && preg_match('/\bCANCEL\b/i', $line)
                 && preg_match('/\bCUST\b/i', $line)) {
 
-                // Found the label row — get the value row (next non-empty line)
                 $valueRow = null;
                 for ($j = $index + 1; $j < min($index + 3, count($lines)); $j++) {
                     if (!empty(trim($lines[$j]))) {
@@ -649,14 +667,11 @@ class PdfImportService
                     break;
                 }
 
-                // Find column positions of headers
                 $shipPos = stripos($line, 'SHIP');
                 $cancelPos = stripos($line, 'CANCEL');
                 $custPos = stripos($line, 'CUST');
                 $labelsPos = stripos($line, 'LABEL');
 
-                // Extract values by column position
-                // Ship date: from SHIP position to CANCEL position
                 if ($shipPos !== false && $cancelPos !== false) {
                     $shipVal = trim(substr($valueRow, $shipPos, $cancelPos - $shipPos));
                     if (!empty($shipVal) && preg_match('/\d/', $shipVal)) {
@@ -664,7 +679,6 @@ class PdfImportService
                     }
                 }
 
-                // Cancel date: from CANCEL position to CUST position
                 if ($cancelPos !== false && $custPos !== false) {
                     $cancelVal = trim(substr($valueRow, $cancelPos, $custPos - $cancelPos));
                     if (!empty($cancelVal) && preg_match('/\d/', $cancelVal)) {
@@ -672,7 +686,6 @@ class PdfImportService
                     }
                 }
 
-                // Customer: from CUST position to LABELS position (or end)
                 if ($custPos !== false) {
                     $endPos = $labelsPos !== false ? $labelsPos : strlen($valueRow);
                     $custVal = trim(substr($valueRow, $custPos, $endPos - $custPos));
@@ -681,7 +694,6 @@ class PdfImportService
                     }
                 }
 
-                // Labels: from LABELS position onwards
                 if ($labelsPos !== false) {
                     $samplePos = stripos($line, 'SAMPLE');
                     $endPos = $samplePos !== false ? $samplePos : strlen($valueRow);
@@ -691,7 +703,31 @@ class PdfImportService
                     }
                 }
 
-                break;
+                return $result;
+            }
+        }
+
+        // ── Layout B: Labels on separate lines (pdftotext -layout) ──
+        // Scan each line individually for SCI keyword-value pairs
+        foreach ($lines as $line) {
+            // CUST followed by value (separated by whitespace)
+            if (empty($result['customer']) && preg_match('/\bCUST\s{2,}([A-Z][A-Z\s]*?)(?:\s{2,}|ISSUE|LABELS|SHIP|$)/i', $line, $m)) {
+                $result['customer'] = trim($m[1]);
+            }
+
+            // LABELS followed by value
+            if (empty($result['labels']) && preg_match('/\bLABELS?\s{2,}([A-Z][A-Z\s]*?)(?:\s{2,}|SHIP|CANCEL|PRE|SAMPLE|$)/i', $line, $m)) {
+                $result['labels'] = trim($m[1]);
+            }
+
+            // SHIP followed by date (on same line)
+            if (empty($result['ship_date']) && preg_match('/\bSHIP\s*[:\-]?\s*(\d{1,2}[\/-]\w{3}[\/-]\d{2,4})/i', $line, $m)) {
+                $result['ship_date'] = trim($m[1]);
+            }
+
+            // CANCEL followed by date (on same line)
+            if (empty($result['cancel_date']) && preg_match('/\bCANCEL\s*[:\-]?\s*(\d{1,2}[\/-]\w{3}[\/-]\d{2,4})/i', $line, $m)) {
+                $result['cancel_date'] = trim($m[1]);
             }
         }
 
@@ -1055,10 +1091,18 @@ class PdfImportService
         if (!empty($textTokens)) {
             // Check if first text token looks like a color code (digits + name)
             $first = $textTokens[0];
-            if (preg_match('/^\d{1,3}\s+\w+/', $first) || preg_match('/^(BLACK|WHITE|RED|BLUE|GREEN|NAVY|GREY|GRAY|PINK|TAN|CAN|PINE|CAR|MUSLI)/i', $first)) {
+
+            // SCI color format: "001 BLACK" or "092 CAN" — extract color code + name
+            // from tokens like "001 BLACK 1 FE" (may include Ln and WH)
+            if (preg_match('/^(\d{1,3}\s+[A-Z]+)/i', $first, $colorMatch)) {
+                $colorName = trim($colorMatch[1]);
+                $description = isset($textTokens[1]) ? $textTokens[1] : null;
+                for ($t = 2; $t < count($textTokens); $t++) {
+                    $description .= ' ' . $textTokens[$t];
+                }
+            } elseif (preg_match('/^(BLACK|WHITE|RED|BLUE|GREEN|NAVY|GREY|GRAY|PINK|TAN|CAN|CANYON|PINE|CAR|CAROLINA|MUSLI|CREAM|CHARCOAL|KHAKI|BROWN|ORANGE|YELLOW|PURPLE|OLIVE|CORAL|TEAL|BURGUNDY|IVORY|BEIGE|SAGE|ROSE|FUCHSIA|HEATHER|OATMEAL|MUSTARD|INDIGO|LAVENDER|PLUM|MINT|RUST|WINE|BONE|SLATE|STEEL)/i', $first)) {
                 $colorName = $first;
                 $description = isset($textTokens[1]) ? $textTokens[1] : null;
-                // If there are more text tokens, append to description
                 for ($t = 2; $t < count($textTokens); $t++) {
                     $description .= ' ' . $textTokens[$t];
                 }
@@ -1067,8 +1111,8 @@ class PdfImportService
                 // Look for a longer descriptive token
                 foreach ($textTokens as $idx => $tt) {
                     if (strlen($tt) >= 3 && !preg_match('/^\d+$/', $tt) && !preg_match('/^[A-Z]{1,2}$/i', $tt)) {
-                        if ($colorName === null && preg_match('/^\d{1,3}\s+\w+/', $tt)) {
-                            $colorName = $tt;
+                        if ($colorName === null && preg_match('/^(\d{1,3}\s+[A-Z]+)/i', $tt, $cm)) {
+                            $colorName = trim($cm[1]);
                         } elseif ($description === null && strlen($tt) > 3) {
                             $description = $tt;
                         } elseif ($colorName === null && $description !== null) {
@@ -1120,10 +1164,15 @@ class PdfImportService
             }
 
             // Look for description continuation in sub-rows
-            if ($trimmed !== $mainRow && $description === null) {
-                // If the line has substantial text (not SIZE/QTY/Category/PACK)
-                if (!preg_match('/^(SIZE|QTY|Category|PACK|FLAT|USE\s)/i', $trimmed) && strlen($trimmed) > 5) {
-                    $description = $trimmed;
+            if ($trimmed !== $mainRow) {
+                // If the line has substantial text (not SIZE/QTY/Category/PACK/footer)
+                if (!preg_match('/^(SIZE|QTY|Category|PACK|FLAT|USE\s|NEED\s)/i', $trimmed) && strlen($trimmed) > 5) {
+                    if ($description === null) {
+                        $description = $trimmed;
+                    } else {
+                        // Append continuation text to existing description
+                        $description .= ' ' . $trimmed;
+                    }
                 }
             }
 
