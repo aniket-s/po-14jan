@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'anthropic' => [
+        'api_key' => env('ANTHROPIC_API_KEY'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001'),
+        'max_tokens' => (int) env('ANTHROPIC_MAX_TOKENS', 4096),
+        'api_url' => env('ANTHROPIC_API_URL', 'https://api.anthropic.com/v1/messages'),
+    ],
+
 ];

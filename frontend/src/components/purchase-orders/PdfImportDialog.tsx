@@ -535,6 +535,22 @@ export function PdfImportDialog({
             </DialogDescription>
           </DialogHeader>
 
+          {/* AI Analysis Method Indicator */}
+          {analysisResult?.analysis_method && step !== 'upload' && step !== 'result' && (
+            <div className="flex items-center gap-2">
+              {analysisResult.analysis_method === 'claude_ai' ? (
+                <Badge variant="default" className="bg-indigo-600 text-white text-xs px-2 py-1">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Analyzed with Claude AI
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-xs px-2 py-1">
+                  Analyzed with text parser
+                </Badge>
+              )}
+            </div>
+          )}
+
           {/* Warnings */}
           {analysisResult?.warnings && analysisResult.warnings.length > 0 && step !== 'upload' && step !== 'result' && (
             <Alert variant="default" className="border-yellow-300 bg-yellow-50">
