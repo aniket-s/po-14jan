@@ -387,14 +387,16 @@ export function PdfImportDialog({
   // Check if any styles have price = 0
   const zeroPriceCount = stylesForm.filter(s => Number(s.unit_price) === 0).length;
 
-  // Detect duplicate style numbers
+  // Detect duplicate style+color combinations (same style in different colors is valid)
   const duplicateStyleNumbers = (() => {
     const counts: Record<string, number> = {};
     stylesForm.forEach(s => {
       const sn = (s.style_number || '').trim().toUpperCase();
-      if (sn) counts[sn] = (counts[sn] || 0) + 1;
+      const color = (s.color_name || '').trim().toUpperCase();
+      const key = color ? `${sn}|${color}` : sn;
+      if (sn) counts[key] = (counts[key] || 0) + 1;
     });
-    return Object.entries(counts).filter(([, c]) => c > 1).map(([sn]) => sn);
+    return Object.entries(counts).filter(([, c]) => c > 1).map(([key]) => key.replace('|', ' / '));
   })();
 
   // Validate size breakdown sums match quantity
@@ -423,7 +425,7 @@ export function PdfImportDialog({
     if (Number(s.quantity || 0) <= 0) stylesValidationErrors.push(`Row ${idx + 1} (${s.style_number || '?'}): Quantity must be greater than 0`);
   });
   if (duplicateStyleNumbers.length > 0) {
-    stylesValidationErrors.push(`Duplicate style numbers: ${duplicateStyleNumbers.join(', ')}`);
+    stylesValidationErrors.push(`Duplicate style/color combinations: ${duplicateStyleNumbers.join(', ')}`);
   }
   if (sizeBreakdownMismatches.length > 0) {
     sizeBreakdownMismatches.forEach(m => {
@@ -1086,7 +1088,7 @@ export function PdfImportDialog({
                 <Alert variant="default" className="border-red-300 bg-red-50">
                   <XCircle className="h-4 w-4 text-red-600" />
                   <AlertDescription className="text-red-800">
-                    <strong>Duplicate style numbers detected:</strong> {duplicateStyleNumbers.join(', ')}. Each style number should be unique within a PO.
+                    <strong>Duplicate style/color combinations detected:</strong> {duplicateStyleNumbers.join(', ')}. Each style + color combination should be unique within a PO.
                   </AlertDescription>
                 </Alert>
               )}
