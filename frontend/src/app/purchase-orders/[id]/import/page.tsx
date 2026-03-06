@@ -110,7 +110,7 @@ interface ImportResult {
     id: number;
     style_number: string;
     quantity: number;
-    total_price: number;
+    unit_price: number;
   }>;
 }
 
@@ -168,8 +168,8 @@ export default function POImportPage() {
   useEffect(() => {
     const fetchPO = async () => {
       try {
-        const response = await api.get(`/purchase-orders/${poId}`);
-        setPo(response.data);
+        const response = await api.get<{ purchase_order: PurchaseOrder }>(`/purchase-orders/${poId}`);
+        setPo(response.data.purchase_order);
       } catch {
         toast.error('Failed to load purchase order');
       }
@@ -290,7 +290,7 @@ export default function POImportPage() {
       const formData = new FormData();
       formData.append('file', file);
       const response = await api.post<{ analysis: AnalysisResult; temp_file_path: string }>(
-        '/excel-import/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } }
+        `/purchase-orders/${poId}/import/analyze`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }
       );
       setAnalysis(response.data.analysis);
       setTempFilePath(response.data.temp_file_path);
@@ -348,7 +348,7 @@ export default function POImportPage() {
       setStep('importing');
       setError('');
       const response = await api.post<{ result: ImportResult }>(
-        `/excel-import/${poId}/execute`,
+        `/purchase-orders/${poId}/import/execute`,
         { temp_file_path: tempFilePath, column_mapping: columnMapping, skip_first_row: true }
       );
       setImportResult(response.data.result);
@@ -1025,7 +1025,7 @@ export default function POImportPage() {
                         <TableRow className="bg-muted/50">
                           <TableHead>Style Number</TableHead>
                           <TableHead className="text-right">Quantity</TableHead>
-                          <TableHead className="text-right">Total Price</TableHead>
+                          <TableHead className="text-right">Unit Price</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1033,7 +1033,7 @@ export default function POImportPage() {
                           <TableRow key={style.id}>
                             <TableCell className="font-medium">{style.style_number}</TableCell>
                             <TableCell className="text-right">{style.quantity}</TableCell>
-                            <TableCell className="text-right">${style.total_price.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">${style.unit_price.toFixed(2)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
