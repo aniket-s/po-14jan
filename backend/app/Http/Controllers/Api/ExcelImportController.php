@@ -80,6 +80,9 @@ class ExcelImportController extends Controller
                 'row_images' => $analysis['row_images'] ?? [],
                 'has_images' => $analysis['has_images'] ?? false,
                 'total_images' => $analysis['total_images'] ?? 0,
+                'image_columns' => $analysis['image_columns'] ?? [],
+                'image_format_detected' => $analysis['image_format_detected'] ?? null,
+                'column_images' => $analysis['column_images'] ?? [],
             ],
             'temp_file_path' => $path,
         ]);
@@ -106,6 +109,7 @@ class ExcelImportController extends Controller
             'skip_first_row' => 'nullable|boolean',
             'start_row' => 'nullable|integer|min:1',
             'end_row' => 'nullable|integer|min:1',
+            'image_columns' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
@@ -137,7 +141,8 @@ class ExcelImportController extends Controller
             $request->column_mapping,
             $request->get('skip_first_row', true),
             $request->start_row,
-            $request->end_row
+            $request->end_row,
+            $request->image_columns
         );
 
         // Delete temp file
@@ -278,6 +283,9 @@ class ExcelImportController extends Controller
                 'row_images' => $analysis['row_images'] ?? [],
                 'has_images' => $analysis['has_images'] ?? false,
                 'total_images' => $analysis['total_images'] ?? 0,
+                'image_columns' => $analysis['image_columns'] ?? [],
+                'image_format_detected' => $analysis['image_format_detected'] ?? null,
+                'column_images' => $analysis['column_images'] ?? [],
             ],
             'temp_file_path' => $path,
         ]);
@@ -326,6 +334,7 @@ class ExcelImportController extends Controller
             'skip_first_row' => 'nullable|boolean',
             'start_row' => 'nullable|integer|min:1',
             'end_row' => 'nullable|integer|min:1',
+            'image_columns' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
@@ -357,7 +366,8 @@ class ExcelImportController extends Controller
             $request->column_mapping,
             $request->get('skip_first_row', true),
             $request->start_row,
-            $request->end_row
+            $request->end_row,
+            $request->image_columns
         );
 
         // Delete temp file
