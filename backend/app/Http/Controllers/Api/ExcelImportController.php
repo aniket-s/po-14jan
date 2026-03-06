@@ -353,13 +353,24 @@ class ExcelImportController extends Controller
             ], 400);
         }
 
-        if (!Storage::exists($request->temp_file_path)) {
+        $tempFilePath = $request->temp_file_path;
+
+        if (!Storage::exists($tempFilePath)) {
+            \Illuminate\Support\Facades\Log::warning('Import execute: temp file not found', [
+                'temp_file_path' => $tempFilePath,
+                'storage_path' => Storage::path($tempFilePath),
+                'disk' => config('filesystems.default'),
+            ]);
             return response()->json([
                 'message' => 'Temporary file not found. Please upload the file again.',
+                'debug' => [
+                    'temp_file_path' => $tempFilePath,
+                    'storage_disk' => config('filesystems.default'),
+                ],
             ], 404);
         }
 
-        $fullPath = Storage::path($request->temp_file_path);
+        $fullPath = Storage::path($tempFilePath);
 
         // Import standalone styles
         $result = $this->excelService->importStandaloneStyles(
