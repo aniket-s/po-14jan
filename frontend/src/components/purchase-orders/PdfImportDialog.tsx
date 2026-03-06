@@ -328,7 +328,7 @@ export function PdfImportDialog({
         header._buyer_name = ph.buyer_name?.value || '';
         header._department = ph.department?.value || '';
         header._division = ph.division?.value || '';
-        header._packing_type = ph.packing_method?.packing_type || null;
+        header._packing_type = (ph.packing_method as any)?.packing_type || null;
       }
       setHeaderForm(header);
 
