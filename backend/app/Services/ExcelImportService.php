@@ -28,10 +28,12 @@ class ExcelImportService
 
             $highestColumn = $worksheet->getHighestColumn();
             $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
-            $highestRow = $worksheet->getHighestRow();
 
             // Auto-detect header row by scanning first 10 rows for known column names
-            $headerRow = $this->detectHeaderRow($worksheet, $highestColumnIndex, min($highestRow, 10));
+            $headerRow = $this->detectHeaderRow($worksheet, $highestColumnIndex, min($worksheet->getHighestRow(), 10));
+
+            // Find actual last data row (not just formatted rows)
+            $highestRow = $this->findLastDataRow($worksheet, $highestColumnIndex, $headerRow + 1);
 
             // Get headers from detected header row
             $headers = [];
@@ -143,6 +145,40 @@ class ExcelImportService
     }
 
     /**
+     * Find the actual last row with data (ignores empty/formatted-only rows)
+     */
+    private function findLastDataRow($worksheet, int $highestColumnIndex, int $startRow): int
+    {
+        $lastDataRow = $startRow;
+        $consecutiveEmpty = 0;
+        $maxRow = $worksheet->getHighestRow();
+
+        for ($row = $startRow; $row <= $maxRow; $row++) {
+            $hasData = false;
+            for ($col = 1; $col <= $highestColumnIndex; $col++) {
+                $value = $worksheet->getCellByColumnAndRow($col, $row)->getValue();
+                if ($value !== null && $value !== '') {
+                    $hasData = true;
+                    break;
+                }
+            }
+
+            if ($hasData) {
+                $lastDataRow = $row;
+                $consecutiveEmpty = 0;
+            } else {
+                $consecutiveEmpty++;
+                // Stop after 5 consecutive empty rows
+                if ($consecutiveEmpty >= 5) {
+                    break;
+                }
+            }
+        }
+
+        return $lastDataRow;
+    }
+
+    /**
      * Import styles from Excel with column mapping
      */
     public function importStyles(
@@ -158,8 +194,9 @@ class ExcelImportService
             $spreadsheet = IOFactory::load($filePath);
             $worksheet = $spreadsheet->getActiveSheet();
 
-            $totalRows = $worksheet->getHighestRow();
+            $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($worksheet->getHighestColumn());
             $startRow = $startRow ?? ($skipFirstRow ? 2 : 1);
+            $totalRows = $this->findLastDataRow($worksheet, $highestColumnIndex, $startRow);
             $endRow = $endRow ?? $totalRows;
 
             $imported = 0;
@@ -220,11 +257,8 @@ class ExcelImportService
                     ]);
                 }
 
-                // Get image for this row if available
-                $styleImages = null;
-                if (isset($rowImages[$row])) {
-                    $styleImages = [$rowImages[$row]]; // Array of {url, path}
-                }
+                // Get image for this row if available (store as flat array of paths)
+                $styleImages = isset($rowImages[$row]) ? [$rowImages[$row]['path']] : null;
 
                 // Create style record (master data - no PO-specific fields)
                 $style = Style::create([
@@ -846,14 +880,26 @@ class ExcelImportService
             $spreadsheet = IOFactory::load($filePath);
             $worksheet = $spreadsheet->getActiveSheet();
 
-            $totalRows = $worksheet->getHighestRow();
+            $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($worksheet->getHighestColumn());
             $startRow = $startRow ?? ($skipFirstRow ? 2 : 1);
+            $totalRows = $this->findLastDataRow($worksheet, $highestColumnIndex, $startRow);
             $endRow = $endRow ?? $totalRows;
 
             $imported = 0;
             $skipped = 0;
             $errors = [];
             $importedStyles = [];
+
+            // Extract images from Excel mapped to row numbers
+            $rowImages = [];
+            if (config('import.image_extraction.enabled', true)) {
+                try {
+                    $headerRow = $startRow - 1;
+                    $rowImages = $this->imageService->extractImagesForRows($filePath, $headerRow);
+                } catch (\Exception $e) {
+                    Log::warning('Image extraction failed during standalone import: ' . $e->getMessage());
+                }
+            }
 
             for ($row = $startRow; $row <= $endRow; $row++) {
                 $rowData = $this->extractRowData($worksheet, $row, $columnMapping);
@@ -885,6 +931,9 @@ class ExcelImportService
 
                 $unitPrice = $rowData['unit_price'] ?? 0;
 
+                // Get image for this row if available
+                $styleImages = isset($rowImages[$row]) ? [$rowImages[$row]['path']] : null;
+
                 // Create standalone style with po_id = null
                 $style = Style::create([
                     'po_id' => null,  // Standalone style
@@ -893,6 +942,7 @@ class ExcelImportService
                     'fabric' => $rowData['fabric'] ?? null,
                     'color' => $rowData['color'] ?? null,
                     'size_breakup' => $rowData['size_breakdown'] ?? null,
+                    'images' => $styleImages,
                     'total_quantity' => $rowData['quantity'] ?? 0,
                     'unit_price' => $unitPrice,
                     'fob_price' => $unitPrice,

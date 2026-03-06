@@ -18,6 +18,7 @@ class ExcelImageExtractionService
     protected $currentZipArchive = null;
     protected $storageDisk;
     protected $storagePath;
+    protected $mediaFolderCache = null;
 
     public function __construct()
     {
@@ -72,6 +73,7 @@ class ExcelImageExtractionService
         }
 
         $this->currentZipArchive = $zip;
+        $this->mediaFolderCache = null; // Reset cache for new file
 
         try {
             // Method 1: Rich Data format (Office 365/Excel 2021+)
@@ -295,10 +297,15 @@ class ExcelImageExtractionService
     }
 
     /**
-     * Extract all images from the xl/media/ folder inside the Excel ZIP
+     * Extract all images from the xl/media/ folder inside the Excel ZIP (cached)
      */
     protected function extractMediaFolder(ZipArchive $zip, string $prefix): array
     {
+        // Return cached result if already extracted for this ZIP
+        if ($this->mediaFolderCache !== null) {
+            return $this->mediaFolderCache;
+        }
+
         $images = [];
 
         for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -311,7 +318,7 @@ class ExcelImageExtractionService
             $originalName = basename($filename);
             $extension = pathinfo($originalName, PATHINFO_EXTENSION) ?: 'jpg';
 
-            $storedImage = $this->storeImageData($imageData, $extension, $prefix . '_' . pathinfo($originalName, PATHINFO_FILENAME));
+            $storedImage = $this->storeImageData($imageData, $extension, 'img_' . pathinfo($originalName, PATHINFO_FILENAME));
 
             if ($storedImage) {
                 $images[$originalName] = [
@@ -322,6 +329,7 @@ class ExcelImageExtractionService
             }
         }
 
+        $this->mediaFolderCache = $images;
         return $images;
     }
 
