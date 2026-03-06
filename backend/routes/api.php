@@ -45,6 +45,9 @@ Route::post('/login', [AuthController::class, 'login']);
 // Public shipment tracking (no authentication required)
 Route::get('/track/{token}', [ShipmentController::class, 'publicTrack']);
 
+// Serve extracted import images (public - images have opaque paths)
+Route::get('/import-image', [ExcelImportController::class, 'serveImage']);
+
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
     // Auth routes
@@ -467,6 +470,7 @@ Route::middleware('auth:sanctum')->group(function () {
                 Route::post('/validate-mapping', [ExcelImportController::class, 'validateMapping']);
             });
         });
+
     });
 
     // Excel Import Template Download (public within auth)

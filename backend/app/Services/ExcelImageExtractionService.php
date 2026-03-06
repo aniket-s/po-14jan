@@ -452,19 +452,12 @@ class ExcelImageExtractionService
 
             Storage::disk($this->storageDisk)->put($filename, $imageContent);
 
-            // Generate base64 data URI for preview (works without storage symlink)
-            $mimeType = match (strtolower($extension)) {
-                'png' => 'image/png',
-                'gif' => 'image/gif',
-                'webp' => 'image/webp',
-                'svg' => 'image/svg+xml',
-                default => 'image/jpeg',
-            };
-            $dataUri = 'data:' . $mimeType . ';base64,' . base64_encode($imageContent);
+            // Return relative API path - frontend will prepend backend URL
+            $url = '/api/purchase-orders/import-image?' . http_build_query(['path' => $filename]);
 
             return [
                 'path' => $filename,
-                'url' => $dataUri,
+                'url' => $url,
             ];
         } catch (\Exception $e) {
             Log::warning('Failed to store extracted image: ' . $e->getMessage());

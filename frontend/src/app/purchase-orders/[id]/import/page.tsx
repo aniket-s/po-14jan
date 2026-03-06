@@ -949,7 +949,7 @@ export default function POImportPage() {
                             <TableCell className="p-1">
                               {analysis.row_images?.[rowIndex] ? (
                                 <img
-                                  src={analysis.row_images[rowIndex]}
+                                  src={`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}${analysis.row_images[rowIndex]}`}
                                   alt="CAD"
                                   className="h-12 w-12 object-contain rounded border"
                                 />
