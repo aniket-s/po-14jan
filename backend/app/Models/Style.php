@@ -52,6 +52,14 @@ class Style extends Model
         'wholesale_price',
         // Status
         'is_active',
+        'status',
+        // Relationships & assignment
+        'po_id',
+        'ex_factory_date',
+        'destination_port',
+        'assignment_type',
+        'assigned_factory_id',
+        'assigned_agency_id',
     ];
 
     protected $casts = [
@@ -70,6 +78,7 @@ class Style extends Model
         'packing_details' => 'array',
         'metadata' => 'array',
         'is_active' => 'boolean',
+        'ex_factory_date' => 'date',
     ];
 
     protected $appends = ['quantity'];

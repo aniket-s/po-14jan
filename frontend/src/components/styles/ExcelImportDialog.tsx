@@ -486,7 +486,7 @@ export function ExcelImportDialog({
                       {importResult.errors.map((err, index) => (
                         <div key={index} className="text-sm">
                           <span className="font-semibold">Row {err.row}:</span>{' '}
-                          {err.errors.join(', ')}
+                          {err.error}
                         </div>
                       ))}
                     </div>

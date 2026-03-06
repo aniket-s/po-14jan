@@ -883,7 +883,7 @@ export default function StylesImportPage() {
               </Card>
             )}
 
-            {importResult.errors.length === 0 && (
+            {importResult.errors.length === 0 && importResult.imported_count > 0 && (
               <Card className="border-green-200 bg-green-50/50 dark:bg-green-950/10 dark:border-green-900">
                 <CardContent className="flex items-center gap-4 pt-6">
                   <CheckCircle2 className="h-8 w-8 text-green-600" />
