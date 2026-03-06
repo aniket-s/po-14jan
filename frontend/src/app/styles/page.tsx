@@ -27,7 +27,6 @@ import { BulkSampleProcessModal } from '@/components/styles/BulkSampleProcessMod
 import { CreateStyleDialog } from '@/components/styles/CreateStyleDialog';
 import { EditStyleDialog } from '@/components/styles/EditStyleDialog';
 import { DeleteStyleConfirmation } from '@/components/styles/DeleteStyleConfirmation';
-import { ExcelImportDialog } from '@/components/styles/ExcelImportDialog';
 
 import { Style, PaginatedStyles } from '@/services/styles';
 
@@ -53,7 +52,6 @@ export default function StylesPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedStyle, setSelectedStyle] = useState<Style | null>(null);
 
   useEffect(() => {
@@ -203,7 +201,7 @@ export default function StylesPage() {
                   <Plus className="mr-2 h-4 w-4" />
                   Create Style
                 </Button>
-                <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+                <Button variant="outline" onClick={() => router.push('/styles/import')}>
                   <FileUp className="mr-2 h-4 w-4" />
                   Import from Excel
                 </Button>
@@ -535,13 +533,6 @@ export default function StylesPage() {
         }}
       />
 
-      <ExcelImportDialog
-        open={isImportDialogOpen}
-        onOpenChange={setIsImportDialogOpen}
-        onSuccess={() => {
-          fetchStyles();
-        }}
-      />
     </DashboardLayout>
   );
 }
