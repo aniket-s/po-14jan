@@ -83,6 +83,7 @@ class ExcelImportController extends Controller
                 'image_columns' => $analysis['image_columns'] ?? [],
                 'image_format_detected' => $analysis['image_format_detected'] ?? null,
                 'column_images' => $analysis['column_images'] ?? [],
+                'debug_image_extraction' => $analysis['debug_image_extraction'] ?? null,
             ],
             'temp_file_path' => $path,
         ]);
@@ -286,6 +287,7 @@ class ExcelImportController extends Controller
                 'image_columns' => $analysis['image_columns'] ?? [],
                 'image_format_detected' => $analysis['image_format_detected'] ?? null,
                 'column_images' => $analysis['column_images'] ?? [],
+                'debug_image_extraction' => $analysis['debug_image_extraction'] ?? null,
             ],
             'temp_file_path' => $path,
         ]);

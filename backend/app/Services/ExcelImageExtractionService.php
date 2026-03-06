@@ -204,7 +204,129 @@ class ExcelImageExtractionService
             $this->currentZipArchive = null;
         }
 
+        // Method 4: PhpSpreadsheet DrawingCollection fallback
+        // If ZIP-based methods found no images, use PhpSpreadsheet's native API
+        if (empty($result['images'])) {
+            $phpSpreadsheetImages = $this->extractWithPhpSpreadsheet($excelPath);
+            Log::info('ExcelImage: PhpSpreadsheet fallback found ' . count($phpSpreadsheetImages) . ' images');
+            if (!empty($phpSpreadsheetImages)) {
+                $result['format_detected'] = 'PhpSpreadsheet DrawingCollection';
+                $result['images'] = $phpSpreadsheetImages;
+            }
+        }
+
         return $result;
+    }
+
+    /**
+     * Method 4: Fallback extraction using PhpSpreadsheet's native DrawingCollection API
+     * Handles Drawing objects, MemoryDrawing, and images that ZIP-based methods miss
+     */
+    protected function extractWithPhpSpreadsheet(string $excelPath): array
+    {
+        $images = [];
+
+        try {
+            $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($excelPath);
+            $worksheet = $spreadsheet->getActiveSheet();
+
+            $drawingCollection = $worksheet->getDrawingCollection();
+            Log::info('ExcelImage: PhpSpreadsheet DrawingCollection has ' . count($drawingCollection) . ' drawings');
+
+            foreach ($drawingCollection as $drawing) {
+                $coordinates = $drawing->getCoordinates();
+                if (!$coordinates) continue;
+
+                $cellReference = Coordinate::coordinateFromString($coordinates);
+                $columnIndex = Coordinate::columnIndexFromString($cellReference[0]) - 1;
+                $rowIndex = intval($cellReference[1]);
+
+                $imageContent = null;
+                $extension = 'png';
+
+                if ($drawing instanceof MemoryDrawing) {
+                    // In-memory drawing (e.g., pasted images)
+                    ob_start();
+                    $renderingFunction = $drawing->getRenderingFunction();
+                    switch ($renderingFunction) {
+                        case MemoryDrawing::RENDERING_JPEG:
+                            imagejpeg($drawing->getImageResource());
+                            $extension = 'jpg';
+                            break;
+                        case MemoryDrawing::RENDERING_GIF:
+                            imagegif($drawing->getImageResource());
+                            $extension = 'gif';
+                            break;
+                        case MemoryDrawing::RENDERING_PNG:
+                        default:
+                            imagepng($drawing->getImageResource());
+                            $extension = 'png';
+                            break;
+                    }
+                    $imageContent = ob_get_clean();
+                } elseif ($drawing instanceof Drawing && $drawing->getPath()) {
+                    // File-based drawing
+                    $drawingPath = $drawing->getPath();
+
+                    // Check if it's a ZIP path (internal to Excel file)
+                    if (str_starts_with($drawingPath, 'zip://')) {
+                        $imageContent = @file_get_contents($drawingPath);
+                    } else {
+                        // External file path
+                        $imageContent = @file_get_contents($drawingPath);
+                    }
+
+                    $extension = strtolower($drawing->getExtension()) ?: 'png';
+
+                    // Handle EMF/WMF by skipping (can't serve directly) or converting
+                    if (in_array($extension, ['emf', 'wmf'])) {
+                        // Try to convert using GD if possible
+                        if ($imageContent && function_exists('imagecreatefromstring')) {
+                            $img = @imagecreatefromstring($imageContent);
+                            if ($img) {
+                                ob_start();
+                                imagepng($img);
+                                $imageContent = ob_get_clean();
+                                imagedestroy($img);
+                                $extension = 'png';
+                            } else {
+                                Log::info("ExcelImage: Skipping EMF/WMF image at {$coordinates} (cannot convert)");
+                                continue;
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+
+                if (!$imageContent || strlen($imageContent) < 100) {
+                    Log::info("ExcelImage: PhpSpreadsheet drawing at {$coordinates} has no valid content");
+                    continue;
+                }
+
+                $storedImage = $this->storeImageData($imageContent, $extension, 'img_phpss_' . $coordinates);
+
+                if ($storedImage) {
+                    $images[] = [
+                        'cell' => $coordinates,
+                        'column_index' => $columnIndex,
+                        'row_index' => $rowIndex,
+                        'url' => $storedImage['url'],
+                        'path' => $storedImage['path'],
+                        'format' => 'PhpSpreadsheet',
+                        'in_cell' => true,
+                    ];
+                }
+            }
+
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+
+        } catch (\Exception $e) {
+            Log::warning('ExcelImage: PhpSpreadsheet fallback failed: ' . $e->getMessage());
+        }
+
+        return $images;
     }
 
     /**
