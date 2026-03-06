@@ -70,11 +70,48 @@ class ExcelImportService
                 $sampleRows[] = $rowData;
             }
 
-            // Extract images mapped to rows
+            // Extract images mapped to rows and columns
             $rowImages = [];
+            $imageColumns = [];
+            $imageFormatDetected = null;
+            $columnImages = []; // Per-sample-row, per-column image URLs for preview
+            $imageExtractionResult = null;
+
             if (config('import.image_extraction.enabled', true)) {
                 try {
-                    $rowImages = $this->imageService->extractImagesForRows($filePath, $headerRow);
+                    $imageExtractionResult = $this->imageService->extractImagesForRowsAndColumns($filePath, $headerRow);
+
+                    // Build legacy row_images for backward compatibility
+                    foreach ($imageExtractionResult['images_by_cell'] as $cellKey => $imageData) {
+                        $row = $imageData['row_index'];
+                        if (!isset($rowImages[$row])) {
+                            $rowImages[$row] = $imageData['url'];
+                        }
+                    }
+
+                    $imageFormatDetected = $imageExtractionResult['format_detected'];
+
+                    // Identify which columns are image columns based on headers
+                    $imageColumns = $this->identifyImageColumns(
+                        $imageExtractionResult['images_by_column'],
+                        $headers
+                    );
+
+                    // Build per-sample-row column images for preview
+                    foreach ($sampleRowNumbers as $idx => $actualRow) {
+                        $rowColumnImages = [];
+                        foreach ($imageExtractionResult['images_by_cell'] as $cellKey => $imageData) {
+                            if ($imageData['row_index'] === $actualRow) {
+                                $rowColumnImages[$imageData['column_index']] = [
+                                    'url' => $imageData['url'],
+                                    'format' => $imageData['format'] ?? 'unknown',
+                                ];
+                            }
+                        }
+                        if (!empty($rowColumnImages)) {
+                            $columnImages[$idx] = $rowColumnImages;
+                        }
+                    }
                 } catch (\Exception $e) {
                     Log::warning('Image extraction failed during analysis: ' . $e->getMessage());
                 }
@@ -84,7 +121,7 @@ class ExcelImportService
             $sampleRowImages = [];
             foreach ($sampleRowNumbers as $idx => $actualRow) {
                 if (isset($rowImages[$actualRow])) {
-                    $sampleRowImages[$idx] = $rowImages[$actualRow]['url'];
+                    $sampleRowImages[$idx] = $rowImages[$actualRow];
                 }
             }
 
@@ -98,7 +135,10 @@ class ExcelImportService
                 'data_start_row' => $dataStartRow,
                 'row_images' => $sampleRowImages,
                 'has_images' => !empty($rowImages),
-                'total_images' => count($rowImages),
+                'total_images' => $imageExtractionResult ? $imageExtractionResult['total_images'] : 0,
+                'image_columns' => $imageColumns,
+                'image_format_detected' => $imageFormatDetected,
+                'column_images' => $columnImages,
             ];
 
         } catch (\Exception $e) {
@@ -189,7 +229,8 @@ class ExcelImportService
         array $columnMapping,
         bool $skipFirstRow = true,
         ?int $startRow = null,
-        ?int $endRow = null
+        ?int $endRow = null,
+        ?array $imageColumns = null
     ): array {
         try {
             $po = PurchaseOrder::findOrFail($purchaseOrderId);
@@ -206,12 +247,13 @@ class ExcelImportService
             $errors = [];
             $importedStyles = [];
 
-            // Extract images from Excel mapped to row numbers
-            $rowImages = [];
+            // Extract images from Excel with column awareness
+            $imagesByCell = [];
             if (config('import.image_extraction.enabled', true)) {
                 try {
-                    $headerRow = $startRow - 1; // Header is the row before data starts
-                    $rowImages = $this->imageService->extractImagesForRows($filePath, $headerRow);
+                    $headerRow = $startRow - 1;
+                    $imageExtractionResult = $this->imageService->extractImagesForRowsAndColumns($filePath, $headerRow);
+                    $imagesByCell = $imageExtractionResult['images_by_cell'];
                 } catch (\Exception $e) {
                     Log::warning('Image extraction failed during import: ' . $e->getMessage());
                 }
@@ -259,8 +301,8 @@ class ExcelImportService
                     ]);
                 }
 
-                // Get image for this row if available (store as flat array of paths)
-                $styleImages = isset($rowImages[$row]) ? [$rowImages[$row]['path']] : null;
+                // Extract images for this row using column-aware mapping
+                $rowImageData = $this->extractRowImages($row, $imagesByCell, $imageColumns);
 
                 // Create style record (master data - no PO-specific fields)
                 $style = Style::create([
@@ -271,10 +313,11 @@ class ExcelImportService
                     'fit' => $rowData['fit'] ?? null,
                     'size_breakup' => $rowData['size_breakdown'] ?? ['breakdown' => 1],
                     'packing_details' => $packingDetails,
-                    'images' => $styleImages,
+                    'images' => $rowImageData['images'],
                     'metadata' => array_filter([
                         'label' => $rowData['label'] ?? null,
                         'size_scale' => is_string($rowData['size_breakdown'] ?? null) ? $rowData['size_breakdown'] : null,
+                        'trims_picture' => $rowImageData['trims_picture_path'],
                     ]),
                     'total_quantity' => $quantity,
                     'unit_price' => $unitPrice,
@@ -329,6 +372,130 @@ class ExcelImportService
                 'error' => 'Failed to import Excel file: ' . $e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Extract images for a specific row using column-aware mapping
+     *
+     * Returns: ['images' => array|null, 'trims_picture_path' => string|null]
+     */
+    private function extractRowImages(int $row, array $imagesByCell, ?array $imageColumns): array
+    {
+        $result = [
+            'images' => null,
+            'trims_picture_path' => null,
+        ];
+
+        if (empty($imagesByCell)) {
+            return $result;
+        }
+
+        // If we have specific image column mappings, use them
+        if (!empty($imageColumns)) {
+            // Extract primary picture
+            if (isset($imageColumns['picture'])) {
+                $cellKey = $row . '_' . $imageColumns['picture'];
+                if (isset($imagesByCell[$cellKey])) {
+                    $result['images'] = [$imagesByCell[$cellKey]['path']];
+                }
+            }
+
+            // Extract trims picture
+            if (isset($imageColumns['trims_picture'])) {
+                $cellKey = $row . '_' . $imageColumns['trims_picture'];
+                if (isset($imagesByCell[$cellKey])) {
+                    $result['trims_picture_path'] = $imagesByCell[$cellKey]['path'];
+                }
+            }
+
+            return $result;
+        }
+
+        // Fallback: no specific column mapping — use first image found in this row
+        foreach ($imagesByCell as $cellKey => $imageData) {
+            if ($imageData['row_index'] === $row) {
+                if ($result['images'] === null) {
+                    $result['images'] = [$imageData['path']];
+                }
+                break;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Identify which columns contain images and map them to field types
+     *
+     * Returns: [ 'picture' => columnIndex, 'trims_picture' => columnIndex ]
+     */
+    private function identifyImageColumns(array $imagesByColumn, array $headers): array
+    {
+        $imageColumns = [];
+        $imageHeaderPatterns = config('import.image_extraction.image_headers', []);
+
+        foreach ($imagesByColumn as $columnIndex => $columnImages) {
+            if (empty($columnImages)) continue;
+
+            // Find the header for this column
+            $header = null;
+            foreach ($headers as $h) {
+                if ($h['index'] === $columnIndex) {
+                    $header = $h['original_name'];
+                    break;
+                }
+            }
+
+            if (!$header) continue;
+
+            $headerUpper = strtoupper(trim($header));
+            $headerNormalized = preg_replace('/[^A-Z0-9]/', '', $headerUpper);
+
+            $fieldType = null;
+
+            // Check for trims picture patterns first (more specific)
+            foreach ($imageHeaderPatterns['trims_picture'] ?? [] as $pattern) {
+                $patternNormalized = preg_replace('/[^A-Z0-9]/', '', strtoupper($pattern));
+                if ($headerNormalized === $patternNormalized ||
+                    strpos($headerNormalized, $patternNormalized) !== false) {
+                    $fieldType = 'trims_picture';
+                    break;
+                }
+            }
+
+            // Check for picture patterns
+            if (!$fieldType) {
+                foreach ($imageHeaderPatterns['picture'] ?? [] as $pattern) {
+                    $patternNormalized = preg_replace('/[^A-Z0-9]/', '', strtoupper($pattern));
+                    if ($headerNormalized === $patternNormalized ||
+                        strpos($headerNormalized, $patternNormalized) !== false) {
+                        $fieldType = 'picture';
+                        break;
+                    }
+                }
+            }
+
+            // Fallback regex matching
+            if (!$fieldType) {
+                if (preg_match('/trim|accessory/i', $header)) {
+                    $fieldType = 'trims_picture';
+                } elseif (preg_match('/picture|image|photo|pic/i', $header)) {
+                    $fieldType = 'picture';
+                }
+            }
+
+            // Default to 'picture' if no specific type identified
+            if (!$fieldType) {
+                $fieldType = 'picture';
+            }
+
+            // Only assign if not already taken (first match wins per type)
+            if (!isset($imageColumns[$fieldType])) {
+                $imageColumns[$fieldType] = $columnIndex;
+            }
+        }
+
+        return $imageColumns;
     }
 
     /**
@@ -876,7 +1043,8 @@ class ExcelImportService
         array $columnMapping,
         bool $skipFirstRow = true,
         ?int $startRow = null,
-        ?int $endRow = null
+        ?int $endRow = null,
+        ?array $imageColumns = null
     ): array {
         try {
             $spreadsheet = IOFactory::load($filePath);
@@ -892,12 +1060,13 @@ class ExcelImportService
             $errors = [];
             $importedStyles = [];
 
-            // Extract images from Excel mapped to row numbers
-            $rowImages = [];
+            // Extract images from Excel with column awareness
+            $imagesByCell = [];
             if (config('import.image_extraction.enabled', true)) {
                 try {
                     $headerRow = $startRow - 1;
-                    $rowImages = $this->imageService->extractImagesForRows($filePath, $headerRow);
+                    $imageExtractionResult = $this->imageService->extractImagesForRowsAndColumns($filePath, $headerRow);
+                    $imagesByCell = $imageExtractionResult['images_by_cell'];
                 } catch (\Exception $e) {
                     Log::warning('Image extraction failed during standalone import: ' . $e->getMessage());
                 }
@@ -933,8 +1102,8 @@ class ExcelImportService
 
                 $unitPrice = $rowData['unit_price'] ?? 0;
 
-                // Get image for this row if available
-                $styleImages = isset($rowImages[$row]) ? [$rowImages[$row]['path']] : null;
+                // Extract images for this row using column-aware mapping
+                $rowImageData = $this->extractRowImages($row, $imagesByCell, $imageColumns);
 
                 // Create standalone style with po_id = null
                 $style = Style::create([
@@ -944,7 +1113,10 @@ class ExcelImportService
                     'fabric' => $rowData['fabric'] ?? null,
                     'color' => $rowData['color'] ?? null,
                     'size_breakup' => $rowData['size_breakdown'] ?? null,
-                    'images' => $styleImages,
+                    'images' => $rowImageData['images'],
+                    'metadata' => array_filter([
+                        'trims_picture' => $rowImageData['trims_picture_path'],
+                    ]),
                     'total_quantity' => $rowData['quantity'] ?? 0,
                     'unit_price' => $unitPrice,
                     'fob_price' => $unitPrice,

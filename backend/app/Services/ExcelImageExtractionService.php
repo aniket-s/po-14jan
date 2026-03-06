@@ -76,6 +76,66 @@ class ExcelImageExtractionService
     }
 
     /**
+     * Extract images mapped by row AND column for multi-column image support
+     *
+     * Returns: [
+     *   'images_by_cell' => [ '{row}_{col}' => ['url' => ..., 'path' => ..., 'format' => ...], ... ],
+     *   'images_by_column' => [ colIndex => [ row => {...}, ... ], ... ],
+     *   'format_detected' => string,
+     *   'total_images' => int,
+     * ]
+     */
+    public function extractImagesForRowsAndColumns(string $excelPath, int $headerRow = 1): array
+    {
+        $allImages = $this->extractInCellImagesUniversal($excelPath);
+
+        $imagesByCell = [];
+        $imagesByColumn = [];
+
+        foreach ($allImages['images'] as $image) {
+            $row = $image['row_index'];
+            $col = $image['column_index'];
+
+            // Skip images in header row or above
+            if ($row <= $headerRow) continue;
+
+            $cellKey = $row . '_' . $col;
+
+            // Store by cell key (first found wins per cell)
+            if (!isset($imagesByCell[$cellKey])) {
+                $imagesByCell[$cellKey] = [
+                    'url' => $image['url'],
+                    'path' => $image['path'],
+                    'format' => $image['format'] ?? 'unknown',
+                    'row_index' => $row,
+                    'column_index' => $col,
+                ];
+            }
+
+            // Group by column
+            if (!isset($imagesByColumn[$col])) {
+                $imagesByColumn[$col] = [];
+            }
+            if (!isset($imagesByColumn[$col][$row])) {
+                $imagesByColumn[$col][$row] = $imagesByCell[$cellKey];
+            }
+        }
+
+        Log::info("ExcelImage: Row+Column mapping result", [
+            'total_images' => count($imagesByCell),
+            'columns_with_images' => array_keys($imagesByColumn),
+            'format' => $allImages['format_detected'],
+        ]);
+
+        return [
+            'images_by_cell' => $imagesByCell,
+            'images_by_column' => $imagesByColumn,
+            'format_detected' => $allImages['format_detected'],
+            'total_images' => count($imagesByCell),
+        ];
+    }
+
+    /**
      * Universal image extraction from Excel file
      */
     public function extractInCellImagesUniversal(string $excelPath): array
