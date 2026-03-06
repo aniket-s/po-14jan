@@ -75,7 +75,13 @@ const optionalFields = [
   { key: 'description', label: 'Description', required: false },
   { key: 'fabric', label: 'Fabric', required: false },
   { key: 'color', label: 'Color', required: false },
-  { key: 'size_breakdown', label: 'Size Breakdown', required: false },
+  { key: 'label', label: 'Label / Brand', required: false },
+  { key: 'fit', label: 'Fit', required: false },
+  { key: 'notes', label: 'Notes', required: false },
+  { key: 'packing', label: 'Packing', required: false },
+  { key: 'pre_pack_inner', label: 'Pre Pack Inner', required: false },
+  { key: 'ihd', label: 'IHD (In-Hand Date)', required: false },
+  { key: 'size_breakdown', label: 'Size Scale / Prepack', required: false },
   { key: 'assignment_type', label: 'Assignment Type', required: false },
   { key: 'assigned_factory_id', label: 'Factory ID', required: false },
   { key: 'assigned_agency_id', label: 'Agency ID', required: false },
@@ -92,6 +98,8 @@ interface AnalysisResult {
   sample_rows: (string | number | null)[][];
   total_rows: number;
   suggested_mappings: Record<string, number | null>;
+  header_row: number;
+  data_start_row: number;
 }
 
 interface ImportError {
@@ -349,7 +357,12 @@ export default function POImportPage() {
       setError('');
       const response = await api.post<{ result: ImportResult }>(
         `/purchase-orders/${poId}/import/execute`,
-        { temp_file_path: tempFilePath, column_mapping: columnMapping, skip_first_row: true }
+        {
+          temp_file_path: tempFilePath,
+          column_mapping: columnMapping,
+          skip_first_row: true,
+          start_row: analysis?.data_start_row ?? undefined,
+        }
       );
       setImportResult(response.data.result);
       setStep('results');
@@ -623,6 +636,15 @@ export default function POImportPage() {
         {step === 'mapping' && analysis && (
           <div className="grid grid-cols-3 gap-6">
             <div className="col-span-2 space-y-4">
+              {/* Header row detection notice */}
+              {analysis.header_row > 1 && (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    Header row detected at row {analysis.header_row}. Rows 1&ndash;{analysis.header_row - 1} will be skipped as metadata.
+                  </AlertDescription>
+                </Alert>
+              )}
               {/* Saved Mappings */}
               {savedMappings.length > 0 && (
                 <Card>

@@ -19,30 +19,41 @@ class ExcelImportService
             $spreadsheet = IOFactory::load($filePath);
             $worksheet = $spreadsheet->getActiveSheet();
 
-            // Get headers from first row
-            $headers = [];
             $highestColumn = $worksheet->getHighestColumn();
             $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
+            $highestRow = $worksheet->getHighestRow();
 
+            // Auto-detect header row by scanning first 10 rows for known column names
+            $headerRow = $this->detectHeaderRow($worksheet, $highestColumnIndex, min($highestRow, 10));
+
+            // Get headers from detected header row
+            $headers = [];
             for ($col = 1; $col <= $highestColumnIndex; $col++) {
-                $cellValue = $worksheet->getCellByColumnAndRow($col, 1)->getValue();
+                $cellValue = $worksheet->getCellByColumnAndRow($col, $headerRow)->getValue();
                 if ($cellValue) {
                     $headers[] = [
                         'index' => $col - 1,
-                        'original_name' => $cellValue,
-                        'suggested_field' => $this->suggestFieldMapping($cellValue),
+                        'original_name' => trim((string) $cellValue),
+                        'suggested_field' => $this->suggestFieldMapping((string) $cellValue),
                     ];
                 }
             }
 
-            // Get sample rows (first 5 data rows)
-            $sampleRows = [];
-            $maxRows = min($worksheet->getHighestRow(), 6); // Header + 5 rows
+            $dataStartRow = $headerRow + 1;
 
-            for ($row = 2; $row <= $maxRows; $row++) {
+            // Get sample rows (first 5 data rows after header)
+            $sampleRows = [];
+            $maxRows = min($highestRow, $dataStartRow + 4);
+
+            for ($row = $dataStartRow; $row <= $maxRows; $row++) {
                 $rowData = [];
                 for ($col = 1; $col <= $highestColumnIndex; $col++) {
-                    $rowData[] = $worksheet->getCellByColumnAndRow($col, $row)->getValue();
+                    $cellValue = $worksheet->getCellByColumnAndRow($col, $row)->getValue();
+                    $rowData[] = $cellValue;
+                }
+                // Skip completely empty rows
+                if (array_filter($rowData, fn($v) => $v !== null && $v !== '') === []) {
+                    continue;
                 }
                 $sampleRows[] = $rowData;
             }
@@ -51,8 +62,10 @@ class ExcelImportService
                 'success' => true,
                 'headers' => $headers,
                 'sample_rows' => $sampleRows,
-                'total_rows' => $worksheet->getHighestRow() - 1, // Exclude header
+                'total_rows' => $highestRow - $headerRow, // Data rows only
                 'suggested_mappings' => $this->getSuggestedMappings($headers),
+                'header_row' => $headerRow,
+                'data_start_row' => $dataStartRow,
             ];
 
         } catch (\Exception $e) {
@@ -62,6 +75,42 @@ class ExcelImportService
                 'error' => 'Failed to analyze Excel file: ' . $e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Detect the header row by scanning for rows with known column name patterns
+     */
+    private function detectHeaderRow($worksheet, int $highestColumnIndex, int $maxScanRows): int
+    {
+        $knownHeaders = [
+            'style', 'color', 'description', 'fabric', 'quantity', 'price', 'unit',
+            'label', 'brand', 'fit', 'notes', 'packing', 'total', 'sku', 'item',
+            'ddp', 'fob', 'cad', 'size', 'prepack', 'ihd', 'date',
+        ];
+
+        $bestRow = 1;
+        $bestScore = 0;
+
+        for ($row = 1; $row <= $maxScanRows; $row++) {
+            $score = 0;
+            for ($col = 1; $col <= $highestColumnIndex; $col++) {
+                $cellValue = $worksheet->getCellByColumnAndRow($col, $row)->getValue();
+                if (!$cellValue) continue;
+                $normalized = strtolower(trim((string) $cellValue));
+                foreach ($knownHeaders as $keyword) {
+                    if (str_contains($normalized, $keyword)) {
+                        $score++;
+                        break;
+                    }
+                }
+            }
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestRow = $row;
+            }
+        }
+
+        return $bestRow;
     }
 
     /**
@@ -122,14 +171,28 @@ class ExcelImportService
                 $unitPrice = $rowData['unit_price'] ?? 0;
                 $quantity = $rowData['quantity'] ?? 1;
 
+                // Build packing details JSON if packing/pre_pack_inner provided
+                $packingDetails = $rowData['packing_details'] ?? null;
+                if (!empty($rowData['packing']) || !empty($rowData['pre_pack_inner'])) {
+                    $packingDetails = array_filter([
+                        'method' => $rowData['packing'] ?? null,
+                        'pre_pack_inner' => $rowData['pre_pack_inner'] ?? null,
+                    ]);
+                }
+
                 // Create style record (master data - no PO-specific fields)
                 $style = Style::create([
                     'style_number' => $rowData['style_number'],
                     'description' => $rowData['description'] ?? null,
                     'fabric' => $rowData['fabric'] ?? null,
                     'color' => $rowData['color'] ?? 'N/A',
+                    'fit' => $rowData['fit'] ?? null,
                     'size_breakup' => $rowData['size_breakdown'] ?? ['breakdown' => 1],
-                    'packing_details' => $rowData['packing_details'] ?? null,
+                    'packing_details' => $packingDetails,
+                    'metadata' => array_filter([
+                        'label' => $rowData['label'] ?? null,
+                        'size_scale' => is_string($rowData['size_breakdown'] ?? null) ? $rowData['size_breakdown'] : null,
+                    ]),
                     'total_quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'fob_price' => $unitPrice,
@@ -137,12 +200,16 @@ class ExcelImportService
                     'is_active' => true,
                 ]);
 
+                // Determine ex_factory_date: use IHD from Excel if available, else PO delivery date
+                $exFactoryDate = $rowData['ihd'] ?? $po->delivery_date ?? now()->addMonths(2);
+
                 // Attach style to PO via pivot table with PO-specific data
                 $po->styles()->attach($style->id, [
                     'quantity_in_po' => $quantity,
                     'unit_price_in_po' => $unitPrice,
                     'size_breakdown' => json_encode($rowData['size_breakdown'] ?? null),
-                    'ex_factory_date' => $po->delivery_date ?? now()->addMonths(2),
+                    'ex_factory_date' => $exFactoryDate,
+                    'notes' => $rowData['notes'] ?? null,
                     'assignment_type' => $rowData['assignment_type'] ?? null,
                     'assigned_factory_id' => $rowData['assigned_factory_id'] ?? null,
                     'assigned_agency_id' => $rowData['assigned_agency_id'] ?? null,
@@ -195,9 +262,12 @@ class ExcelImportService
         if ($normalized === 'style' || $normalized === 'item' || $normalized === 'sku') {
             return 'style_number';
         }
+        if ($normalized === 'style #' || $normalized === 'style#') {
+            return 'style_number';
+        }
 
         // Description variations
-        if (preg_match('/(desc|description|detail|name|title)/i', $normalized)) {
+        if (preg_match('/(desc|description|detail|title)/i', $normalized)) {
             return 'description';
         }
 
@@ -211,21 +281,51 @@ class ExcelImportService
             return 'color';
         }
 
-        // Quantity variations
-        if (preg_match('/^(qty|quantity|pieces|pcs|units|amount)$/i', $normalized)) {
+        // Quantity variations - "total units", "qty", "quantity", etc.
+        if (preg_match('/(total[\s_-]*units|qty|quantity|pieces|pcs|units|amount)/i', $normalized)) {
             return 'quantity';
         }
 
-        // Unit price variations
-        if (preg_match('/(unit[\s_-]*price|price[\s_-]*per[\s_-]*unit|rate|unit[\s_-]*cost|fob)/i', $normalized)) {
+        // Unit price variations - includes DDP, FOB
+        if (preg_match('/(unit[\s_-]*price|price[\s_-]*per[\s_-]*unit|rate|unit[\s_-]*cost|fob|ddp)/i', $normalized)) {
             return 'unit_price';
         }
         if ($normalized === 'price' || $normalized === 'cost') {
             return 'unit_price';
         }
 
-        // Size breakdown variations
-        if (preg_match('/(size[\s_-]*breakdown|sizes|size[\s_-]*split)/i', $normalized)) {
+        // Label / Brand variations
+        if (preg_match('/^(label|brand|brand[\s_-]*name|vendor)$/i', $normalized)) {
+            return 'label';
+        }
+
+        // Fit variations
+        if (preg_match('/^(fit|fit[\s_-]*type|fitting)$/i', $normalized)) {
+            return 'fit';
+        }
+
+        // Notes variations
+        if (preg_match('/^(notes?|comments?|remarks?|memo)$/i', $normalized)) {
+            return 'notes';
+        }
+
+        // Packing variations
+        if (preg_match('/^(packing|packaging|pack[\s_-]*method|carton[\s_-]*pack)$/i', $normalized)) {
+            return 'packing';
+        }
+
+        // Pre Pack Inner variations
+        if (preg_match('/(pre[\s_-]*pack[\s_-]*inner|inner[\s_-]*pack|pre[\s_-]*pack|prepack[\s_-]*inner)/i', $normalized)) {
+            return 'pre_pack_inner';
+        }
+
+        // IHD / In-Hand Date / Ex-Factory Date variations
+        if (preg_match('/(ihd|in[\s_-]*hand[\s_-]*date|ex[\s_-]*factory|delivery[\s_-]*date|ship[\s_-]*date)/i', $normalized)) {
+            return 'ihd';
+        }
+
+        // Size scale / prepack variations
+        if (preg_match('/(size[\s_-]*scale|size[\s_-]*breakdown|sizes|size[\s_-]*split|prepack|size[\s_-]*ratio)/i', $normalized)) {
             return 'size_breakdown';
         }
 
@@ -279,7 +379,7 @@ class ExcelImportService
     {
         $mappings = [];
         $requiredFields = ['style_number', 'quantity', 'unit_price'];
-        $optionalFields = ['description', 'fabric', 'color', 'size_breakdown', 'assignment_type', 'assigned_factory_id', 'assigned_agency_id'];
+        $optionalFields = ['description', 'fabric', 'color', 'label', 'fit', 'notes', 'packing', 'pre_pack_inner', 'ihd', 'size_breakdown', 'assignment_type', 'assigned_factory_id', 'assigned_agency_id'];
 
         foreach ($requiredFields as $field) {
             $mappings[$field] = $this->findHeaderForField($headers, $field);
@@ -327,9 +427,13 @@ class ExcelImportService
                     case 'size_breakdown':
                         $data[$field] = $this->parseSizeBreakdown($cellValue);
                         break;
+                    case 'ihd':
+                        // Parse date value (IHD / In-Hand Date)
+                        $data[$field] = $this->parseDate($cellValue);
+                        break;
                     case 'assignment_type':
                         // Validate assignment type enum
-                        $value = strtolower(trim($cellValue));
+                        $value = strtolower(trim((string) $cellValue));
                         if (in_array($value, ['direct_to_factory', 'via_agency'])) {
                             $data[$field] = $value;
                         }
@@ -342,7 +446,7 @@ class ExcelImportService
                         }
                         break;
                     default:
-                        $data[$field] = $cellValue;
+                        $data[$field] = trim((string) ($cellValue ?? '')) ?: null;
                 }
             }
         }
@@ -523,6 +627,44 @@ class ExcelImportService
     }
 
     /**
+     * Parse date value from Excel cell (handles Excel serial dates and common formats)
+     */
+    private function parseDate($value): ?string
+    {
+        if (empty($value)) {
+            return null;
+        }
+
+        // Handle Excel serial date number
+        if (is_numeric($value) && $value > 40000 && $value < 60000) {
+            try {
+                $date = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $value);
+                return $date->format('Y-m-d');
+            } catch (\Exception $e) {
+                // Fall through to string parsing
+            }
+        }
+
+        // Handle string date formats
+        $value = trim((string) $value);
+        $formats = ['n/j/y', 'n/j/Y', 'm/d/y', 'm/d/Y', 'Y-m-d', 'd-M-y', 'd-M-Y', 'M d, Y'];
+        foreach ($formats as $format) {
+            $date = \DateTime::createFromFormat($format, $value);
+            if ($date !== false) {
+                return $date->format('Y-m-d');
+            }
+        }
+
+        // Try PHP's strtotime as fallback
+        $timestamp = strtotime($value);
+        if ($timestamp !== false) {
+            return date('Y-m-d', $timestamp);
+        }
+
+        return null;
+    }
+
+    /**
      * Parse size breakdown from string
      */
     private function parseSizeBreakdown($value): ?array
@@ -571,33 +713,21 @@ class ExcelImportService
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $worksheet = $spreadsheet->getActiveSheet();
 
-        // Set headers with pack-based columns
+        // Set headers matching standard PO Excel format
         $headers = [
-            'Style Number',
-            'Description',
-            'Fabric',
-            'Color',
-            'Unit Price',
-            // Pack 1
-            'S1_Width',
-            'S1_XS',
-            'S1_S',
-            'S1_M',
-            'S1_L',
-            'S1_XL',
-            'S1_Cost',
-            // Pack 2
-            'S2_Width',
-            'S2_XS',
-            'S2_S',
-            'S2_M',
-            'S2_L',
-            'S2_XL',
-            'S2_Cost',
-            // Optional fields
-            'Assignment Type',
-            'Assigned Factory ID',
-            'Assigned Agency ID',
+            'LABEL',
+            'STYLE #',
+            'COLOR',
+            'DESCRIPTION',
+            'NOTES',
+            'FABRIC',
+            'FIT',
+            'DDP',
+            'TOTAL UNITS',
+            'SIZE SCALE / PREPACK',
+            'PRE PACK INNER',
+            'PACKING',
+            'IHD',
         ];
 
         $col = 1;
@@ -606,33 +736,21 @@ class ExcelImportService
             $col++;
         }
 
-        // Add sample data row with pack-based data
+        // Add sample data row
         $sampleData = [
-            'STYLE-001',
-            'Cotton T-Shirt',
-            'Cotton 100%',
-            'Navy Blue',
-            15.50,
-            // Pack 1
-            'M',
-            5,
-            10,
-            15,
-            10,
-            5,
-            15.00,
-            // Pack 2
-            'L',
-            3,
-            8,
-            12,
-            8,
-            4,
-            15.50,
-            // Optional
-            'direct_to_factory',
+            'BRAND NAME',
+            'RTF-001X',
+            'BLACK',
+            'PRINTED GRAPHIC TWO FER',
             '',
-            '',
+            '220 CVC BODY + 220 THERMAL BODY',
+            'REGULAR',
+            4.00,
+            1200,
+            '2X-3X 3-1',
+            '4 PCS',
+            'FLATPACK - 1 PREPACK IN MASTER POLYBAG - 24 PC CARTONS',
+            '7/6/26',
         ];
 
         $col = 1;
