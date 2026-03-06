@@ -10,6 +10,13 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ExcelImportService
 {
+    protected ExcelImageExtractionService $imageService;
+
+    public function __construct(ExcelImageExtractionService $imageService)
+    {
+        $this->imageService = $imageService;
+    }
+
     /**
      * Analyze Excel file and suggest column mappings
      */
@@ -58,6 +65,25 @@ class ExcelImportService
                 $sampleRows[] = $rowData;
             }
 
+            // Extract images mapped to rows
+            $rowImages = [];
+            if (config('import.image_extraction.enabled', true)) {
+                try {
+                    $rowImages = $this->imageService->extractImagesForRows($filePath, $headerRow);
+                } catch (\Exception $e) {
+                    Log::warning('Image extraction failed during analysis: ' . $e->getMessage());
+                }
+            }
+
+            // Build sample row images (keyed by display index)
+            $sampleRowImages = [];
+            foreach ($sampleRows as $idx => $row) {
+                $actualRow = $dataStartRow + $idx;
+                if (isset($rowImages[$actualRow])) {
+                    $sampleRowImages[$idx] = $rowImages[$actualRow]['url'];
+                }
+            }
+
             return [
                 'success' => true,
                 'headers' => $headers,
@@ -66,6 +92,9 @@ class ExcelImportService
                 'suggested_mappings' => $this->getSuggestedMappings($headers),
                 'header_row' => $headerRow,
                 'data_start_row' => $dataStartRow,
+                'row_images' => $sampleRowImages,
+                'has_images' => !empty($rowImages),
+                'total_images' => count($rowImages),
             ];
 
         } catch (\Exception $e) {
@@ -138,6 +167,17 @@ class ExcelImportService
             $errors = [];
             $importedStyles = [];
 
+            // Extract images from Excel mapped to row numbers
+            $rowImages = [];
+            if (config('import.image_extraction.enabled', true)) {
+                try {
+                    $headerRow = $startRow - 1; // Header is the row before data starts
+                    $rowImages = $this->imageService->extractImagesForRows($filePath, $headerRow);
+                } catch (\Exception $e) {
+                    Log::warning('Image extraction failed during import: ' . $e->getMessage());
+                }
+            }
+
             for ($row = $startRow; $row <= $endRow; $row++) {
                 $rowData = $this->extractRowData($worksheet, $row, $columnMapping);
 
@@ -180,6 +220,12 @@ class ExcelImportService
                     ]);
                 }
 
+                // Get image for this row if available
+                $styleImages = null;
+                if (isset($rowImages[$row])) {
+                    $styleImages = [$rowImages[$row]]; // Array of {url, path}
+                }
+
                 // Create style record (master data - no PO-specific fields)
                 $style = Style::create([
                     'style_number' => $rowData['style_number'],
@@ -189,6 +235,7 @@ class ExcelImportService
                     'fit' => $rowData['fit'] ?? null,
                     'size_breakup' => $rowData['size_breakdown'] ?? ['breakdown' => 1],
                     'packing_details' => $packingDetails,
+                    'images' => $styleImages,
                     'metadata' => array_filter([
                         'label' => $rowData['label'] ?? null,
                         'size_scale' => is_string($rowData['size_breakdown'] ?? null) ? $rowData['size_breakdown'] : null,

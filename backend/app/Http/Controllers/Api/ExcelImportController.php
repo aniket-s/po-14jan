@@ -77,6 +77,9 @@ class ExcelImportController extends Controller
                 'suggested_mappings' => $analysis['suggested_mappings'],
                 'header_row' => $analysis['header_row'] ?? 1,
                 'data_start_row' => $analysis['data_start_row'] ?? 2,
+                'row_images' => $analysis['row_images'] ?? [],
+                'has_images' => $analysis['has_images'] ?? false,
+                'total_images' => $analysis['total_images'] ?? 0,
             ],
             'temp_file_path' => $path,
         ]);
@@ -272,6 +275,9 @@ class ExcelImportController extends Controller
                 'suggested_mappings' => $analysis['suggested_mappings'],
                 'header_row' => $analysis['header_row'] ?? 1,
                 'data_start_row' => $analysis['data_start_row'] ?? 2,
+                'row_images' => $analysis['row_images'] ?? [],
+                'has_images' => $analysis['has_images'] ?? false,
+                'total_images' => $analysis['total_images'] ?? 0,
             ],
             'temp_file_path' => $path,
         ]);

@@ -100,6 +100,9 @@ interface AnalysisResult {
   suggested_mappings: Record<string, number | null>;
   header_row: number;
   data_start_row: number;
+  row_images?: Record<number, string>; // index -> image URL
+  has_images?: boolean;
+  total_images?: number;
 }
 
 interface ImportError {
@@ -864,6 +867,12 @@ export default function POImportPage() {
                       <span className="text-muted-foreground">Mapped</span>
                       <span className="font-medium">{mappedCount} / {allFields.length}</span>
                     </div>
+                    {analysis.has_images && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">CAD Images</span>
+                        <Badge variant="secondary" className="text-xs">{analysis.total_images} found</Badge>
+                      </div>
+                    )}
                   </div>
                   <Separator />
                   <div className="space-y-2">
@@ -913,6 +922,11 @@ export default function POImportPage() {
                     <TableHeader>
                       <TableRow className="bg-muted/50">
                         <TableHead className="w-12 text-center font-mono text-xs">#</TableHead>
+                        {analysis.has_images && (
+                          <TableHead className="whitespace-nowrap w-16">
+                            <span className="text-xs">CAD</span>
+                          </TableHead>
+                        )}
                         {mappedFields.map(field => (
                           <TableHead key={field.key} className="whitespace-nowrap">
                             <div className="flex items-center gap-1.5">
@@ -931,6 +945,19 @@ export default function POImportPage() {
                           <TableCell className="text-center font-mono text-xs text-muted-foreground">
                             {rowIndex + 1}
                           </TableCell>
+                          {analysis.has_images && (
+                            <TableCell className="p-1">
+                              {analysis.row_images?.[rowIndex] ? (
+                                <img
+                                  src={analysis.row_images[rowIndex]}
+                                  alt="CAD"
+                                  className="h-12 w-12 object-contain rounded border"
+                                />
+                              ) : (
+                                <span className="text-xs text-muted-foreground/40">-</span>
+                              )}
+                            </TableCell>
+                          )}
                           {mappedFields.map(field => (
                             <TableCell key={field.key} className="text-sm whitespace-nowrap">
                               {getPreviewValue(rowIndex, field.key)}
