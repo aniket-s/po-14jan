@@ -104,9 +104,9 @@ class ExcelImportService
                     continue;
                 }
 
-                // Check if style number already exists
-                $exists = Style::where('po_id', $purchaseOrderId)
-                    ->where('style_number', $rowData['style_number'])
+                // Check if style number already exists in this PO (via pivot table)
+                $exists = $po->styles()
+                    ->where('styles.style_number', $rowData['style_number'])
                     ->exists();
 
                 if ($exists) {
@@ -119,21 +119,29 @@ class ExcelImportService
                     continue;
                 }
 
-                // Get PO for default dates
                 $unitPrice = $rowData['unit_price'] ?? 0;
+                $quantity = $rowData['quantity'] ?? 1;
 
-                // Create style with correct column names matching migration
+                // Create style record (master data - no PO-specific fields)
                 $style = Style::create([
-                    'po_id' => $purchaseOrderId,
                     'style_number' => $rowData['style_number'],
                     'description' => $rowData['description'] ?? null,
                     'fabric' => $rowData['fabric'] ?? null,
                     'color' => $rowData['color'] ?? 'N/A',
                     'size_breakup' => $rowData['size_breakdown'] ?? ['breakdown' => 1],
                     'packing_details' => $rowData['packing_details'] ?? null,
-                    'total_quantity' => $rowData['quantity'] ?? 1,
+                    'total_quantity' => $quantity,
                     'unit_price' => $unitPrice,
-                    'fob_price' => $unitPrice, // Use unit price as fob price
+                    'fob_price' => $unitPrice,
+                    'created_by' => $po->created_by ?? null,
+                    'is_active' => true,
+                ]);
+
+                // Attach style to PO via pivot table with PO-specific data
+                $po->styles()->attach($style->id, [
+                    'quantity_in_po' => $quantity,
+                    'unit_price_in_po' => $unitPrice,
+                    'size_breakdown' => json_encode($rowData['size_breakdown'] ?? null),
                     'ex_factory_date' => $po->delivery_date ?? now()->addMonths(2),
                     'assignment_type' => $rowData['assignment_type'] ?? null,
                     'assigned_factory_id' => $rowData['assigned_factory_id'] ?? null,
