@@ -1198,6 +1198,26 @@ class PdfImportService
             $totalQty = array_sum($sizeBreakdown);
         }
 
+        // Auto-correct size breakdown if sum doesn't match explicit quantity
+        if (!empty($sizeBreakdown) && $totalQty !== null && $totalQty > 0) {
+            $sizeSum = array_sum($sizeBreakdown);
+            if ($sizeSum > 0 && $sizeSum !== $totalQty) {
+                $scaledBreakdown = [];
+                $scaledSum = 0;
+                $sizeKeys = array_keys($sizeBreakdown);
+                foreach ($sizeKeys as $i => $size) {
+                    if ($i === count($sizeKeys) - 1) {
+                        $scaledBreakdown[$size] = $totalQty - $scaledSum;
+                    } else {
+                        $scaled = (int) round($sizeBreakdown[$size] * $totalQty / $sizeSum);
+                        $scaledBreakdown[$size] = $scaled;
+                        $scaledSum += $scaled;
+                    }
+                }
+                $sizeBreakdown = $scaledBreakdown;
+            }
+        }
+
         // Skip if no style number or no quantity
         if (empty($styleNumber) || ($totalQty === null && empty($sizeBreakdown))) {
             return null;

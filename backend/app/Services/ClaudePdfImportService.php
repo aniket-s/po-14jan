@@ -244,7 +244,7 @@ IMPORTANT RULES:
 - For quantity: sum all size quantities if size breakdown is available, or use the Qty/Quantity column
 - For unit_price: look for Rate, Price, Unit Price, FOB, Cost columns. Use 0 if not clearly stated.
 - For dates: always convert to YYYY-MM-DD format regardless of the original format
-- For size_breakdown: extract individual size quantities if the document has size columns (XS, S, M, L, XL, XXL, or numeric sizes like 28, 30, 32, etc.)
+- For size_breakdown: extract individual size quantities if the document has size columns (XS, S, M, L, XL, XXL, 2XL, 3XL, 4XL, 5XL, or numeric sizes like 28, 30, 32, etc.). ONLY include sizes that have an explicit quantity value - do NOT assume or fill in quantities for sizes that appear as column headers but have no quantity underneath them. The sum of all size quantities MUST equal the total quantity for that line item.
 - If a field is not present in the document, use null - do not guess
 - Return ONLY the JSON object, nothing else
 PROMPT;
@@ -380,13 +380,32 @@ PROMPT;
             $price = (float) ($item['unit_price'] ?? 0);
             $totalAmount = isset($item['total_amount']) ? (float) $item['total_amount'] : $qty * $price;
 
-            // Validate size breakdown sum if present
+            // Validate and auto-correct size breakdown if present
             $sizeBreakdown = $item['size_breakdown'] ?? null;
             if (is_array($sizeBreakdown) && !empty($sizeBreakdown)) {
+                // Filter out sizes with zero or non-positive quantities
+                $sizeBreakdown = array_filter($sizeBreakdown, fn($v) => (int) $v > 0);
                 $sizeSum = array_sum($sizeBreakdown);
-                // If size breakdown sum doesn't match quantity and qty is 0, use the sum
+
                 if ($qty === 0 && $sizeSum > 0) {
+                    // If no quantity provided, use the sum of sizes
                     $qty = $sizeSum;
+                } elseif ($qty > 0 && $sizeSum > 0 && $sizeSum !== $qty) {
+                    // Size breakdown total doesn't match explicit quantity - scale proportionally
+                    $scaledBreakdown = [];
+                    $scaledSum = 0;
+                    $sizeKeys = array_keys($sizeBreakdown);
+                    foreach ($sizeKeys as $i => $size) {
+                        if ($i === count($sizeKeys) - 1) {
+                            // Last size gets the remainder to avoid rounding errors
+                            $scaledBreakdown[$size] = $qty - $scaledSum;
+                        } else {
+                            $scaled = (int) round($sizeBreakdown[$size] * $qty / $sizeSum);
+                            $scaledBreakdown[$size] = $scaled;
+                            $scaledSum += $scaled;
+                        }
+                    }
+                    $sizeBreakdown = $scaledBreakdown;
                 }
             }
 
