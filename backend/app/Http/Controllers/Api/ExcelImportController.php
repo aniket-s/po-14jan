@@ -30,8 +30,17 @@ class ExcelImportController extends Controller
     /**
      * Analyze uploaded Excel file
      */
-    public function analyze(Request $request)
+    public function analyze(Request $request, $poId)
     {
+        // Verify PO exists and user has access
+        $po = PurchaseOrder::findOrFail($poId);
+        $user = $request->user();
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json([
+                'message' => 'You do not have permission to import styles for this purchase order',
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // Max 10MB
         ]);
@@ -101,7 +110,13 @@ class ExcelImportController extends Controller
             ], 422);
         }
 
-        // Verify temp file exists
+        // Verify temp file path is within allowed directory and exists
+        if (!str_starts_with($request->temp_file_path, 'temp/imports/')) {
+            return response()->json([
+                'message' => 'Invalid file path.',
+            ], 400);
+        }
+
         if (!Storage::exists($request->temp_file_path)) {
             return response()->json([
                 'message' => 'Temporary file not found. Please upload the file again.',
@@ -287,7 +302,13 @@ class ExcelImportController extends Controller
             ], 422);
         }
 
-        // Verify temp file exists
+        // Verify temp file path is within allowed directory and exists
+        if (!str_starts_with($request->temp_file_path, 'temp/imports/')) {
+            return response()->json([
+                'message' => 'Invalid file path.',
+            ], 400);
+        }
+
         if (!Storage::exists($request->temp_file_path)) {
             return response()->json([
                 'message' => 'Temporary file not found. Please upload the file again.',

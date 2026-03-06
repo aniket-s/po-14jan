@@ -41,7 +41,6 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { PurchaseOrder, Style } from '@/types';
-import { ExcelImportDialog } from '@/components/purchase-orders/ExcelImportDialog';
 import { StyleSelectorDialog } from '@/components/purchase-orders/StyleSelectorDialog';
 import { AssignmentSelector } from '@/components/styles/AssignmentSelector';
 import {
@@ -64,7 +63,6 @@ export default function PurchaseOrderDetailPage() {
   const [styles, setStyles] = useState<Style[]>([]);
   const [loading, setLoading] = useState(true);
   const [isStyleSelectorOpen, setIsStyleSelectorOpen] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Factory assignment dialog state
@@ -592,7 +590,7 @@ export default function PurchaseOrderDetailPage() {
                       <ListCheck className="mr-2 h-4 w-4" />
                       Select Styles
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => setIsImportDialogOpen(true)}>
+                    <Button variant="outline" size="sm" onClick={() => router.push(`/purchase-orders/${poId}/import`)}>
                       <FileUp className="mr-2 h-4 w-4" />
                       Import Excel
                     </Button>
@@ -934,19 +932,6 @@ export default function PurchaseOrderDetailPage() {
             </Card>
           </TabsContent>
         </Tabs>
-
-        {/* Excel Import Dialog */}
-        {purchaseOrder && (
-          <ExcelImportDialog
-            isOpen={isImportDialogOpen}
-            onClose={() => setIsImportDialogOpen(false)}
-            purchaseOrderId={Number(poId)}
-            onImportComplete={() => {
-              fetchStyles();
-              fetchPurchaseOrder();
-            }}
-          />
-        )}
 
         {/* Style Selector Dialog */}
         <StyleSelectorDialog

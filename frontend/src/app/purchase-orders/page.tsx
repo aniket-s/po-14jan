@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -38,7 +39,6 @@ import { PurchaseOrder, PaginatedResponse } from '@/types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { ExcelImportDialog } from '@/components/purchase-orders/ExcelImportDialog';
 import { PdfImportDialog } from '@/components/purchase-orders/PdfImportDialog';
 import { PoListSpreadsheetView } from '@/components/spreadsheet/PoListSpreadsheetView';
 import { CreateRetailerDialog } from '@/components/master-data/CreateRetailerDialog';
@@ -91,6 +91,7 @@ type POFormData = z.infer<typeof poSchema>;
 
 export default function PurchaseOrdersPage() {
   const { can } = useAuth();
+  const router = useRouter();
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -99,8 +100,6 @@ export default function PurchaseOrdersPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSelectPODialogOpen, setIsSelectPODialogOpen] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [selectedPOForImport, setSelectedPOForImport] = useState<number | null>(null);
   const [isPdfImportDialogOpen, setIsPdfImportDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'excel'>(() => {
     if (typeof window !== 'undefined') {
@@ -1244,9 +1243,8 @@ export default function PurchaseOrdersPage() {
                         <Button
                           size="sm"
                           onClick={() => {
-                            setSelectedPOForImport(po.id);
                             setIsSelectPODialogOpen(false);
-                            setIsImportDialogOpen(true);
+                            router.push(`/purchase-orders/${po.id}/import`);
                           }}
                         >
                           <FileUp className="mr-2 h-4 w-4" />
@@ -1268,23 +1266,6 @@ export default function PurchaseOrdersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* Excel Import Dialog */}
-        {selectedPOForImport && (
-          <ExcelImportDialog
-            isOpen={isImportDialogOpen}
-            onClose={() => {
-              setIsImportDialogOpen(false);
-              setSelectedPOForImport(null);
-            }}
-            purchaseOrderId={selectedPOForImport}
-            onImportComplete={() => {
-              fetchPurchaseOrders();
-              setIsImportDialogOpen(false);
-              setSelectedPOForImport(null);
-            }}
-          />
-        )}
 
         {/* PDF Import Dialog */}
         <PdfImportDialog

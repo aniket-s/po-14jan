@@ -331,7 +331,7 @@ export interface ExcelImportResult {
   imported_count: number;
   errors: Array<{
     row: number;
-    errors: string[];
+    error: string;
   }>;
   skipped_count: number;
 }
