@@ -872,7 +872,7 @@ export default function StylesImportPage() {
                               Row {err.row}
                             </TableCell>
                             <TableCell className="text-sm text-destructive">
-                              {err.errors.join('; ')}
+                              {err.error}
                             </TableCell>
                           </TableRow>
                         ))}
