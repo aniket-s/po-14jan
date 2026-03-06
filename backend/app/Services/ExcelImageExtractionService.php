@@ -452,11 +452,19 @@ class ExcelImageExtractionService
 
             Storage::disk($this->storageDisk)->put($filename, $imageContent);
 
-            $url = Storage::disk($this->storageDisk)->url($filename);
+            // Generate base64 data URI for preview (works without storage symlink)
+            $mimeType = match (strtolower($extension)) {
+                'png' => 'image/png',
+                'gif' => 'image/gif',
+                'webp' => 'image/webp',
+                'svg' => 'image/svg+xml',
+                default => 'image/jpeg',
+            };
+            $dataUri = 'data:' . $mimeType . ';base64,' . base64_encode($imageContent);
 
             return [
                 'path' => $filename,
-                'url' => $url,
+                'url' => $dataUri,
             ];
         } catch (\Exception $e) {
             Log::warning('Failed to store extracted image: ' . $e->getMessage());
