@@ -75,6 +75,8 @@ class ExcelImportController extends Controller
                 'sample_rows' => $analysis['sample_rows'],
                 'total_rows' => $analysis['total_rows'],
                 'suggested_mappings' => $analysis['suggested_mappings'],
+                'header_row' => $analysis['header_row'] ?? 1,
+                'data_start_row' => $analysis['data_start_row'] ?? 2,
             ],
             'temp_file_path' => $path,
         ]);
@@ -268,6 +270,8 @@ class ExcelImportController extends Controller
                 'sample_rows' => $analysis['sample_rows'],
                 'total_rows' => $analysis['total_rows'],
                 'suggested_mappings' => $analysis['suggested_mappings'],
+                'header_row' => $analysis['header_row'] ?? 1,
+                'data_start_row' => $analysis['data_start_row'] ?? 2,
             ],
             'temp_file_path' => $path,
         ]);
