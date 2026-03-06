@@ -452,7 +452,8 @@ class ExcelImageExtractionService
 
             Storage::disk($this->storageDisk)->put($filename, $imageContent);
 
-            $url = Storage::disk($this->storageDisk)->url($filename);
+            // Return relative API path - frontend will prepend backend URL
+            $url = '/api/purchase-orders/import-image?' . http_build_query(['path' => $filename]);
 
             return [
                 'path' => $filename,

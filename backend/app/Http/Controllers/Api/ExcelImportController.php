@@ -284,6 +284,29 @@ class ExcelImportController extends Controller
     }
 
     /**
+     * Serve an extracted import image from storage
+     */
+    public function serveImage(Request $request)
+    {
+        $path = $request->query('path');
+
+        if (!$path || !str_starts_with($path, 'imports/images/')) {
+            abort(404);
+        }
+
+        if (!Storage::disk('public')->exists($path)) {
+            abort(404);
+        }
+
+        $content = Storage::disk('public')->get($path);
+        $mimeType = Storage::disk('public')->mimeType($path) ?: 'image/jpeg';
+
+        return response($content, 200)
+            ->header('Content-Type', $mimeType)
+            ->header('Cache-Control', 'public, max-age=3600');
+    }
+
+    /**
      * Import standalone styles from Excel
      */
     public function importStandalone(Request $request)
