@@ -380,7 +380,7 @@ export default function POImportPage() {
   const requiredMappedCount = requiredFields.filter(f => columnMapping[f.key] !== null && columnMapping[f.key] !== undefined).length;
 
   return (
-    <DashboardLayout requiredPermissions={['purchase_order.edit']} requireAll={false}>
+    <DashboardLayout requiredPermissions={['style.create']} requireAll={false}>
       <div className="space-y-6">
         {/* Page Header */}
         <div className="flex items-center justify-between">
@@ -1033,7 +1033,7 @@ export default function POImportPage() {
                           <TableRow key={style.id}>
                             <TableCell className="font-medium">{style.style_number}</TableCell>
                             <TableCell className="text-right">{style.quantity}</TableCell>
-                            <TableCell className="text-right">${style.unit_price.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">${(style.unit_price ?? 0).toFixed(2)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
