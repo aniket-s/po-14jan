@@ -300,15 +300,22 @@ export const assignFactoryToPOStyle = async (
 // EXCEL IMPORT FOR STANDALONE STYLES
 // ========================================
 
+export interface ExcelAnalysisHeader {
+  index: number;
+  original_name: string;
+  suggested_field: string | null;
+}
+
 export interface ExcelAnalysisResult {
-  headers: string[];
-  sample_data: any[];
-  suggested_mappings: Record<string, string>;
+  headers: ExcelAnalysisHeader[];
+  sample_data: (string | number | null)[][];
+  suggested_mappings: Record<string, number | null>;
   row_count: number;
+  temp_file_path: string;
 }
 
 export interface ExcelImportMapping {
-  [key: string]: string; // column_name -> field_name
+  [key: string]: number | null; // field_name -> column_index
 }
 
 export interface ExcelImportRequest {
@@ -332,7 +339,7 @@ export interface ExcelImportResult {
 /**
  * Analyze an Excel file for standalone style import
  */
-export const analyzeExcelForStandaloneImport = async (file: File): Promise<ExcelAnalysisResult & { temp_file_path: string }> => {
+export const analyzeExcelForStandaloneImport = async (file: File): Promise<ExcelAnalysisResult> => {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -342,9 +349,8 @@ export const analyzeExcelForStandaloneImport = async (file: File): Promise<Excel
 
   const { analysis, temp_file_path } = response.data;
 
-  // Transform the response to match ExcelAnalysisResult type
   return {
-    headers: analysis.headers.map((h: any) => h.original_name),
+    headers: analysis.headers,
     sample_data: analysis.sample_rows,
     suggested_mappings: analysis.suggested_mappings,
     row_count: analysis.total_rows,
