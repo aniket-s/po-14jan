@@ -6,26 +6,35 @@ use App\Http\Controllers\Controller;
 use App\Models\PurchaseOrder;
 use App\Models\Style;
 use App\Services\ActivityLogService;
+use App\Services\ClaudeApiService;
+use App\Services\ClaudePdfImportService;
 use App\Services\PdfImportService;
 use App\Services\TNAChartService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 class PdfImportController extends Controller
 {
+    protected ClaudePdfImportService $claudePdfImportService;
     protected PdfImportService $pdfImportService;
     protected ActivityLogService $activityLog;
 
-    public function __construct(PdfImportService $pdfImportService, ActivityLogService $activityLog)
-    {
+    public function __construct(
+        ClaudePdfImportService $claudePdfImportService,
+        PdfImportService $pdfImportService,
+        ActivityLogService $activityLog
+    ) {
+        $this->claudePdfImportService = $claudePdfImportService;
         $this->pdfImportService = $pdfImportService;
         $this->activityLog = $activityLog;
     }
 
     /**
-     * Analyze a PDF purchase order file and return parsed data
+     * Analyze a PDF purchase order file and return parsed data.
+     * Uses Claude AI as primary extraction method, falls back to regex parser.
      */
     public function analyze(Request $request)
     {
@@ -46,10 +55,36 @@ class PdfImportController extends Controller
         $tempPath = $file->store('temp/pdf-imports');
         $fullPath = Storage::disk('local')->path($tempPath);
 
-        $result = $this->pdfImportService->analyzePdf($fullPath);
+        // Try Claude AI extraction first (if configured)
+        $claudeApi = app(ClaudeApiService::class);
+        $analysisMethod = 'regex';
+        $result = null;
+
+        if ($claudeApi->isConfigured()) {
+            Log::info('PDF analysis: attempting Claude AI extraction');
+            $result = $this->claudePdfImportService->analyzePdf($fullPath);
+
+            if ($result['success']) {
+                $analysisMethod = 'claude_ai';
+                Log::info('PDF analysis: Claude AI extraction successful', [
+                    'styles_count' => count($result['styles'] ?? []),
+                    'ai_usage' => $result['ai_usage'] ?? null,
+                ]);
+            } else {
+                Log::warning('PDF analysis: Claude AI extraction failed, falling back to regex', [
+                    'error' => $result['error'] ?? 'Unknown',
+                ]);
+                $result = null; // Reset so fallback runs
+            }
+        }
+
+        // Fallback to regex-based parser
+        if ($result === null || !$result['success']) {
+            Log::info('PDF analysis: using regex-based extraction');
+            $result = $this->pdfImportService->analyzePdf($fullPath);
+        }
 
         if (!$result['success']) {
-            // Clean up temp file on failure
             Storage::disk('local')->delete($tempPath);
             return response()->json([
                 'message' => $result['error'] ?? 'Failed to analyze PDF',
@@ -66,7 +101,8 @@ class PdfImportController extends Controller
             'temp_file_path' => $tempPath,
             'warnings' => $result['warnings'],
             'errors' => $result['errors'],
-            'raw_text' => $result['raw_text'],
+            'raw_text' => $result['raw_text'] ?? '',
+            'analysis_method' => $analysisMethod,
         ]);
     }
 

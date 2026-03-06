@@ -349,6 +349,7 @@ export interface PdfAnalysisResult {
   warnings: string[];
   errors: string[];
   raw_text: string;
+  analysis_method?: 'claude_ai' | 'regex';
 }
 
 export interface PdfCreatePORequest {
