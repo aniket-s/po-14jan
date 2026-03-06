@@ -205,6 +205,7 @@ export default function StylesImportPage() {
       const result = await executeStandaloneStylesImport({
         temp_file_path: analysisResult.temp_file_path,
         column_mapping: columnMapping,
+        image_columns: analysisResult.image_columns,
       });
       setImportResult(result);
       setStep('results');
@@ -236,6 +237,32 @@ export default function StylesImportPage() {
   const mappedFields = allFields.filter(f => columnMapping[f.key] !== null && columnMapping[f.key] !== undefined);
   const mappedCount = mappedFields.length;
   const requiredMappedCount = requiredFields.filter(f => columnMapping[f.key] !== null && columnMapping[f.key] !== undefined).length;
+
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+  // Get image URL for a specific cell in sample data
+  const getCellImageUrl = (rowIndex: number, colIndex: number): string | null => {
+    if (!analysisResult?.column_images) return null;
+    const rowImages = analysisResult.column_images[rowIndex];
+    if (!rowImages) return null;
+    const cellImage = rowImages[colIndex];
+    if (!cellImage) return null;
+    return `${backendUrl}${cellImage.url}`;
+  };
+
+  // Get the primary row image URL for a sample row
+  const getRowImageUrl = (rowIndex: number): string | null => {
+    if (!analysisResult?.row_images) return null;
+    const url = analysisResult.row_images[rowIndex];
+    if (!url) return null;
+    return `${backendUrl}${url}`;
+  };
+
+  // Check if a column index is an image column
+  const isImageColumn = (colIndex: number): boolean => {
+    if (!analysisResult?.image_columns) return false;
+    return Object.values(analysisResult.image_columns).includes(colIndex);
+  };
 
   return (
     <DashboardLayout requiredPermissions={['style.create']} requireAll={false}>
@@ -632,11 +659,24 @@ export default function StylesImportPage() {
                             <TableCell className="text-center font-mono text-xs text-muted-foreground">
                               {rowIndex + 1}
                             </TableCell>
-                            {row.map((cell, cellIndex) => (
-                              <TableCell key={cellIndex} className="text-sm whitespace-nowrap">
-                                {cell ?? <span className="text-muted-foreground/40">empty</span>}
-                              </TableCell>
-                            ))}
+                            {row.map((cell, cellIndex) => {
+                              const imageUrl = getCellImageUrl(rowIndex, cellIndex);
+                              return (
+                                <TableCell key={cellIndex} className="text-sm whitespace-nowrap">
+                                  {imageUrl ? (
+                                    <img
+                                      src={imageUrl}
+                                      alt="CAD"
+                                      className="h-12 w-12 object-contain rounded border"
+                                    />
+                                  ) : cell != null && cell !== '' ? (
+                                    cell
+                                  ) : (
+                                    <span className="text-muted-foreground/40">empty</span>
+                                  )}
+                                </TableCell>
+                              );
+                            })}
                           </TableRow>
                         ))}
                       </TableBody>
@@ -670,6 +710,12 @@ export default function StylesImportPage() {
                       <span className="text-muted-foreground">Mapped</span>
                       <span className="font-medium">{mappedCount} / {allFields.length}</span>
                     </div>
+                    {analysisResult.has_images && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">CAD Images</span>
+                        <Badge variant="secondary" className="text-xs">{analysisResult.total_images} found</Badge>
+                      </div>
+                    )}
                   </div>
                   <Separator />
                   <div className="space-y-2">
@@ -719,6 +765,11 @@ export default function StylesImportPage() {
                     <TableHeader>
                       <TableRow className="bg-muted/50">
                         <TableHead className="w-12 text-center font-mono text-xs">#</TableHead>
+                        {analysisResult.has_images && (
+                          <TableHead className="whitespace-nowrap w-16">
+                            <span className="text-xs">CAD</span>
+                          </TableHead>
+                        )}
                         {mappedFields.map(field => (
                           <TableHead key={field.key} className="whitespace-nowrap">
                             <div className="flex items-center gap-1.5">
@@ -737,6 +788,19 @@ export default function StylesImportPage() {
                           <TableCell className="text-center font-mono text-xs text-muted-foreground">
                             {rowIndex + 1}
                           </TableCell>
+                          {analysisResult.has_images && (
+                            <TableCell className="p-1">
+                              {getRowImageUrl(rowIndex) ? (
+                                <img
+                                  src={getRowImageUrl(rowIndex)!}
+                                  alt="CAD"
+                                  className="h-12 w-12 object-contain rounded border"
+                                />
+                              ) : (
+                                <span className="text-muted-foreground/40 text-xs">-</span>
+                              )}
+                            </TableCell>
+                          )}
                           {mappedFields.map(field => (
                             <TableCell key={field.key} className="text-sm whitespace-nowrap">
                               {getPreviewValue(rowIndex, field.key)}

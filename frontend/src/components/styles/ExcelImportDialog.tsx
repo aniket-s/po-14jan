@@ -174,6 +174,7 @@ export function ExcelImportDialog({
       const result = await executeStandaloneStylesImport({
         temp_file_path: analysisResult.temp_file_path,
         column_mapping: columnMapping,
+        image_columns: analysisResult.image_columns,
       });
 
       setImportResult(result);

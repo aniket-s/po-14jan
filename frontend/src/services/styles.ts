@@ -312,6 +312,12 @@ export interface ExcelAnalysisResult {
   suggested_mappings: Record<string, number | null>;
   row_count: number;
   temp_file_path: string;
+  row_images?: Record<number, string>;
+  has_images?: boolean;
+  total_images?: number;
+  image_columns?: Record<string, number>;
+  image_format_detected?: string | null;
+  column_images?: Record<number, Record<number, { url: string; format: string }>>;
 }
 
 export interface ExcelImportMapping {
@@ -324,6 +330,7 @@ export interface ExcelImportRequest {
   skip_first_row?: boolean;
   start_row?: number;
   end_row?: number;
+  image_columns?: Record<string, number>;
 }
 
 export interface ExcelImportResult {
@@ -355,6 +362,12 @@ export const analyzeExcelForStandaloneImport = async (file: File): Promise<Excel
     suggested_mappings: analysis.suggested_mappings,
     row_count: analysis.total_rows,
     temp_file_path,
+    row_images: analysis.row_images,
+    has_images: analysis.has_images,
+    total_images: analysis.total_images,
+    image_columns: analysis.image_columns,
+    image_format_detected: analysis.image_format_detected,
+    column_images: analysis.column_images,
   };
 };
 

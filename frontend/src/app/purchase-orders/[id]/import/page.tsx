@@ -103,6 +103,9 @@ interface AnalysisResult {
   row_images?: Record<number, string>; // index -> image URL
   has_images?: boolean;
   total_images?: number;
+  image_columns?: Record<string, number>;
+  image_format_detected?: string | null;
+  column_images?: Record<number, Record<number, { url: string; format: string }>>;
 }
 
 interface ImportError {
@@ -365,6 +368,7 @@ export default function POImportPage() {
           column_mapping: columnMapping,
           skip_first_row: true,
           start_row: analysis?.data_start_row ?? undefined,
+          image_columns: analysis?.image_columns ?? undefined,
         }
       );
       setImportResult(response.data.result);
@@ -825,11 +829,25 @@ export default function POImportPage() {
                             <TableCell className="text-center font-mono text-xs text-muted-foreground">
                               {rowIndex + 1}
                             </TableCell>
-                            {row.map((cell, cellIndex) => (
-                              <TableCell key={cellIndex} className="text-sm whitespace-nowrap">
-                                {cell ?? <span className="text-muted-foreground/40">empty</span>}
-                              </TableCell>
-                            ))}
+                            {row.map((cell, cellIndex) => {
+                              const colImage = analysis.column_images?.[rowIndex]?.[cellIndex];
+                              const imageUrl = colImage ? `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}${colImage.url}` : null;
+                              return (
+                                <TableCell key={cellIndex} className="text-sm whitespace-nowrap">
+                                  {imageUrl ? (
+                                    <img
+                                      src={imageUrl}
+                                      alt="CAD"
+                                      className="h-12 w-12 object-contain rounded border"
+                                    />
+                                  ) : cell != null && cell !== '' ? (
+                                    cell
+                                  ) : (
+                                    <span className="text-muted-foreground/40">empty</span>
+                                  )}
+                                </TableCell>
+                              );
+                            })}
                           </TableRow>
                         ))}
                       </TableBody>
