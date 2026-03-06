@@ -38,7 +38,21 @@ class ExcelImageExtractionService
      */
     public function extractImagesForRows(string $excelPath, int $headerRow = 1): array
     {
+        Log::info("ExcelImage: extractImagesForRows called", [
+            'path' => $excelPath,
+            'headerRow' => $headerRow,
+            'file_exists' => file_exists($excelPath),
+            'file_size' => file_exists($excelPath) ? filesize($excelPath) : 0,
+        ]);
+
         $allImages = $this->extractInCellImagesUniversal($excelPath);
+
+        Log::info("ExcelImage: Universal extraction result", [
+            'format' => $allImages['format_detected'],
+            'total_images' => count($allImages['images']),
+            'image_cells' => array_map(fn($img) => $img['cell'] . ' (row ' . $img['row_index'] . ')', $allImages['images']),
+        ]);
+
         $rowImages = [];
 
         foreach ($allImages['images'] as $image) {
@@ -53,6 +67,10 @@ class ExcelImageExtractionService
                 ];
             }
         }
+
+        Log::info("ExcelImage: Row mapping result", [
+            'mapped_rows' => array_keys($rowImages),
+        ]);
 
         return $rowImages;
     }
@@ -75,9 +93,24 @@ class ExcelImageExtractionService
         $this->currentZipArchive = $zip;
         $this->mediaFolderCache = null; // Reset cache for new file
 
+        // Log ZIP contents for debugging
+        $zipFiles = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $zipFiles[] = $zip->getNameIndex($i);
+        }
+        $mediaFiles = array_filter($zipFiles, fn($f) => str_starts_with($f, 'xl/media/'));
+        $drawingFiles = array_filter($zipFiles, fn($f) => str_starts_with($f, 'xl/drawings/'));
+        Log::info('ExcelImage: ZIP contents', [
+            'total_files' => count($zipFiles),
+            'media_files' => array_values($mediaFiles),
+            'drawing_files' => array_values($drawingFiles),
+            'has_richData' => in_array('xl/richData/richValueRel.xml', $zipFiles),
+        ]);
+
         try {
             // Method 1: Rich Data format (Office 365/Excel 2021+)
             $richDataImages = $this->extractRichDataImages($zip);
+            Log::info('ExcelImage: Rich Data method found ' . count($richDataImages) . ' images');
             if (!empty($richDataImages)) {
                 $result['format_detected'] = 'Rich Data Format';
                 $result['images'] = array_merge($result['images'], $richDataImages);
@@ -85,6 +118,7 @@ class ExcelImageExtractionService
 
             // Method 2: Drawing Anchors format
             $drawingImages = $this->extractDrawingAnchorImages($zip);
+            Log::info('ExcelImage: Drawing Anchors method found ' . count($drawingImages) . ' images');
             if (!empty($drawingImages)) {
                 if ($result['format_detected'] === 'unknown') {
                     $result['format_detected'] = 'Drawing Anchors Format';
@@ -94,6 +128,7 @@ class ExcelImageExtractionService
 
             // Method 3: Legacy VML format
             $vmlImages = $this->extractVmlImages($zip);
+            Log::info('ExcelImage: VML method found ' . count($vmlImages) . ' images');
             if (!empty($vmlImages)) {
                 if ($result['format_detected'] === 'unknown') {
                     $result['format_detected'] = 'Legacy VML Format';
@@ -199,11 +234,14 @@ class ExcelImageExtractionService
             $drawingRelsPath = "xl/drawings/_rels/drawing{$i}.xml.rels";
             $drawingRels = $this->parseRelationships($zip->getFromName($drawingRelsPath));
 
+            Log::info("ExcelImage: Drawing {$i} relationships", ['rels' => $drawingRels]);
+
             $dom = new DOMDocument();
             @$dom->loadXML($drawingContent);
             $xpath = new DOMXPath($dom);
             $xpath->registerNamespace('xdr', 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing');
             $xpath->registerNamespace('a', 'http://schemas.openxmlformats.org/drawingml/2006/main');
+            $xpath->registerNamespace('r', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships');
 
             // oneCellAnchor (in-cell images)
             $this->processAnchors($xpath, '//xdr:oneCellAnchor', $drawingRels, $mediaImages, $images);
@@ -221,6 +259,8 @@ class ExcelImageExtractionService
     protected function processAnchors(DOMXPath $xpath, string $query, array $drawingRels, array $mediaImages, array &$images): void
     {
         $anchors = $xpath->query($query);
+        Log::info("ExcelImage: processAnchors query='{$query}' found " . $anchors->length . " anchors");
+
         foreach ($anchors as $anchor) {
             $from = $xpath->query('.//xdr:from', $anchor)->item(0);
             if (!$from) continue;
@@ -233,12 +273,40 @@ class ExcelImageExtractionService
             $row = intval($rowNode->nodeValue) + 1; // 0-indexed to 1-indexed
             $cellRef = Coordinate::stringFromColumnIndex($col + 1) . $row;
 
+            // Find blip element - try with namespace, then without
             $blip = $xpath->query('.//a:blip', $anchor)->item(0);
-            if (!$blip) continue;
+            if (!$blip) {
+                // Fallback: search without namespace prefix
+                $blip = $xpath->query('.//*[local-name()="blip"]', $anchor)->item(0);
+            }
+            if (!$blip) {
+                Log::info("ExcelImage: No blip found for anchor at {$cellRef}");
+                continue;
+            }
 
+            // Get embed ID - try multiple approaches for namespaced attribute
             $embedId = $blip->getAttribute('r:embed');
-            if (isset($drawingRels[$embedId])) {
+            if (!$embedId) {
+                $embedId = $blip->getAttributeNS(
+                    'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+                    'embed'
+                );
+            }
+            if (!$embedId) {
+                // Last resort: scan all attributes for one named 'embed'
+                foreach ($blip->attributes as $attr) {
+                    if ($attr->localName === 'embed') {
+                        $embedId = $attr->value;
+                        break;
+                    }
+                }
+            }
+
+            Log::info("ExcelImage: Anchor at {$cellRef}, embedId={$embedId}");
+
+            if ($embedId && isset($drawingRels[$embedId])) {
                 $imageName = basename($drawingRels[$embedId]);
+                Log::info("ExcelImage: Mapped to media file: {$imageName}, exists=" . (isset($mediaImages[$imageName]) ? 'yes' : 'no'));
                 if (isset($mediaImages[$imageName])) {
                     $images[] = [
                         'cell' => $cellRef,
@@ -328,6 +396,10 @@ class ExcelImageExtractionService
                 ];
             }
         }
+
+        Log::info('ExcelImage: extractMediaFolder found ' . count($images) . ' images', [
+            'image_names' => array_keys($images),
+        ]);
 
         $this->mediaFolderCache = $images;
         return $images;
