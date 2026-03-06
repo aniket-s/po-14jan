@@ -51,7 +51,9 @@ class ExcelImportService
             $dataStartRow = $headerRow + 1;
 
             // Get sample rows (first 5 data rows after header)
+            // Track actual Excel row numbers for image mapping
             $sampleRows = [];
+            $sampleRowNumbers = [];
             $maxRows = min($highestRow, $dataStartRow + 4);
 
             for ($row = $dataStartRow; $row <= $maxRows; $row++) {
@@ -64,6 +66,7 @@ class ExcelImportService
                 if (array_filter($rowData, fn($v) => $v !== null && $v !== '') === []) {
                     continue;
                 }
+                $sampleRowNumbers[] = $row; // Track actual Excel row number
                 $sampleRows[] = $rowData;
             }
 
@@ -77,10 +80,9 @@ class ExcelImportService
                 }
             }
 
-            // Build sample row images (keyed by display index)
+            // Build sample row images (keyed by display index, using actual row numbers)
             $sampleRowImages = [];
-            foreach ($sampleRows as $idx => $row) {
-                $actualRow = $dataStartRow + $idx;
+            foreach ($sampleRowNumbers as $idx => $actualRow) {
                 if (isset($rowImages[$actualRow])) {
                     $sampleRowImages[$idx] = $rowImages[$actualRow]['url'];
                 }
