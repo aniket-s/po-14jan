@@ -139,6 +139,12 @@ class ExcelImportService
                 'image_columns' => $imageColumns,
                 'image_format_detected' => $imageFormatDetected,
                 'column_images' => $columnImages,
+                'debug_image_extraction' => [
+                    'sample_row_numbers' => $sampleRowNumbers,
+                    'raw_images_count' => $imageExtractionResult ? $imageExtractionResult['total_images'] : 0,
+                    'row_images_keys' => array_keys($rowImages),
+                    'column_images_keys' => array_keys($columnImages),
+                ],
             ];
 
         } catch (\Exception $e) {
