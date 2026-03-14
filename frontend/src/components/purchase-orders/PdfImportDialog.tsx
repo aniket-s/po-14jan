@@ -312,7 +312,7 @@ export function PdfImportDialog({
         header.headline = '';
         header.retailer_id = ph.retailer_id?.value || '';
         header.season_id = ph.season_id?.value || '';
-        header.currency_id = ph.currency_id?.value || '';
+        header.currency_id = ph.currency_id?.value || masterData.currencies.find((c: any) => c.code === 'USD')?.id || '';
         header.payment_term_id = ph.payment_term_id?.value || '';
         header.country_id = ph.country_id?.value || '';
         header.warehouse_id = ph.warehouse_id?.value || '';
