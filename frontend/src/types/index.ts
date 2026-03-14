@@ -364,6 +364,7 @@ export interface PdfCreatePORequest {
     country_id?: number | null;
     warehouse_id?: number | null;
     agency_id?: number | null;
+    buyer_id?: number | null;
     shipping_term?: string;
     ship_to?: string;
     ship_to_address?: string;

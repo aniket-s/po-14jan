@@ -59,6 +59,7 @@ import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseD
 import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialog';
 import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
 import { CreatePaymentTermDialog } from '@/components/master-data/CreatePaymentTermDialog';
+import { CreateBuyerDialog } from '@/components/master-data/CreateBuyerDialog';
 
 interface PdfImportDialogProps {
   isOpen: boolean;
@@ -71,6 +72,7 @@ interface PdfImportDialogProps {
     retailers: any[];
     countries: any[];
     warehouses: any[];
+    buyers: any[];
   };
   onRefreshMasterData?: () => void;
 }
@@ -118,6 +120,7 @@ export function PdfImportDialog({
   const [isCreatePaymentTermOpen, setIsCreatePaymentTermOpen] = useState(false);
   const [isCreateCountryOpen, setIsCreateCountryOpen] = useState(false);
   const [isCreateWarehouseOpen, setIsCreateWarehouseOpen] = useState(false);
+  const [isCreateBuyerOpen, setIsCreateBuyerOpen] = useState(false);
 
   // Raw text viewer toggle
   const [showRawText, setShowRawText] = useState(false);
@@ -319,13 +322,17 @@ export function PdfImportDialog({
         header.eta_date = ph.eta_date?.value || '';
         header.in_warehouse_date = ph.in_warehouse_date?.value || '';
         header.packing_method = ph.packing_method?.value || '';
-        header.packing_guidelines = '';
+        header.packing_guidelines = ph.packing_guidelines?.value || '';
         header.other_terms = ph.other_terms?.value || '';
         header.additional_notes = ph.additional_notes?.value || '';
         header.revision_number = ph.revision_number?.value || 1;
+        header.buyer_id = ph.buyer_id?.value || '';
+        header.agency_id = ph.agency_id?.value || '';
         // Informational fields (not submitted, just shown)
         header._vendor_name = ph.vendor_name?.value || '';
         header._buyer_name = ph.buyer_name?.value || '';
+        header._agent_name = ph.agent_name?.value || '';
+        header._customer_name = ph.customer_name?.value || '';
         header._department = ph.department?.value || '';
         header._division = ph.division?.value || '';
         header._packing_type = (ph.packing_method as any)?.packing_type || null;
@@ -463,6 +470,7 @@ export function PdfImportDialog({
           payment_term_id: headerForm.payment_term_id ? Number(headerForm.payment_term_id) : null,
           country_id: headerForm.country_id ? Number(headerForm.country_id) : null,
           warehouse_id: headerForm.warehouse_id ? Number(headerForm.warehouse_id) : null,
+          buyer_id: headerForm.buyer_id ? Number(headerForm.buyer_id) : null,
           shipping_term: headerForm.shipping_term || 'FOB',
           ship_to: headerForm.ship_to || undefined,
           ship_to_address: headerForm.ship_to_address || undefined,
@@ -711,6 +719,30 @@ export function PdfImportDialog({
                         <Plus className="h-4 w-4" />
                       </Button>
                     </div>
+                  </div>
+
+                  {/* Buyer */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Buyer</Label>
+                      <StatusBadge status={getFieldStatus('buyer_id')} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={String(headerForm.buyer_id || '')} onValueChange={(v) => updateHeader('buyer_id', v)}>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Select buyer" /></SelectTrigger>
+                        <SelectContent>
+                          {masterData.buyers.map((b: any) => (
+                            <SelectItem key={b.id} value={String(b.id)}>{b.name}{b.code ? ` (${b.code})` : ''}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsCreateBuyerOpen(true)} title="Create new buyer">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {headerForm._buyer_name && getFieldStatus('buyer_id') === 'unrecognized' && (
+                      <p className="text-xs text-yellow-600">Buyer &quot;{headerForm._buyer_name}&quot; not found in system. Click + to create.</p>
+                    )}
                   </div>
 
                   {/* Season */}
@@ -1044,15 +1076,17 @@ export function PdfImportDialog({
                 </div>
               </div>
 
-              {/* Informational: Vendor / Buyer extracted */}
-              {(headerForm._vendor_name || headerForm._buyer_name) && (
+              {/* Informational: Extracted entities from PDF */}
+              {(headerForm._vendor_name || headerForm._buyer_name || headerForm._agent_name || headerForm._customer_name) && (
                 <Card className="bg-muted/30">
                   <CardHeader className="py-2 px-4">
-                    <CardTitle className="text-sm">Extracted Reference Info (not stored in PO)</CardTitle>
+                    <CardTitle className="text-sm">Extracted Reference Info from PDF</CardTitle>
                   </CardHeader>
                   <CardContent className="py-2 px-4 grid grid-cols-2 gap-2 text-sm">
-                    {headerForm._vendor_name && <div><span className="text-muted-foreground">Vendor:</span> {headerForm._vendor_name}</div>}
-                    {headerForm._buyer_name && <div><span className="text-muted-foreground">Buyer:</span> {headerForm._buyer_name}</div>}
+                    {headerForm._buyer_name && <div><span className="text-muted-foreground">Buyer (PO Issuer):</span> {headerForm._buyer_name}</div>}
+                    {headerForm._customer_name && <div><span className="text-muted-foreground">Retailer (CUST):</span> {headerForm._customer_name}</div>}
+                    {headerForm._agent_name && <div><span className="text-muted-foreground">Agent (Vendor):</span> {headerForm._agent_name}</div>}
+                    {headerForm._vendor_name && !headerForm._agent_name && <div><span className="text-muted-foreground">Vendor:</span> {headerForm._vendor_name}</div>}
                     {headerForm._department && <div><span className="text-muted-foreground">Department:</span> {headerForm._department}</div>}
                     {headerForm._division && <div><span className="text-muted-foreground">Division:</span> {headerForm._division}</div>}
                   </CardContent>
@@ -1482,6 +1516,12 @@ export function PdfImportDialog({
         open={isCreateWarehouseOpen}
         onOpenChange={setIsCreateWarehouseOpen}
         onSuccess={handleMasterDataCreated}
+      />
+      <CreateBuyerDialog
+        open={isCreateBuyerOpen}
+        onOpenChange={setIsCreateBuyerOpen}
+        onSuccess={handleMasterDataCreated}
+        defaultName={headerForm._buyer_name || ''}
       />
     </>
   );

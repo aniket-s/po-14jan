@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\Buyer;
 use App\Models\Country;
 use App\Models\Currency;
 use App\Models\PaymentTerm;
 use App\Models\Retailer;
 use App\Models\Season;
+use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Support\Facades\Log;
 
@@ -100,7 +102,7 @@ class ClaudePdfImportService
                 }
             }
 
-            foreach (['retailer_id', 'season_id', 'currency_id', 'payment_term_id', 'country_id', 'warehouse_id'] as $field) {
+            foreach (['retailer_id', 'buyer_id', 'agency_id', 'season_id', 'currency_id', 'payment_term_id', 'country_id', 'warehouse_id'] as $field) {
                 if (isset($poHeader[$field]) && $poHeader[$field]['status'] === 'unrecognized') {
                     $rawText = $poHeader[$field]['raw_text'] ?? 'Unknown';
                     $label = ucfirst(str_replace('_id', '', str_replace('_', ' ', $field)));
@@ -184,6 +186,12 @@ class ClaudePdfImportService
         return <<<'PROMPT'
 You are a purchase order (PO) data extraction specialist. Analyze this PDF document and extract ALL purchase order data into a structured JSON format.
 
+IMPORTANT - Understanding the document structure:
+- The **buyer** is the company issuing the PO (usually shown prominently at the top, e.g., "SPORT CASUAL INTERNATIONAL"). This is the buying/sourcing company.
+- The **customer/retailer** is found in the "CUST" or "CUSTOMER" field (e.g., "BURLINGTON MERCHANDISE"). This is the end retailer the goods are destined for.
+- The **vendor/agent** is found in the "Vendor:" section (e.g., "Crystal Apparels India"). This is the sourcing agent or supplier.
+- These are three DISTINCT entities - do not confuse them.
+
 Extract the following information:
 
 1. **PO Header** - All header/metadata fields
@@ -195,26 +203,34 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks) in this exa
 {
   "po_header": {
     "po_number": "string or null",
-    "po_date": "YYYY-MM-DD or null",
+    "po_date": "YYYY-MM-DD or null (ISSUE DATE field)",
     "revision_number": "integer or null",
     "revision_date": "YYYY-MM-DD or null",
-    "vendor_name": "string or null",
+    "buyer_name": "string or null (the company issuing the PO, shown at the top of the document, e.g. SPORT CASUAL INTERNATIONAL)",
+    "vendor_name": "string or null (the Vendor/supplier/agent company, e.g. Crystal Apparels India)",
     "vendor_address": "string or null",
-    "customer_name": "string or null (the buyer/retailer company name)",
+    "customer_name": "string or null (the CUST/CUSTOMER field - this is the retailer, e.g. BURLINGTON MERCHANDISE)",
     "customer_address": "string or null",
     "ship_to": "string or null (destination warehouse/location name)",
-    "ship_to_address": "string or null",
-    "country_of_origin": "string or null (manufacturing/vendor country)",
+    "ship_to_address": "string or null (full ship-to address)",
+    "country_of_origin": "string or null (manufacturing/vendor country, e.g. INDIA from vendor address)",
     "currency": "string or null (e.g. USD, INR, EUR)",
-    "payment_terms": "string or null (e.g. NET 30, LC at sight)",
-    "shipping_term": "string or null (e.g. FOB, DDP, CIF, CFR, EXW)",
-    "etd_date": "YYYY-MM-DD or null (estimated time of departure)",
+    "payment_terms": "string or null (e.g. NET 30, LC at sight - from TERMS field)",
+    "shipping_term": "string or null (e.g. FOB, DDP, CIF, CFR, EXW - often appears near TERMS)",
+    "ship_date": "YYYY-MM-DD or null (the SHIP date field - this is the shipping/ETD date)",
+    "cancel_date": "YYYY-MM-DD or null (the CANCEL date field - this is the in-warehouse/cancel date)",
+    "etd_date": "YYYY-MM-DD or null (estimated time of departure, if explicitly labeled ETD)",
     "ex_factory_date": "YYYY-MM-DD or null",
     "eta_date": "YYYY-MM-DD or null (estimated time of arrival)",
     "season": "string or null (e.g. SS25, AW24, Spring 2025)",
-    "packing_method": "string or null",
-    "packing_guidelines": "string or null",
-    "additional_notes": "string or null (any terms, conditions, notes)",
+    "labels": "string or null (the LABELS field, e.g. REBEL VENGEANCE, SAINT ARCHIVES)",
+    "pre_ticket": "string or null (PRE-TICKET field value: Y or N)",
+    "sample_required": "string or null (SAMPLE field value: Y or N)",
+    "packing_method": "string or null (packing instruction line, e.g. FLATPACK 1-2-2-1 6PCS IN 1 POLYBAG)",
+    "carton_info": "string or null (carton specification, e.g. CARTON 24)",
+    "packing_guidelines": "string or null (other packing guidelines)",
+    "in_house_note": "string or null (any IN HOUSE or special delivery notes)",
+    "additional_notes": "string or null (any other terms, conditions, notes)",
     "headline": "string or null (brief PO title/description if visible)"
   },
   "line_items": [
@@ -242,9 +258,20 @@ IMPORTANT RULES:
 - Extract ALL line items/styles from the document - do not skip any rows
 - For style_number: look for columns labeled Style, Style#, Item, SKU, Article, Ref, Part No, etc.
 - For quantity: sum all size quantities if size breakdown is available, or use the Qty/Quantity column
-- For unit_price: look for Rate, Price, Unit Price, FOB, Cost columns. Use 0 if not clearly stated.
-- For dates: always convert to YYYY-MM-DD format regardless of the original format
+- For unit_price: look for Rate, Price, Unit Price, FOB, Cost, PRICE EA. columns. Use 0 if not clearly stated.
+- For dates: always convert to YYYY-MM-DD format regardless of the original format (e.g. 06-JUN-26 → 2026-06-06, 08-MAR-26 → 2026-03-08)
 - For size_breakdown: extract individual size quantities if the document has size columns (XS, S, M, L, XL, XXL, 2XL, 3XL, 4XL, 5XL, or numeric sizes like 28, 30, 32, etc.). ONLY include sizes that have an explicit quantity value - do NOT assume or fill in quantities for sizes that appear as column headers but have no quantity underneath them. The sum of all size quantities MUST equal the total quantity for that line item.
+- For buyer_name: Look at the prominent company name at the top of the document (NOT the vendor, NOT the customer). This is the buying house/sourcing company.
+- For customer_name: Look for "CUST:", "CUSTOMER:", or "CLIENT:" label. This is the retailer.
+- For vendor_name: Look for "Vendor:" label. This is the agent/supplier.
+- For ship_date: Look for "SHIP:", "SHIP DATE:", "SHIPPING DATE:" labels. This represents when goods should ship (ETD).
+- For cancel_date: Look for "CANCEL:", "CANCEL DATE:", "CANCELLATION:" labels. This represents the latest acceptable delivery date (in-warehouse date).
+- For labels: Look for "LABELS:", "LABEL:" fields (brand/label info).
+- For pre_ticket: Look for "PRE-TICKET:" field (Y/N).
+- For sample_required: Look for "SAMPLE:" field (Y/N).
+- For packing_method: Look for packing instructions like "FLATPACK...", "FLAT PACK...", "PREPACK..." usually near the footer.
+- For carton_info: Look for "CARTON" followed by a number (e.g., "CARTON 24").
+- For in_house_note: Look for "IN HOUSE" notes or similar delivery notes in the footer area.
 - If a field is not present in the document, use null - do not guess
 - Return ONLY the JSON object, nothing else
 PROMPT;
@@ -294,6 +321,52 @@ PROMPT;
         $header = $parsedData['po_header'] ?? [];
         $result = [];
 
+        // Map ship_date → etd_date if etd_date is not explicitly set
+        $etdDate = $header['etd_date'] ?? null;
+        if ($etdDate === null && isset($header['ship_date'])) {
+            $etdDate = $header['ship_date'];
+        }
+        $header['etd_date'] = $etdDate;
+
+        // Map cancel_date → in_warehouse_date
+        $inWarehouseDate = $header['in_warehouse_date'] ?? null;
+        if ($inWarehouseDate === null && isset($header['cancel_date'])) {
+            $inWarehouseDate = $header['cancel_date'];
+        }
+        $header['in_warehouse_date'] = $inWarehouseDate;
+
+        // Build composite packing_method from packing_method field
+        $packingMethod = $header['packing_method'] ?? null;
+
+        // Build packing_guidelines from carton_info
+        $packingGuidelines = $header['packing_guidelines'] ?? null;
+        if ($packingGuidelines === null && isset($header['carton_info'])) {
+            $packingGuidelines = $header['carton_info'];
+        }
+        $header['packing_guidelines'] = $packingGuidelines;
+
+        // Build composite additional_notes
+        $notesParts = [];
+        if (!empty($header['in_house_note'])) {
+            $notesParts[] = $header['in_house_note'];
+        }
+        if (!empty($header['labels'])) {
+            $notesParts[] = 'Labels: ' . $header['labels'];
+        }
+        if (isset($header['pre_ticket'])) {
+            $ptValue = strtoupper(trim($header['pre_ticket']));
+            $notesParts[] = 'Pre-Ticket: ' . ($ptValue === 'Y' || $ptValue === 'YES' ? 'Yes' : 'No');
+        }
+        if (isset($header['sample_required'])) {
+            $srValue = strtoupper(trim($header['sample_required']));
+            $notesParts[] = 'Sample: ' . ($srValue === 'Y' || $srValue === 'YES' ? 'Yes' : 'No');
+        }
+        if (!empty($header['additional_notes'])) {
+            $notesParts[] = $header['additional_notes'];
+        }
+        $compositeNotes = !empty($notesParts) ? implode("\n", $notesParts) : null;
+        $header['additional_notes'] = $compositeNotes;
+
         // Direct mapped fields with their confidence
         $directFields = [
             'po_number' => 'po_number',
@@ -306,6 +379,7 @@ PROMPT;
             'etd_date' => 'etd_date',
             'ex_factory_date' => 'ex_factory_date',
             'eta_date' => 'eta_date',
+            'in_warehouse_date' => 'in_warehouse_date',
             'packing_method' => 'packing_method',
             'packing_guidelines' => 'packing_guidelines',
             'additional_notes' => 'additional_notes',
@@ -341,6 +415,20 @@ PROMPT;
             'value' => $header['customer_name'] ?? null,
             'status' => ($header['customer_name'] ?? null) !== null ? 'parsed' : 'missing',
             'confidence' => ($header['customer_name'] ?? null) !== null ? 'high' : 'low',
+        ];
+
+        // Buyer name (the company issuing the PO)
+        $result['buyer_name'] = [
+            'value' => $header['buyer_name'] ?? null,
+            'status' => ($header['buyer_name'] ?? null) !== null ? 'parsed' : 'missing',
+            'confidence' => ($header['buyer_name'] ?? null) !== null ? 'high' : 'low',
+        ];
+
+        // Agent name (the vendor/supplier from the PDF)
+        $result['agent_name'] = [
+            'value' => $header['vendor_name'] ?? null,
+            'status' => ($header['vendor_name'] ?? null) !== null ? 'parsed' : 'missing',
+            'confidence' => ($header['vendor_name'] ?? null) !== null ? 'high' : 'low',
         ];
 
         $result['currency_raw'] = [
@@ -462,7 +550,7 @@ PROMPT;
     {
         $matches = [];
 
-        // Match Retailer - customer_name first, then vendor_name fallback
+        // Match Retailer - customer_name first (CUST field = retailer), then vendor_name fallback
         $retailerMatched = false;
         if (isset($parsedHeader['customer_name']) && $parsedHeader['customer_name']['value'] !== null) {
             $rawName = $parsedHeader['customer_name']['value'];
@@ -473,6 +561,40 @@ PROMPT;
         if (!$retailerMatched && isset($parsedHeader['vendor_name']) && $parsedHeader['vendor_name']['value'] !== null) {
             $rawName = $parsedHeader['vendor_name']['value'];
             $matches['retailer_id'] = $this->fuzzyMatchModel(Retailer::class, 'name', $rawName);
+        }
+
+        // Match Buyer - buyer_name (company issuing the PO)
+        if (isset($parsedHeader['buyer_name']) && $parsedHeader['buyer_name']['value'] !== null) {
+            $rawBuyer = $parsedHeader['buyer_name']['value'];
+            $match = $this->fuzzyMatchModel(Buyer::class, 'name', $rawBuyer);
+            if ($match['status'] === 'unrecognized') {
+                $match = $this->fuzzyMatchModel(Buyer::class, 'code', $rawBuyer);
+            }
+            $matches['buyer_id'] = $match;
+
+            // If buyer is matched, check for default payment term association
+            if ($match['status'] === 'matched' && $match['value']) {
+                $buyer = Buyer::find($match['value']);
+                if ($buyer) {
+                    // Look for buyer-specific payment terms (e.g., "7 days before ETA" for SCI)
+                    $buyerPaymentTerm = $this->findBuyerDefaultPaymentTerm($buyer);
+                    if ($buyerPaymentTerm) {
+                        $matches['payment_term_id'] = [
+                            'value' => $buyerPaymentTerm->id,
+                            'raw_text' => $buyerPaymentTerm->name,
+                            'status' => 'matched',
+                            'confidence' => 'medium',
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Match Agent - vendor_name against Users with Agency role
+        if (isset($parsedHeader['agent_name']) && $parsedHeader['agent_name']['value'] !== null) {
+            $rawAgent = $parsedHeader['agent_name']['value'];
+            $match = $this->matchAgencyUser($rawAgent);
+            $matches['agency_id'] = $match;
         }
 
         // Match Season
@@ -494,14 +616,16 @@ PROMPT;
             $matches['currency_id'] = $match;
         }
 
-        // Match Payment Term
-        if (isset($parsedHeader['payment_terms_raw']) && $parsedHeader['payment_terms_raw']['value'] !== null) {
-            $rawTerm = $parsedHeader['payment_terms_raw']['value'];
-            $match = $this->fuzzyMatchModel(PaymentTerm::class, 'name', $rawTerm);
-            if ($match['status'] === 'unrecognized') {
-                $match = $this->fuzzyMatchModel(PaymentTerm::class, 'code', str_replace(' ', '', $rawTerm));
+        // Match Payment Term (only if not already set by buyer default)
+        if (!isset($matches['payment_term_id']) || $matches['payment_term_id']['status'] !== 'matched') {
+            if (isset($parsedHeader['payment_terms_raw']) && $parsedHeader['payment_terms_raw']['value'] !== null) {
+                $rawTerm = $parsedHeader['payment_terms_raw']['value'];
+                $match = $this->fuzzyMatchModel(PaymentTerm::class, 'name', $rawTerm);
+                if ($match['status'] === 'unrecognized') {
+                    $match = $this->fuzzyMatchModel(PaymentTerm::class, 'code', str_replace(' ', '', $rawTerm));
+                }
+                $matches['payment_term_id'] = $match;
             }
-            $matches['payment_term_id'] = $match;
         }
 
         // Match Country
@@ -525,6 +649,101 @@ PROMPT;
         }
 
         return $matches;
+    }
+
+    /**
+     * Find default payment term for a buyer.
+     * For known buyers like SPORT CASUAL INTERNATIONAL, returns "7 days before ETA" term.
+     */
+    private function findBuyerDefaultPaymentTerm(Buyer $buyer): ?PaymentTerm
+    {
+        // Look for "7 days before ETA" or similar payment term
+        $term = PaymentTerm::where('is_active', true)
+            ->where(function ($query) {
+                $query->whereRaw('LOWER(name) LIKE ?', ['%7 days before eta%'])
+                    ->orWhereRaw('LOWER(code) LIKE ?', ['%7_days_before_eta%'])
+                    ->orWhereRaw('LOWER(name) LIKE ?', ['%7 days before%']);
+            })
+            ->first();
+
+        return $term;
+    }
+
+    /**
+     * Match agent name against Users with Agency role.
+     */
+    private function matchAgencyUser(string $rawAgent): array
+    {
+        $rawAgent = trim($rawAgent);
+
+        try {
+            // Search users who have Agency role, matching on company or name
+            $agencyUsers = User::whereHas('roles', function ($query) {
+                $query->whereRaw('LOWER(name) = ?', ['agency']);
+            })->get();
+
+            foreach ($agencyUsers as $user) {
+                // Try matching on company name
+                $company = $user->company ?? '';
+                if (!empty($company) && stripos($rawAgent, $company) !== false) {
+                    return [
+                        'value' => $user->id,
+                        'raw_text' => $rawAgent,
+                        'status' => 'matched',
+                        'confidence' => 'high',
+                    ];
+                }
+                if (!empty($company) && stripos($company, $rawAgent) !== false) {
+                    return [
+                        'value' => $user->id,
+                        'raw_text' => $rawAgent,
+                        'status' => 'matched',
+                        'confidence' => 'medium',
+                    ];
+                }
+                // Try matching on user name
+                if (!empty($user->name) && stripos($rawAgent, $user->name) !== false) {
+                    return [
+                        'value' => $user->id,
+                        'raw_text' => $rawAgent,
+                        'status' => 'matched',
+                        'confidence' => 'medium',
+                    ];
+                }
+            }
+
+            // Try normalized matching
+            $normalizedRaw = strtolower(preg_replace('/[\s\-\.]+/', '', $rawAgent));
+            foreach ($agencyUsers as $user) {
+                $normalizedCompany = strtolower(preg_replace('/[\s\-\.]+/', '', $user->company ?? ''));
+                $normalizedName = strtolower(preg_replace('/[\s\-\.]+/', '', $user->name ?? ''));
+                if (!empty($normalizedCompany) && ($normalizedRaw === $normalizedCompany || strpos($normalizedRaw, $normalizedCompany) !== false || strpos($normalizedCompany, $normalizedRaw) !== false)) {
+                    return [
+                        'value' => $user->id,
+                        'raw_text' => $rawAgent,
+                        'status' => 'matched',
+                        'confidence' => 'medium',
+                    ];
+                }
+                if (!empty($normalizedName) && ($normalizedRaw === $normalizedName || strpos($normalizedRaw, $normalizedName) !== false)) {
+                    return [
+                        'value' => $user->id,
+                        'raw_text' => $rawAgent,
+                        'status' => 'matched',
+                        'confidence' => 'medium',
+                    ];
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning('Agent matching failed: ' . $e->getMessage());
+        }
+
+        return [
+            'value' => null,
+            'raw_text' => $rawAgent,
+            'status' => 'unrecognized',
+            'confidence' => 'low',
+        ];
     }
 
     /**
