@@ -106,8 +106,9 @@ class CountryController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
-            'code' => 'sometimes|required|string|max:3|unique:countries,code,' . $country->id,
-            'sailing_time_days' => 'sometimes|required|integer|min:0|max:365',
+            'code' => 'sometimes|required|string|max:10|unique:countries,code,' . $country->id,
+            'sailing_time_days' => 'nullable|integer|min:0|max:365',
+            'shipping_days' => 'nullable|integer|min:0|max:365', // Alias for sailing_time_days (frontend uses this)
             'is_active' => 'nullable|boolean',
         ]);
 
@@ -118,7 +119,15 @@ class CountryController extends Controller
             ], 422);
         }
 
-        $country->update($validator->validated());
+        $data = $validator->validated();
+
+        // Handle alias: shipping_days -> sailing_time_days
+        if (isset($data['shipping_days']) && !isset($data['sailing_time_days'])) {
+            $data['sailing_time_days'] = $data['shipping_days'];
+        }
+        unset($data['shipping_days']);
+
+        $country->update($data);
 
         return response()->json([
             'message' => 'Country updated successfully',

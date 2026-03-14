@@ -254,13 +254,30 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks) in this exa
   }
 }
 
+CRITICAL TABLE PARSING RULES:
+Many POs use a table layout like this (example):
+
+  STYLE    COLOR      Ln  WH       DESCRIPTION              QTY   PRICE EA.   EXTN
+  RLC442   100 WHITE  1   FE       SAINT HD THERMAL         3600  3.15        11,340.00
+           WHITE                    Category :                               PACK 6
+  SIZE >   XS     S       M        L         XL      2XL
+  QTY >    600    1200    1200     600
+
+- The STYLE column (RLC442, RLC443, etc.) is the style_number - it is an alphanumeric code, NOT a color word.
+- The COLOR column (WHITE, SLATE, PINE, BLACK) is the color_name - do NOT use this as the style_number.
+- The QTY column on the same row as the style (e.g., 3600) is the TOTAL quantity. Do NOT double count by also summing the size breakdown row.
+- PRICE EA. column (e.g., 3.15) is the unit_price. Always extract this value.
+- EXTN column is the total_amount (quantity × price).
+- The SIZE > and QTY > rows below each style show the size breakdown. The sum of size quantities equals the QTY column value.
+- Each style block occupies multiple rows: header row (style, color, qty, price), category row, size label row, size quantity row.
+
 IMPORTANT RULES:
 - Extract ALL line items/styles from the document - do not skip any rows
-- For style_number: look for columns labeled Style, Style#, Item, SKU, Article, Ref, Part No, etc.
-- For quantity: sum all size quantities if size breakdown is available, or use the Qty/Quantity column
-- For unit_price: look for Rate, Price, Unit Price, FOB, Cost, PRICE EA. columns. Use 0 if not clearly stated.
+- For style_number: Use the STYLE/Style#/Item/SKU/Article column value (an alphanumeric code like RLC442, NOT a color name like WHITE or BLACK). If you see both a code and a color, the code is the style_number and the color is the color_name.
+- For quantity: Use the QTY column value from the style header row. Do NOT sum it again from the size breakdown - the size breakdown is just the detail of how that total breaks down by size.
+- For unit_price: Use the PRICE EA./Rate/Price/Unit Price/FOB/Cost column. This is REQUIRED - look carefully for it. Use 0 only if truly not present.
 - For dates: always convert to YYYY-MM-DD format regardless of the original format (e.g. 06-JUN-26 → 2026-06-06, 08-MAR-26 → 2026-03-08)
-- For size_breakdown: extract individual size quantities if the document has size columns (XS, S, M, L, XL, XXL, 2XL, 3XL, 4XL, 5XL, or numeric sizes like 28, 30, 32, etc.). ONLY include sizes that have an explicit quantity value - do NOT assume or fill in quantities for sizes that appear as column headers but have no quantity underneath them. The sum of all size quantities MUST equal the total quantity for that line item.
+- For size_breakdown: extract individual size quantities from the QTY > row. ONLY include sizes with explicit quantity values. The sum MUST equal the total quantity for that line item. Do NOT create a second line item from the size breakdown.
 - For buyer_name: Look at the prominent company name at the top of the document (NOT the vendor, NOT the customer). This is the buying house/sourcing company.
 - For customer_name: Look for "CUST:", "CUSTOMER:", or "CLIENT:" label. This is the retailer.
 - For vendor_name: Look for "Vendor:" label. This is the agent/supplier.
@@ -461,12 +478,73 @@ PROMPT;
     private function buildLineItems(array $parsedData): array
     {
         $items = $parsedData['line_items'] ?? [];
+
+        // Post-processing: detect if Claude swapped style_number and color_name
+        // Color names are common words (WHITE, BLACK, BLUE, RED, etc.) while style numbers are alphanumeric codes
+        $commonColors = ['WHITE', 'BLACK', 'BLUE', 'RED', 'GREEN', 'YELLOW', 'PINK', 'ORANGE', 'PURPLE',
+            'GREY', 'GRAY', 'NAVY', 'SLATE', 'PINE', 'BROWN', 'BEIGE', 'TAN', 'CREAM', 'IVORY',
+            'TEAL', 'CORAL', 'BURGUNDY', 'CHARCOAL', 'OLIVE', 'KHAKI', 'MAROON', 'LAVENDER', 'INDIGO',
+            'SAGE', 'MINT', 'ROSE', 'MAUVE', 'TAUPE', 'RUST', 'SAND', 'OATMEAL', 'HEATHER'];
+
+        foreach ($items as &$item) {
+            $styleNum = strtoupper(trim($item['style_number'] ?? ''));
+            $colorName = strtoupper(trim($item['color_name'] ?? ''));
+
+            // If style_number looks like a color name AND color_name looks like an alphanumeric code, swap them
+            $styleIsColor = in_array($styleNum, $commonColors);
+            $colorIsCode = !empty($colorName) && preg_match('/^[A-Z]{2,}[0-9]+/', $colorName);
+
+            if ($styleIsColor && $colorIsCode) {
+                Log::info('PDF import: swapping style_number and color_name', [
+                    'style_number' => $item['style_number'],
+                    'color_name' => $item['color_name'],
+                ]);
+                $temp = $item['style_number'];
+                $item['style_number'] = $item['color_name'];
+                $item['color_name'] = $temp;
+            } elseif ($styleIsColor && empty($colorName)) {
+                // style_number is a color name but no color_name field - likely misread
+                Log::warning('PDF import: style_number appears to be a color name', [
+                    'style_number' => $item['style_number'],
+                ]);
+            }
+        }
+        unset($item);
+
+        // Post-processing: detect quantity doubling
+        // If PDF footer total is about half the sum of line item quantities, quantities are likely doubled
+        $pdfTotalQty = $parsedData['totals']['total_quantity'] ?? 0;
+        if ($pdfTotalQty > 0) {
+            $lineItemSum = array_sum(array_map(fn($i) => (int) ($i['quantity'] ?? 0), $items));
+            if ($lineItemSum > 0 && abs($lineItemSum - $pdfTotalQty * 2) < $pdfTotalQty * 0.05) {
+                // Line item quantities appear to be doubled - halve them
+                Log::info('PDF import: detected doubled quantities, correcting', [
+                    'pdf_total' => $pdfTotalQty,
+                    'line_sum' => $lineItemSum,
+                ]);
+                foreach ($items as &$item) {
+                    $item['quantity'] = (int) round(($item['quantity'] ?? 0) / 2);
+                    if (is_array($item['size_breakdown'] ?? null)) {
+                        foreach ($item['size_breakdown'] as $size => $sizeQty) {
+                            $item['size_breakdown'][$size] = (int) round($sizeQty / 2);
+                        }
+                    }
+                }
+                unset($item);
+            }
+        }
+
         $result = [];
 
         foreach ($items as $item) {
             $qty = (int) ($item['quantity'] ?? 0);
             $price = (float) ($item['unit_price'] ?? 0);
             $totalAmount = isset($item['total_amount']) ? (float) $item['total_amount'] : $qty * $price;
+
+            // If price is 0 but total_amount is available, calculate price from total/qty
+            if ($price == 0 && $totalAmount > 0 && $qty > 0) {
+                $price = round($totalAmount / $qty, 2);
+            }
 
             // Validate and auto-correct size breakdown if present
             $sizeBreakdown = $item['size_breakdown'] ?? null;
