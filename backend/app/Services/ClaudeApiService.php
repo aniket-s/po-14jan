@@ -16,7 +16,7 @@ class ClaudeApiService
     {
         $this->apiKey = config('services.anthropic.api_key', '');
         $this->model = config('services.anthropic.model', 'claude-haiku-4-5-20251001');
-        $this->maxTokens = config('services.anthropic.max_tokens', 4096);
+        $this->maxTokens = config('services.anthropic.max_tokens', 8192);
         $this->apiUrl = config('services.anthropic.api_url', 'https://api.anthropic.com/v1/messages');
     }
 
@@ -77,12 +77,20 @@ class ClaudeApiService
                 if ($response->successful()) {
                     $body = $response->json();
                     $textContent = $this->extractTextContent($body);
+                    $stopReason = $body['stop_reason'] ?? null;
+
+                    if ($stopReason === 'max_tokens') {
+                        Log::warning('Claude API response truncated due to max_tokens limit', [
+                            'max_tokens' => $this->maxTokens,
+                        ]);
+                    }
 
                     return [
                         'success' => true,
                         'content' => $textContent,
                         'usage' => $body['usage'] ?? null,
                         'error' => null,
+                        'stop_reason' => $stopReason,
                     ];
                 }
 
