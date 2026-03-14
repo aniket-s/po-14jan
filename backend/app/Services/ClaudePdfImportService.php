@@ -550,16 +550,9 @@ PROMPT;
     {
         $matches = [];
 
-        // Match Retailer - customer_name first (CUST field = retailer), then vendor_name fallback
-        $retailerMatched = false;
+        // Match Retailer - only from customer_name (CUST field). vendor_name is the agent, never the retailer.
         if (isset($parsedHeader['customer_name']) && $parsedHeader['customer_name']['value'] !== null) {
             $rawName = $parsedHeader['customer_name']['value'];
-            $match = $this->fuzzyMatchModel(Retailer::class, 'name', $rawName);
-            $matches['retailer_id'] = $match;
-            $retailerMatched = ($match['status'] === 'matched');
-        }
-        if (!$retailerMatched && isset($parsedHeader['vendor_name']) && $parsedHeader['vendor_name']['value'] !== null) {
-            $rawName = $parsedHeader['vendor_name']['value'];
             $matches['retailer_id'] = $this->fuzzyMatchModel(Retailer::class, 'name', $rawName);
         }
 
