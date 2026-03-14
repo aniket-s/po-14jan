@@ -600,7 +600,7 @@ export function PdfImportDialog({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-[95vw] h-[95vh] max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {step === 'upload' && 'Import Purchase Order from PDF'}
@@ -1251,19 +1251,19 @@ export function PdfImportDialog({
                 </Alert>
               )}
 
-              <div className="max-h-[400px] overflow-auto border rounded">
+              <div className="max-h-[60vh] overflow-auto border rounded">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[40px]">#</TableHead>
-                      <TableHead className="min-w-[120px]">Style Number</TableHead>
-                      <TableHead className="min-w-[150px]">Description</TableHead>
-                      <TableHead className="min-w-[100px]">Color</TableHead>
-                      <TableHead className="min-w-[80px]">Packing</TableHead>
-                      <TableHead className="min-w-[200px]">Size Breakdown / Ratio</TableHead>
-                      <TableHead className="w-[90px] text-right">Qty</TableHead>
-                      <TableHead className="w-[100px] text-right">Unit Price</TableHead>
-                      <TableHead className="w-[100px] text-right">Total</TableHead>
+                      <TableHead className="min-w-[140px]">Style Number</TableHead>
+                      <TableHead className="min-w-[180px]">Description</TableHead>
+                      <TableHead className="min-w-[120px]">Color</TableHead>
+                      <TableHead className="min-w-[90px]">Packing</TableHead>
+                      <TableHead className="min-w-[300px]">Size Breakdown / Ratio</TableHead>
+                      <TableHead className="w-[110px] text-right">Qty</TableHead>
+                      <TableHead className="w-[120px] text-right">Unit Price</TableHead>
+                      <TableHead className="w-[120px] text-right">Total</TableHead>
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1272,36 +1272,36 @@ export function PdfImportDialog({
                       const isZeroPrice = Number(style.unit_price) === 0;
                       return (
                         <TableRow key={index} className={isZeroPrice ? 'bg-orange-50' : ''}>
-                          <TableCell className="text-muted-foreground text-xs">{index + 1}</TableCell>
+                          <TableCell className="text-muted-foreground text-sm">{index + 1}</TableCell>
                           <TableCell>
                             <Input
                               value={style.style_number}
                               onChange={(e) => updateStyle(index, 'style_number', e.target.value)}
-                              className="h-8 text-sm"
+                              className="h-10 text-base"
                             />
                           </TableCell>
                           <TableCell>
                             <Input
                               value={style.description}
                               onChange={(e) => updateStyle(index, 'description', e.target.value)}
-                              className="h-8 text-sm"
+                              className="h-10 text-base"
                             />
                           </TableCell>
                           <TableCell>
                             <Input
                               value={style.color_name}
                               onChange={(e) => updateStyle(index, 'color_name', e.target.value)}
-                              className="h-8 text-sm"
+                              className="h-10 text-base"
                             />
                           </TableCell>
                           {/* Packing Method */}
                           <TableCell>
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-1.5">
                               <Button
                                 type="button"
                                 variant={style.packing_method === 'solid' ? 'default' : 'outline'}
                                 size="sm"
-                                className="h-6 text-[10px] w-full"
+                                className="h-8 text-xs w-full"
                                 onClick={() => updateStyle(index, 'packing_method', 'solid')}
                               >
                                 Solid
@@ -1310,8 +1310,28 @@ export function PdfImportDialog({
                                 type="button"
                                 variant={style.packing_method === 'prepack' ? 'default' : 'outline'}
                                 size="sm"
-                                className="h-6 text-[10px] w-full"
-                                onClick={() => updateStyle(index, 'packing_method', 'prepack')}
+                                className="h-8 text-xs w-full"
+                                onClick={() => {
+                                  updateStyle(index, 'packing_method', 'prepack');
+                                  // Auto-calculate ratio from size_breakdown if no ratio exists yet
+                                  const hasRatio = style.ratio && Object.keys(style.ratio).length > 0;
+                                  const hasBreakdown = style.size_breakdown && Object.keys(style.size_breakdown).length > 0;
+                                  if (!hasRatio && hasBreakdown) {
+                                    const breakdown = style.size_breakdown as Record<string, number>;
+                                    const values = Object.values(breakdown).map(Number).filter(v => v > 0);
+                                    if (values.length > 0) {
+                                      // Find GCD of all values to get the simplest ratio
+                                      const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b);
+                                      const commonDivisor = values.reduce((a, b) => gcd(a, b));
+                                      const ratio: Record<string, number> = {};
+                                      Object.entries(breakdown).forEach(([size, qty]) => {
+                                        const v = Number(qty);
+                                        if (v > 0) ratio[size] = v / commonDivisor;
+                                      });
+                                      updateStyle(index, 'ratio', ratio);
+                                    }
+                                  }
+                                }}
                               >
                                 Prepack
                               </Button>
@@ -1320,33 +1340,60 @@ export function PdfImportDialog({
                           {/* Size Breakdown / Ratio */}
                           <TableCell>
                             {style.packing_method === 'prepack' ? (
-                              <div className="space-y-1">
+                              <div className="space-y-2">
                                 {style.prepack_code && (
-                                  <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                                  <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
                                     {style.prepack_code}
                                   </span>
                                 )}
-                                {/* Ratio inputs */}
-                                <div className="flex flex-wrap gap-1">
-                                  {Object.entries(style.ratio || {}).map(([size, r]) => (
-                                    <div key={size} className="flex items-center gap-0.5 text-xs">
-                                      <span className="text-muted-foreground font-medium">{size}:</span>
-                                      <Input
-                                        type="number"
-                                        min={0}
-                                        value={r as number}
-                                        onChange={(e) => {
-                                          const newRatio = { ...style.ratio };
-                                          const val = Number(e.target.value) || 0;
-                                          if (val === 0) { delete newRatio[size]; } else { newRatio[size] = val; }
-                                          updateStyle(index, 'ratio', newRatio);
-                                        }}
-                                        className="h-6 w-12 text-xs px-1"
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                                {/* Packs & breakdown info */}
+                                {/* Size table: Ratio + Quantity per size */}
+                                {Object.keys(style.ratio || {}).length > 0 && (
+                                  <div className="border rounded overflow-hidden">
+                                    <table className="w-full text-sm">
+                                      <thead>
+                                        <tr className="bg-muted/50">
+                                          <th className="px-2 py-1 text-xs font-medium text-muted-foreground text-left">Size</th>
+                                          {Object.keys(style.ratio).map(size => (
+                                            <th key={size} className="px-2 py-1 text-xs font-medium text-center">{size}</th>
+                                          ))}
+                                          <th className="px-2 py-1 text-xs font-medium text-center">Total</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        <tr className="border-t">
+                                          <td className="px-2 py-1 text-xs text-muted-foreground font-medium">Ratio</td>
+                                          {Object.entries(style.ratio).map(([size, r]) => (
+                                            <td key={size} className="px-1 py-1 text-center">
+                                              <Input
+                                                type="number"
+                                                min={0}
+                                                value={r as number}
+                                                onChange={(e) => {
+                                                  const newRatio = { ...style.ratio };
+                                                  const val = Number(e.target.value) || 0;
+                                                  if (val === 0) { delete newRatio[size]; } else { newRatio[size] = val; }
+                                                  updateStyle(index, 'ratio', newRatio);
+                                                }}
+                                                className="h-8 w-16 text-sm text-center px-1"
+                                              />
+                                            </td>
+                                          ))}
+                                          <td className="px-2 py-1 text-center text-sm font-semibold">
+                                            {Object.values(style.ratio).reduce((s: number, r: any) => s + Number(r), 0)}
+                                          </td>
+                                        </tr>
+                                        <tr className="border-t bg-muted/30">
+                                          <td className="px-2 py-1 text-xs text-muted-foreground font-medium">Qty</td>
+                                          {Object.entries(style.size_breakdown || {}).map(([size, qty]) => (
+                                            <td key={size} className="px-2 py-1 text-center text-sm font-medium">{qty as number}</td>
+                                          ))}
+                                          <td className="px-2 py-1 text-center text-sm font-bold">{Number(style.quantity)}</td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                                {/* Packs info */}
                                 {(() => {
                                   const ratio = style.ratio || {};
                                   const unitsPerPack = Object.values(ratio).reduce((s: number, r: any) => s + Number(r), 0);
@@ -1355,14 +1402,9 @@ export function PdfImportDialog({
                                   const packs = qty / unitsPerPack;
                                   const isValid = Number.isInteger(packs);
                                   return (
-                                    <div className={`text-[10px] mt-1 p-1 rounded ${isValid ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
-                                      <span className="font-medium">{isValid ? `${packs} packs` : `${packs.toFixed(2)} packs (uneven)`}</span>
-                                      <span className="text-muted-foreground ml-1">× {unitsPerPack}/pack</span>
-                                      {isValid && style.size_breakdown && Object.keys(style.size_breakdown).length > 0 && (
-                                        <div className="mt-0.5">
-                                          {Object.entries(style.size_breakdown).map(([sz, q]) => `${sz}:${q}`).join(' ')}
-                                        </div>
-                                      )}
+                                    <div className={`text-xs p-1.5 rounded ${isValid ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                                      <span className="font-semibold">{isValid ? `${packs} packs` : `${packs.toFixed(2)} packs (uneven)`}</span>
+                                      <span className="text-muted-foreground ml-1">× {unitsPerPack} pcs/pack</span>
                                     </div>
                                   );
                                 })()}
@@ -1370,10 +1412,10 @@ export function PdfImportDialog({
                             ) : (
                               // Solid pack: direct size quantity inputs
                               style.size_breakdown && typeof style.size_breakdown === 'object' && Object.keys(style.size_breakdown).length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
+                                <div className="flex flex-wrap gap-1.5">
                                   {Object.entries(style.size_breakdown).map(([size, qty]) => (
-                                    <div key={size} className="flex items-center gap-0.5 text-xs">
-                                      <span className="text-muted-foreground">{size}:</span>
+                                    <div key={size} className="flex items-center gap-1 text-sm">
+                                      <span className="text-muted-foreground font-medium">{size}:</span>
                                       <Input
                                         type="number"
                                         min={0}
@@ -1384,13 +1426,13 @@ export function PdfImportDialog({
                                           const newTotal = Object.values(newBreakdown).reduce((a: number, b) => a + Number(b), 0);
                                           updateStyle(index, 'quantity', newTotal);
                                         }}
-                                        className="h-6 w-14 text-xs px-1"
+                                        className="h-8 w-20 text-sm px-1.5"
                                       />
                                     </div>
                                   ))}
                                 </div>
                               ) : (
-                                <span className="text-xs text-muted-foreground italic">None</span>
+                                <span className="text-sm text-muted-foreground italic">None</span>
                               )
                             )}
                           </TableCell>
@@ -1400,7 +1442,7 @@ export function PdfImportDialog({
                               min={1}
                               value={style.quantity}
                               onChange={(e) => updateStyle(index, 'quantity', e.target.value)}
-                              className="h-8 text-sm text-right"
+                              className="h-10 text-base text-right"
                             />
                           </TableCell>
                           <TableCell>
@@ -1410,10 +1452,10 @@ export function PdfImportDialog({
                               step="0.01"
                               value={style.unit_price}
                               onChange={(e) => updateStyle(index, 'unit_price', e.target.value)}
-                              className={`h-8 text-sm text-right ${isZeroPrice ? 'border-orange-400 bg-orange-100' : ''}`}
+                              className={`h-10 text-base text-right ${isZeroPrice ? 'border-orange-400 bg-orange-100' : ''}`}
                             />
                           </TableCell>
-                          <TableCell className="text-right text-sm font-medium">
+                          <TableCell className="text-right text-base font-medium">
                             ${Number(style.total_amount || 0).toFixed(2)}
                           </TableCell>
                           <TableCell>
