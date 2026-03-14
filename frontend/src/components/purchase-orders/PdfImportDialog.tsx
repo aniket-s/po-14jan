@@ -372,6 +372,7 @@ export function PdfImportDialog({
         description: s.description?.value || '',
         color_name: s.color_name?.value || '',
         size_breakdown: s.size_breakdown?.value || {},
+        size_breakdown_source: (s.size_breakdown as any)?.source || 'pdf',
         quantity: s.quantity?.value || 0,
         unit_price: s.unit_price?.value || 0,
         total_amount: s.total_amount?.value || 0,
@@ -1249,25 +1250,32 @@ export function PdfImportDialog({
                           </TableCell>
                           <TableCell>
                             {style.size_breakdown && typeof style.size_breakdown === 'object' && Object.keys(style.size_breakdown).length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {Object.entries(style.size_breakdown).map(([size, qty]) => (
-                                  <div key={size} className="flex items-center gap-0.5 text-xs">
-                                    <span className="text-muted-foreground">{size}:</span>
-                                    <Input
-                                      type="number"
-                                      min={0}
-                                      value={qty as number}
-                                      onChange={(e) => {
-                                        const newBreakdown = { ...style.size_breakdown, [size]: Number(e.target.value) || 0 };
-                                        updateStyle(index, 'size_breakdown', newBreakdown);
-                                        // Recalculate quantity from size sum
-                                        const newTotal = Object.values(newBreakdown).reduce((a: number, b) => a + Number(b), 0);
-                                        updateStyle(index, 'quantity', newTotal);
-                                      }}
-                                      className="h-6 w-14 text-xs px-1"
-                                    />
-                                  </div>
-                                ))}
+                              <div className="space-y-1">
+                                {style.size_breakdown_source === 'prepack' && (
+                                  <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                                    Prepack Ratio
+                                  </span>
+                                )}
+                                <div className="flex flex-wrap gap-1">
+                                  {Object.entries(style.size_breakdown).map(([size, qty]) => (
+                                    <div key={size} className="flex items-center gap-0.5 text-xs">
+                                      <span className="text-muted-foreground">{size}:</span>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={qty as number}
+                                        onChange={(e) => {
+                                          const newBreakdown = { ...style.size_breakdown, [size]: Number(e.target.value) || 0 };
+                                          updateStyle(index, 'size_breakdown', newBreakdown);
+                                          // Recalculate quantity from size sum
+                                          const newTotal = Object.values(newBreakdown).reduce((a: number, b) => a + Number(b), 0);
+                                          updateStyle(index, 'quantity', newTotal);
+                                        }}
+                                        className="h-6 w-14 text-xs px-1"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             ) : (
                               <span className="text-xs text-muted-foreground italic">None</span>
