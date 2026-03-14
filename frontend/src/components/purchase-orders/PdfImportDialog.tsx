@@ -340,6 +340,29 @@ export function PdfImportDialog({
         header._division = ph.division?.value || '';
         header._packing_type = (ph.packing_method as any)?.packing_type || null;
       }
+      // For DDP: auto-calculate ETD, ETA, Ex-Factory from In-Warehouse Date and country sailing time
+      if (header.shipping_term === 'DDP' && header.in_warehouse_date && header.country_id) {
+        const country = masterData.countries.find(
+          (c: any) => String(c.id) === String(header.country_id)
+        );
+        const sailingDays = country?.sailing_time_days || 0;
+        if (sailingDays > 0) {
+          const ihd = new Date(header.in_warehouse_date);
+          // ETD = IHD - sailing - 5 days
+          const etd = new Date(ihd);
+          etd.setDate(etd.getDate() - sailingDays - 5);
+          header.etd_date = etd.toISOString().split('T')[0];
+          // ETA = IHD - 5 days (or ETD + sailing)
+          const eta = new Date(etd);
+          eta.setDate(eta.getDate() + sailingDays);
+          header.eta_date = eta.toISOString().split('T')[0];
+          // Ex-Factory = ETD - 7 days
+          const exFactory = new Date(etd);
+          exFactory.setDate(exFactory.getDate() - 7);
+          header.ex_factory_date = exFactory.toISOString().split('T')[0];
+        }
+      }
+
       setHeaderForm(header);
 
       // Initialize editable styles form from parsed data
