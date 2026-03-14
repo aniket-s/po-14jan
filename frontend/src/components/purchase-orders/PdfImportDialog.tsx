@@ -471,6 +471,7 @@ export function PdfImportDialog({
           country_id: headerForm.country_id ? Number(headerForm.country_id) : null,
           warehouse_id: headerForm.warehouse_id ? Number(headerForm.warehouse_id) : null,
           buyer_id: headerForm.buyer_id ? Number(headerForm.buyer_id) : null,
+          agency_id: headerForm.agency_id ? Number(headerForm.agency_id) : null,
           shipping_term: headerForm.shipping_term || 'FOB',
           ship_to: headerForm.ship_to || undefined,
           ship_to_address: headerForm.ship_to_address || undefined,
