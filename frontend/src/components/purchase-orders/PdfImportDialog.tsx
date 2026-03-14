@@ -366,17 +366,26 @@ export function PdfImportDialog({
       setHeaderForm(header);
 
       // Initialize editable styles form from parsed data
-      const styles = (result.parsed_data?.styles || []).map((s: PdfParsedStyle, idx: number) => ({
-        _id: idx,
-        style_number: s.style_number?.value || '',
-        description: s.description?.value || '',
-        color_name: s.color_name?.value || '',
-        size_breakdown: s.size_breakdown?.value || {},
-        size_breakdown_source: (s.size_breakdown as any)?.source || 'pdf',
-        quantity: s.quantity?.value || 0,
-        unit_price: s.unit_price?.value || 0,
-        total_amount: s.total_amount?.value || 0,
-      }));
+      const styles = (result.parsed_data?.styles || []).map((s: PdfParsedStyle, idx: number) => {
+        const prepack = (s as any).prepack || null;
+        const hasPrepack = prepack !== null;
+        return {
+          _id: idx,
+          style_number: s.style_number?.value || '',
+          description: s.description?.value || '',
+          color_name: s.color_name?.value || '',
+          size_breakdown: s.size_breakdown?.value || {},
+          size_breakdown_source: (s.size_breakdown as any)?.source || 'pdf',
+          packing_method: hasPrepack ? 'prepack' : 'solid' as 'solid' | 'prepack',
+          ratio: hasPrepack ? prepack.ratio : {} as Record<string, number>,
+          packs_count: hasPrepack ? prepack.packs : 0,
+          prepack_code: hasPrepack ? prepack.prepack_code : null,
+          total_per_pack: hasPrepack ? prepack.total_per_pack : 0,
+          quantity: s.quantity?.value || 0,
+          unit_price: s.unit_price?.value || 0,
+          total_amount: s.total_amount?.value || 0,
+        };
+      });
       setStylesForm(styles);
 
       setStep('review-header');
@@ -402,6 +411,40 @@ export function PdfImportDialog({
         const qty = field === 'quantity' ? Number(value) : Number(updated[index].quantity);
         const price = field === 'unit_price' ? Number(value) : Number(updated[index].unit_price);
         updated[index].total_amount = Math.round(qty * price * 100) / 100;
+      }
+      // Recalculate prepack breakdown when quantity changes and packing_method is prepack
+      if (field === 'quantity' && updated[index].packing_method === 'prepack') {
+        const ratio = updated[index].ratio || {};
+        const ratioKeys = Object.keys(ratio);
+        if (ratioKeys.length > 0) {
+          const unitsPerPack = Object.values(ratio).reduce((sum: number, r: any) => sum + Number(r), 0);
+          const qty = Number(value);
+          if (unitsPerPack > 0 && qty > 0) {
+            const packs = qty / unitsPerPack;
+            updated[index].packs_count = packs;
+            if (Number.isInteger(packs)) {
+              const breakdown: Record<string, number> = {};
+              ratioKeys.forEach(size => { breakdown[size] = Number(ratio[size]) * packs; });
+              updated[index].size_breakdown = breakdown;
+            }
+          }
+        }
+      }
+      // Recalculate breakdown when ratio changes
+      if (field === 'ratio' && updated[index].packing_method === 'prepack') {
+        const ratio = value as Record<string, number>;
+        const qty = Number(updated[index].quantity);
+        const unitsPerPack = Object.values(ratio).reduce((sum: number, r: any) => sum + Number(r), 0);
+        if (unitsPerPack > 0 && qty > 0) {
+          const packs = qty / unitsPerPack;
+          updated[index].packs_count = packs;
+          updated[index].total_per_pack = unitsPerPack;
+          if (Number.isInteger(packs)) {
+            const breakdown: Record<string, number> = {};
+            Object.keys(ratio).forEach(size => { breakdown[size] = Number(ratio[size]) * packs; });
+            updated[index].size_breakdown = breakdown;
+          }
+        }
       }
       return updated;
     });
@@ -520,6 +563,8 @@ export function PdfImportDialog({
           description: s.description || undefined,
           color_name: s.color_name || undefined,
           size_breakdown: s.size_breakdown && Object.keys(s.size_breakdown).length > 0 ? s.size_breakdown : null,
+          ratio: s.packing_method === 'prepack' && s.ratio && Object.keys(s.ratio).length > 0 ? s.ratio : undefined,
+          packing_method: s.packing_method || 'solid',
           quantity: Number(s.quantity),
           unit_price: Number(s.unit_price),
         })),
@@ -1214,7 +1259,8 @@ export function PdfImportDialog({
                       <TableHead className="min-w-[120px]">Style Number</TableHead>
                       <TableHead className="min-w-[150px]">Description</TableHead>
                       <TableHead className="min-w-[100px]">Color</TableHead>
-                      <TableHead className="min-w-[150px]">Size Breakdown</TableHead>
+                      <TableHead className="min-w-[80px]">Packing</TableHead>
+                      <TableHead className="min-w-[200px]">Size Breakdown / Ratio</TableHead>
                       <TableHead className="w-[90px] text-right">Qty</TableHead>
                       <TableHead className="w-[100px] text-right">Unit Price</TableHead>
                       <TableHead className="w-[100px] text-right">Total</TableHead>
@@ -1248,14 +1294,82 @@ export function PdfImportDialog({
                               className="h-8 text-sm"
                             />
                           </TableCell>
+                          {/* Packing Method */}
                           <TableCell>
-                            {style.size_breakdown && typeof style.size_breakdown === 'object' && Object.keys(style.size_breakdown).length > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              <Button
+                                type="button"
+                                variant={style.packing_method === 'solid' ? 'default' : 'outline'}
+                                size="sm"
+                                className="h-6 text-[10px] w-full"
+                                onClick={() => updateStyle(index, 'packing_method', 'solid')}
+                              >
+                                Solid
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={style.packing_method === 'prepack' ? 'default' : 'outline'}
+                                size="sm"
+                                className="h-6 text-[10px] w-full"
+                                onClick={() => updateStyle(index, 'packing_method', 'prepack')}
+                              >
+                                Prepack
+                              </Button>
+                            </div>
+                          </TableCell>
+                          {/* Size Breakdown / Ratio */}
+                          <TableCell>
+                            {style.packing_method === 'prepack' ? (
                               <div className="space-y-1">
-                                {style.size_breakdown_source === 'prepack' && (
+                                {style.prepack_code && (
                                   <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
-                                    Prepack Ratio
+                                    {style.prepack_code}
                                   </span>
                                 )}
+                                {/* Ratio inputs */}
+                                <div className="flex flex-wrap gap-1">
+                                  {Object.entries(style.ratio || {}).map(([size, r]) => (
+                                    <div key={size} className="flex items-center gap-0.5 text-xs">
+                                      <span className="text-muted-foreground font-medium">{size}:</span>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={r as number}
+                                        onChange={(e) => {
+                                          const newRatio = { ...style.ratio };
+                                          const val = Number(e.target.value) || 0;
+                                          if (val === 0) { delete newRatio[size]; } else { newRatio[size] = val; }
+                                          updateStyle(index, 'ratio', newRatio);
+                                        }}
+                                        className="h-6 w-12 text-xs px-1"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                                {/* Packs & breakdown info */}
+                                {(() => {
+                                  const ratio = style.ratio || {};
+                                  const unitsPerPack = Object.values(ratio).reduce((s: number, r: any) => s + Number(r), 0);
+                                  const qty = Number(style.quantity);
+                                  if (unitsPerPack === 0 || qty === 0) return null;
+                                  const packs = qty / unitsPerPack;
+                                  const isValid = Number.isInteger(packs);
+                                  return (
+                                    <div className={`text-[10px] mt-1 p-1 rounded ${isValid ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                                      <span className="font-medium">{isValid ? `${packs} packs` : `${packs.toFixed(2)} packs (uneven)`}</span>
+                                      <span className="text-muted-foreground ml-1">× {unitsPerPack}/pack</span>
+                                      {isValid && style.size_breakdown && Object.keys(style.size_breakdown).length > 0 && (
+                                        <div className="mt-0.5">
+                                          {Object.entries(style.size_breakdown).map(([sz, q]) => `${sz}:${q}`).join(' ')}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            ) : (
+                              // Solid pack: direct size quantity inputs
+                              style.size_breakdown && typeof style.size_breakdown === 'object' && Object.keys(style.size_breakdown).length > 0 ? (
                                 <div className="flex flex-wrap gap-1">
                                   {Object.entries(style.size_breakdown).map(([size, qty]) => (
                                     <div key={size} className="flex items-center gap-0.5 text-xs">
@@ -1267,7 +1381,6 @@ export function PdfImportDialog({
                                         onChange={(e) => {
                                           const newBreakdown = { ...style.size_breakdown, [size]: Number(e.target.value) || 0 };
                                           updateStyle(index, 'size_breakdown', newBreakdown);
-                                          // Recalculate quantity from size sum
                                           const newTotal = Object.values(newBreakdown).reduce((a: number, b) => a + Number(b), 0);
                                           updateStyle(index, 'quantity', newTotal);
                                         }}
@@ -1276,9 +1389,9 @@ export function PdfImportDialog({
                                     </div>
                                   ))}
                                 </div>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground italic">None</span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">None</span>
+                              )
                             )}
                           </TableCell>
                           <TableCell>

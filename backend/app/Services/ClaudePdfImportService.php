@@ -723,9 +723,11 @@ PROMPT;
             $styleNumber = $item['style_number'] ?? null;
 
             // Try to use prepack ratio from existing style in database
+            $prepackInfo = null;
             $prepackBreakdown = null;
             if ($styleNumber && $qty > 0) {
-                $prepackBreakdown = $this->getPrepackSizeBreakdown($styleNumber, $qty);
+                $prepackInfo = $this->getPrepackInfo($styleNumber, $qty);
+                $prepackBreakdown = $prepackInfo['breakdown'] ?? null;
             }
 
             if ($prepackBreakdown !== null) {
@@ -733,6 +735,7 @@ PROMPT;
                 $sizeBreakdown = $prepackBreakdown;
                 Log::info('PDF import: using prepack ratio for size breakdown', [
                     'style_number' => $styleNumber,
+                    'ratio' => $prepackInfo['ratio'] ?? null,
                     'breakdown' => $sizeBreakdown,
                 ]);
             } elseif (is_array($sizeBreakdown) && !empty($sizeBreakdown)) {
@@ -784,6 +787,12 @@ PROMPT;
                     'confidence' => $prepackBreakdown !== null ? 'high' : ($sizeBreakdown !== null ? 'medium' : 'low'),
                     'source' => $prepackBreakdown !== null ? 'prepack' : 'pdf',
                 ],
+                'prepack' => $prepackInfo ? [
+                    'ratio' => $prepackInfo['ratio'],
+                    'total_per_pack' => $prepackInfo['total_per_pack'],
+                    'packs' => $prepackInfo['packs'],
+                    'prepack_code' => $prepackInfo['prepack_code'],
+                ] : null,
                 'quantity' => [
                     'value' => $qty,
                     'status' => $qty > 0 ? 'parsed' : 'missing',
@@ -810,9 +819,9 @@ PROMPT;
      *
      * @param string $styleNumber The style number to look up
      * @param int $qty The total quantity to distribute
-     * @return array|null Size breakdown array or null if no prepack found
+     * @return array|null Array with ratio, breakdown, packs info, or null if no prepack found
      */
-    private function getPrepackSizeBreakdown(string $styleNumber, int $qty): ?array
+    private function getPrepackInfo(string $styleNumber, int $qty): ?array
     {
         $style = Style::where('style_number', $styleNumber)->first();
         if (!$style) {
@@ -833,6 +842,12 @@ PROMPT;
             return null;
         }
 
+        $result = [
+            'ratio' => $sizes,
+            'total_per_pack' => $totalPerPack,
+            'prepack_code' => $prepackCode->code . ' - ' . $prepackCode->name,
+        ];
+
         // Check if quantity divides evenly into packs
         if ($qty % $totalPerPack !== 0) {
             // Doesn't divide evenly - still use ratio but scale proportionally
@@ -852,7 +867,9 @@ PROMPT;
                     $assigned += $val;
                 }
             }
-            return $breakdown;
+            $result['breakdown'] = $breakdown;
+            $result['packs'] = round($qty / $totalPerPack, 2);
+            return $result;
         }
 
         // Divides evenly - calculate exact breakdown
@@ -862,7 +879,9 @@ PROMPT;
             $breakdown[$size] = (int) ($ratio * $packs);
         }
 
-        return $breakdown;
+        $result['breakdown'] = $breakdown;
+        $result['packs'] = $packs;
+        return $result;
     }
 
     // ========================================================================
