@@ -478,40 +478,46 @@ export default function PurchaseOrderDetailPage() {
                       Sample Submissions
                     </h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {purchaseOrder.sample_schedule.top_approval && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">TOP Approval</p>
-                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.top_approval)}</p>
-                        </div>
-                      )}
-                      {purchaseOrder.sample_schedule.trim_approvals && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Trim Approvals</p>
-                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.trim_approvals)}</p>
-                        </div>
-                      )}
                       {purchaseOrder.sample_schedule.lab_dip_submission && (
                         <div className="space-y-1">
                           <p className="text-xs text-muted-foreground">Lab Dip Submission</p>
                           <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.lab_dip_submission)}</p>
-                        </div>
-                      )}
-                      {purchaseOrder.sample_schedule.pp_sample_submission && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">PP Sample</p>
-                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.pp_sample_submission)}</p>
+                          <p className="text-[10px] text-muted-foreground/70">PO Date + 5 days</p>
                         </div>
                       )}
                       {purchaseOrder.sample_schedule.fit_sample_submission && (
                         <div className="space-y-1">
                           <p className="text-xs text-muted-foreground">Fit Sample</p>
                           <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.fit_sample_submission)}</p>
+                          <p className="text-[10px] text-muted-foreground/70">PO Date + 7 days</p>
+                        </div>
+                      )}
+                      {purchaseOrder.sample_schedule.trim_approvals && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Trim Approvals</p>
+                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.trim_approvals)}</p>
+                          <p className="text-[10px] text-muted-foreground/70">PO Date + 7 days</p>
                         </div>
                       )}
                       {purchaseOrder.sample_schedule.first_proto_submission && (
                         <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">First Proto</p>
+                          <p className="text-xs text-muted-foreground">1st Proto Submission</p>
                           <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.first_proto_submission)}</p>
+                          <p className="text-[10px] text-muted-foreground/70">PO Date + 10 days</p>
+                        </div>
+                      )}
+                      {purchaseOrder.sample_schedule.pp_sample_submission && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">PP Sample</p>
+                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.pp_sample_submission)}</p>
+                          <p className="text-[10px] text-muted-foreground/70">ETD − 35 days</p>
+                        </div>
+                      )}
+                      {purchaseOrder.sample_schedule.top_approval && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">TOP Approval</p>
+                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.top_approval)}</p>
+                          <p className="text-[10px] text-muted-foreground/70">ETD − 10 days</p>
                         </div>
                       )}
                     </div>
@@ -524,16 +530,18 @@ export default function PurchaseOrderDetailPage() {
                         Production Milestones
                       </h3>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {purchaseOrder.sample_schedule.production_start && (
-                          <div className="space-y-1">
-                            <p className="text-xs text-muted-foreground">Production Start</p>
-                            <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.production_start)}</p>
-                          </div>
-                        )}
                         {purchaseOrder.sample_schedule.bulk_fabric_inhouse && (
                           <div className="space-y-1">
                             <p className="text-xs text-muted-foreground">Bulk Fabric In-House</p>
                             <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.bulk_fabric_inhouse)}</p>
+                            <p className="text-[10px] text-muted-foreground/70">ETD − 40 days</p>
+                          </div>
+                        )}
+                        {purchaseOrder.sample_schedule.production_start && (
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Production Start</p>
+                            <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.production_start)}</p>
+                            <p className="text-[10px] text-muted-foreground/70">ETD − 30 days</p>
                           </div>
                         )}
                       </div>
@@ -778,35 +786,16 @@ export default function PurchaseOrderDetailPage() {
                             <TableRow>
                               <TableHead>Sample Type</TableHead>
                               <TableHead>Scheduled Date</TableHead>
+                              <TableHead>Formula</TableHead>
                               <TableHead>Status</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {purchaseOrder.sample_schedule.top_approval && (
-                              <TableRow>
-                                <TableCell className="font-medium">TOP Approval</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.top_approval)}</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
-                            {purchaseOrder.sample_schedule.trim_approvals && (
-                              <TableRow>
-                                <TableCell className="font-medium">Trim Approvals</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.trim_approvals)}</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
                             {purchaseOrder.sample_schedule.lab_dip_submission && (
                               <TableRow>
                                 <TableCell className="font-medium">Lab Dip Submission</TableCell>
                                 <TableCell>{formatDate(purchaseOrder.sample_schedule.lab_dip_submission)}</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
-                            {purchaseOrder.sample_schedule.pp_sample_submission && (
-                              <TableRow>
-                                <TableCell className="font-medium">PP Sample</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.pp_sample_submission)}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">PO Date + 5 days</TableCell>
                                 <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
                               </TableRow>
                             )}
@@ -814,13 +803,55 @@ export default function PurchaseOrderDetailPage() {
                               <TableRow>
                                 <TableCell className="font-medium">Fit Sample</TableCell>
                                 <TableCell>{formatDate(purchaseOrder.sample_schedule.fit_sample_submission)}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">PO Date + 7 days</TableCell>
+                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
+                              </TableRow>
+                            )}
+                            {purchaseOrder.sample_schedule.trim_approvals && (
+                              <TableRow>
+                                <TableCell className="font-medium">Trim Approvals</TableCell>
+                                <TableCell>{formatDate(purchaseOrder.sample_schedule.trim_approvals)}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">PO Date + 7 days</TableCell>
                                 <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
                               </TableRow>
                             )}
                             {purchaseOrder.sample_schedule.first_proto_submission && (
                               <TableRow>
-                                <TableCell className="font-medium">First Proto</TableCell>
+                                <TableCell className="font-medium">1st Proto Submission</TableCell>
                                 <TableCell>{formatDate(purchaseOrder.sample_schedule.first_proto_submission)}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">PO Date + 10 days</TableCell>
+                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
+                              </TableRow>
+                            )}
+                            {purchaseOrder.sample_schedule.bulk_fabric_inhouse && (
+                              <TableRow>
+                                <TableCell className="font-medium">Bulk Fabric Inhouse</TableCell>
+                                <TableCell>{formatDate(purchaseOrder.sample_schedule.bulk_fabric_inhouse)}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">ETD − 40 days</TableCell>
+                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
+                              </TableRow>
+                            )}
+                            {purchaseOrder.sample_schedule.pp_sample_submission && (
+                              <TableRow>
+                                <TableCell className="font-medium">PP Sample</TableCell>
+                                <TableCell>{formatDate(purchaseOrder.sample_schedule.pp_sample_submission)}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">ETD − 35 days</TableCell>
+                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
+                              </TableRow>
+                            )}
+                            {purchaseOrder.sample_schedule.production_start && (
+                              <TableRow>
+                                <TableCell className="font-medium">Production Start</TableCell>
+                                <TableCell>{formatDate(purchaseOrder.sample_schedule.production_start)}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">ETD − 30 days</TableCell>
+                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
+                              </TableRow>
+                            )}
+                            {purchaseOrder.sample_schedule.top_approval && (
+                              <TableRow>
+                                <TableCell className="font-medium">TOP Approval</TableCell>
+                                <TableCell>{formatDate(purchaseOrder.sample_schedule.top_approval)}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">ETD − 10 days</TableCell>
                                 <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
                               </TableRow>
                             )}

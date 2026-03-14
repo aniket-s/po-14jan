@@ -788,7 +788,7 @@ export default function EditPurchaseOrderPage() {
                     </Button>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="lab_dip_submission">Lab Dip Submission (Auto)</Label>
                       <Input
                         id="lab_dip_submission"
@@ -797,8 +797,9 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
+                      <p className="text-[11px] text-muted-foreground">PO Date + 5 days</p>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="fit_sample_submission">Fit Sample Submission (Auto)</Label>
                       <Input
                         id="fit_sample_submission"
@@ -807,10 +808,11 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
+                      <p className="text-[11px] text-muted-foreground">PO Date + 7 days</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="trim_approvals">Trim Approvals (Auto)</Label>
                       <Input
                         id="trim_approvals"
@@ -819,8 +821,9 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
+                      <p className="text-[11px] text-muted-foreground">PO Date + 7 days</p>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="first_proto_submission">1st Proto Submission (Auto)</Label>
                       <Input
                         id="first_proto_submission"
@@ -829,10 +832,11 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
+                      <p className="text-[11px] text-muted-foreground">PO Date + 10 days</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="bulk_fabric_inhouse">Bulk Fabric Inhouse (Auto)</Label>
                       <Input
                         id="bulk_fabric_inhouse"
@@ -841,8 +845,9 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
+                      <p className="text-[11px] text-muted-foreground">ETD − 40 days</p>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="pp_sample_submission">PP Sample Submission (Auto)</Label>
                       <Input
                         id="pp_sample_submission"
@@ -851,10 +856,11 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
+                      <p className="text-[11px] text-muted-foreground">ETD − 35 days</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="production_start">Production Start (Auto)</Label>
                       <Input
                         id="production_start"
@@ -863,8 +869,9 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
+                      <p className="text-[11px] text-muted-foreground">ETD − 30 days</p>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="top_approval">TOP Approval (Auto)</Label>
                       <Input
                         id="top_approval"
@@ -873,6 +880,7 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
+                      <p className="text-[11px] text-muted-foreground">ETD − 10 days</p>
                     </div>
                   </div>
                 </div>
