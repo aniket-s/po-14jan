@@ -312,11 +312,27 @@ PROMPT;
         $parsed = json_decode($content, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
-            Log::error('Failed to parse Claude JSON response', [
+            Log::warning('Initial JSON parse failed, attempting truncated JSON repair', [
                 'error' => json_last_error_msg(),
-                'content_preview' => substr($content, 0, 500),
+                'content_length' => strlen($content),
             ]);
-            return null;
+
+            // Try to repair truncated JSON by closing open brackets/braces
+            $repaired = $this->repairTruncatedJson($content);
+            if ($repaired !== null) {
+                $parsed = json_decode($repaired, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    Log::info('Successfully repaired truncated JSON response');
+                }
+            }
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error('Failed to parse Claude JSON response even after repair', [
+                    'error' => json_last_error_msg(),
+                    'content_preview' => substr($content, 0, 500),
+                ]);
+                return null;
+            }
         }
 
         // Validate minimum required structure
@@ -328,6 +344,71 @@ PROMPT;
         }
 
         return $parsed;
+    }
+
+    /**
+     * Attempt to repair truncated JSON by closing unclosed brackets, braces, and strings.
+     */
+    private function repairTruncatedJson(string $json): ?string
+    {
+        // Remove any trailing incomplete key-value pair
+        // e.g., "some_key": "incomplete val  → remove the incomplete pair
+        $json = preg_replace('/,\s*"[^"]*"\s*:\s*"?[^"}\]]*$/', '', $json);
+        $json = preg_replace('/,\s*$/', '', $json);
+
+        // Track open brackets/braces
+        $stack = [];
+        $inString = false;
+        $escape = false;
+        $len = strlen($json);
+
+        for ($i = 0; $i < $len; $i++) {
+            $char = $json[$i];
+
+            if ($escape) {
+                $escape = false;
+                continue;
+            }
+
+            if ($char === '\\' && $inString) {
+                $escape = true;
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = !$inString;
+                continue;
+            }
+
+            if ($inString) {
+                continue;
+            }
+
+            if ($char === '{' || $char === '[') {
+                $stack[] = $char;
+            } elseif ($char === '}') {
+                if (!empty($stack) && end($stack) === '{') {
+                    array_pop($stack);
+                }
+            } elseif ($char === ']') {
+                if (!empty($stack) && end($stack) === '[') {
+                    array_pop($stack);
+                }
+            }
+        }
+
+        // If we're inside a string, close it
+        if ($inString) {
+            $json .= '"';
+        }
+
+        // Close all unclosed brackets/braces in reverse order
+        while (!empty($stack)) {
+            $open = array_pop($stack);
+            $json .= ($open === '{') ? '}' : ']';
+        }
+
+        return $json;
     }
 
     /**
