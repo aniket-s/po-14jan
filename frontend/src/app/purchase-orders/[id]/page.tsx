@@ -517,7 +517,7 @@ export default function PurchaseOrderDetailPage() {
                         <div className="space-y-1">
                           <p className="text-xs text-muted-foreground">TOP Approval</p>
                           <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.top_approval)}</p>
-                          <p className="text-[10px] text-muted-foreground/70">ETD − 10 days</p>
+                          <p className="text-[10px] text-muted-foreground/70">Ex-Factory − 10 days</p>
                         </div>
                       )}
                     </div>
@@ -851,7 +851,7 @@ export default function PurchaseOrderDetailPage() {
                               <TableRow>
                                 <TableCell className="font-medium">TOP Approval</TableCell>
                                 <TableCell>{formatDate(purchaseOrder.sample_schedule.top_approval)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">ETD − 10 days</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">Ex-Factory − 10 days</TableCell>
                                 <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
                               </TableRow>
                             )}

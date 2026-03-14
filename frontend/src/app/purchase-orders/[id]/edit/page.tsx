@@ -109,6 +109,7 @@ export default function EditPurchaseOrderPage() {
     handleSubmit,
     formState: { errors },
     setValue,
+    getValues,
   } = useForm<POFormData>({
     resolver: zodResolver(poSchema),
   });
@@ -278,9 +279,11 @@ export default function EditPurchaseOrderPage() {
     }
 
     try {
+      const exFactoryDate = getValues('ex_factory_date');
       const response = await api.post('/purchase-orders/sample-schedule', {
         po_date: poDate,
         etd_date: etdDate,
+        ex_factory_date: exFactoryDate || undefined,
       });
 
       if (response.data?.schedule) {
@@ -880,7 +883,7 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
-                      <p className="text-[11px] text-muted-foreground">ETD − 10 days</p>
+                      <p className="text-[11px] text-muted-foreground">Ex-Factory − 10 days</p>
                     </div>
                   </div>
                 </div>

@@ -17,16 +17,20 @@ class SampleScheduleService
      * - Bulk Fabric In-house: ETD Date - 40 days
      * - PP Sample: ETD Date - 35 days
      * - Production Start: ETD Date - 30 days
-     * - TOP Approval: ETD Date - 10 days
+     * - TOP Approval: Ex-Factory Date - 10 days
      *
      * @param Carbon|string $poDate
      * @param Carbon|string $etdDate
+     * @param Carbon|string|null $exFactoryDate
      * @return array
      */
-    public function generateSchedule($poDate, $etdDate): array
+    public function generateSchedule($poDate, $etdDate, $exFactoryDate = null): array
     {
         $po = $poDate instanceof Carbon ? $poDate : Carbon::parse($poDate);
         $etd = $etdDate instanceof Carbon ? $etdDate : Carbon::parse($etdDate);
+        $exFactory = $exFactoryDate
+            ? ($exFactoryDate instanceof Carbon ? $exFactoryDate : Carbon::parse($exFactoryDate))
+            : $etd->copy()->subDays(7);
 
         return [
             'lab_dip' => [
@@ -80,10 +84,9 @@ class SampleScheduleService
             ],
             'top_approval' => [
                 'name' => 'TOP Approval',
-                'date' => $etd->copy()->subDays(10),
-                'description' => '10 days before ETD',
-                'days_before_etd' => 10,
-                'type' => 'etd_based',
+                'date' => $exFactory->copy()->subDays(10),
+                'description' => '10 days before Ex-Factory',
+                'type' => 'ex_factory_based',
             ],
         ];
     }

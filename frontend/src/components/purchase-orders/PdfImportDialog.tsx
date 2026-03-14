@@ -260,6 +260,7 @@ export function PdfImportDialog({
       const response = await api.post('/purchase-orders/sample-schedule', {
         po_date: poDate,
         etd_date: etdDate,
+        ex_factory_date: headerForm.ex_factory_date || undefined,
       });
       if (response.data?.schedule) {
         const schedule = response.data.schedule;
@@ -1112,7 +1113,7 @@ export function PdfImportDialog({
                   <div className="space-y-1">
                     <Label>TOP Approval</Label>
                     <Input type="date" value={sampleSchedule.top_approval || ''} disabled className="bg-muted" />
-                    <p className="text-[11px] text-muted-foreground">ETD − 10 days</p>
+                    <p className="text-[11px] text-muted-foreground">Ex-Factory − 10 days</p>
                   </div>
                 </div>
               </div>
