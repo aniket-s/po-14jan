@@ -309,12 +309,16 @@ PROMPT;
         $content = preg_replace('/\s*```$/', '', $content);
         $content = trim($content);
 
+        // Remove any BOM or invisible control characters that break JSON parsing
+        $content = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', $content);
+
         $parsed = json_decode($content, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             Log::warning('Initial JSON parse failed, attempting truncated JSON repair', [
                 'error' => json_last_error_msg(),
                 'content_length' => strlen($content),
+                'content_tail' => substr($content, -200),
             ]);
 
             // Try to repair truncated JSON by closing open brackets/braces
@@ -323,6 +327,11 @@ PROMPT;
                 $parsed = json_decode($repaired, true);
                 if (json_last_error() === JSON_ERROR_NONE) {
                     Log::info('Successfully repaired truncated JSON response');
+                } else {
+                    Log::error('JSON repair failed', [
+                        'error' => json_last_error_msg(),
+                        'repaired_tail' => substr($repaired, -300),
+                    ]);
                 }
             }
 
@@ -330,6 +339,7 @@ PROMPT;
                 Log::error('Failed to parse Claude JSON response even after repair', [
                     'error' => json_last_error_msg(),
                     'content_preview' => substr($content, 0, 500),
+                    'content_tail' => substr($content, -300),
                 ]);
                 return null;
             }
@@ -351,10 +361,29 @@ PROMPT;
      */
     private function repairTruncatedJson(string $json): ?string
     {
-        // Remove any trailing incomplete key-value pair
-        // e.g., "some_key": "incomplete val  → remove the incomplete pair
-        $json = preg_replace('/,\s*"[^"]*"\s*:\s*"?[^"}\]]*$/', '', $json);
-        $json = preg_replace('/,\s*$/', '', $json);
+        // First, find the last complete JSON value by walking backwards
+        // to find the last properly closed string, number, null, true, false, }, or ]
+        $trimmed = rtrim($json);
+
+        // Remove trailing incomplete content until we find a valid JSON ending character
+        // Valid endings: "...", number, null, true, false, }, ]
+        while (strlen($trimmed) > 0) {
+            $lastChar = substr($trimmed, -1);
+            if (in_array($lastChar, ['"', '}', ']', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'l', 'e'])) {
+                // Check if this is a valid ending
+                // For 'l' -> null, for 'e' -> true/false
+                if ($lastChar === 'l' && preg_match('/null$/', $trimmed)) break;
+                if ($lastChar === 'e' && preg_match('/(true|false)$/', $trimmed)) break;
+                if (in_array($lastChar, ['"', '}', ']', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])) break;
+            }
+            $trimmed = substr($trimmed, 0, -1);
+            $trimmed = rtrim($trimmed);
+        }
+
+        // Remove trailing comma if present
+        $trimmed = preg_replace('/,\s*$/', '', $trimmed);
+
+        $json = $trimmed;
 
         // Track open brackets/braces
         $stack = [];
