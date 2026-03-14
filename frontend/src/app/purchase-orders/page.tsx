@@ -120,6 +120,7 @@ export default function PurchaseOrdersPage() {
   const [retailers, setRetailers] = useState<any[]>([]);
   const [countries, setCountries] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [buyers, setBuyers] = useState<any[]>([]);
 
   const [autoGeneratePO, setAutoGeneratePO] = useState(true);
   const [isGeneratingPO, setIsGeneratingPO] = useState(false);
@@ -169,13 +170,14 @@ export default function PurchaseOrdersPage() {
 
   const fetchMasterData = async () => {
     try {
-      const [seasonsRes, retailersRes, countriesRes, warehousesRes, currenciesRes, paymentTermsRes] = await Promise.all([
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes, currenciesRes, paymentTermsRes, buyersRes] = await Promise.all([
         api.get('/master-data/seasons?all=true'),
         api.get('/master-data/retailers?all=true'),
         api.get('/master-data/countries?all=true'),
         api.get('/master-data/warehouses?all=true'),
         api.get('/master-data/currencies?all=true'),
         api.get('/master-data/payment-terms?all=true'),
+        api.get('/master-data/buyers?all=true'),
       ]);
 
       setSeasons(seasonsRes.data || []);
@@ -184,6 +186,7 @@ export default function PurchaseOrdersPage() {
       setWarehouses(warehousesRes.data || []);
       setCurrencies(currenciesRes.data || []);
       setPaymentTerms(paymentTermsRes.data || []);
+      setBuyers(buyersRes.data || []);
     } catch (error) {
       console.error('Failed to fetch master data:', error);
     }
@@ -1282,6 +1285,7 @@ export default function PurchaseOrdersPage() {
             retailers,
             countries,
             warehouses,
+            buyers,
           }}
           onRefreshMasterData={fetchMasterData}
         />

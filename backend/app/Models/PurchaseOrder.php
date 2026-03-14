@@ -16,6 +16,7 @@ class PurchaseOrder extends Model
         'agency_id',
         'creator_id',
         'currency_id',
+        'buyer_id',
         'total_quantity',
         'total_value',
         'payment_terms',
@@ -54,6 +55,7 @@ class PurchaseOrder extends Model
         'importer_id' => 'integer',
         'creator_id' => 'integer',
         'agency_id' => 'integer',
+        'buyer_id' => 'integer',
         'total_quantity' => 'integer',
         'total_value' => 'decimal:2',
         'metadata' => 'array',
@@ -124,6 +126,14 @@ class PurchaseOrder extends Model
     public function season()
     {
         return $this->belongsTo(Season::class);
+    }
+
+    /**
+     * Get the buyer for the PO
+     */
+    public function buyer()
+    {
+        return $this->belongsTo(Buyer::class);
     }
 
     /**
