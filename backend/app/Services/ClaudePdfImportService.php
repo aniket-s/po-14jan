@@ -8,6 +8,7 @@ use App\Models\Currency;
 use App\Models\PaymentTerm;
 use App\Models\Retailer;
 use App\Models\Season;
+use App\Models\Style;
 use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Support\Facades\Log;
@@ -261,14 +262,16 @@ Many POs use a table layout like this (example):
   RLC442   100 WHITE  1   FE       SAINT HD THERMAL         3600  3.15        11,340.00
            WHITE                    Category :                               PACK 6
   SIZE >   XS     S       M        L         XL      2XL
-  QTY >    600    1200    1200     600
+  QTY >           600    1200    1200     600
+
+In this example, the QTY > row has only 4 values but SIZE > row has 6 sizes. The quantities align RIGHT-TO-LEFT with the sizes: S=600, M=1200, L=1200, XL=600. XS and 2XL have NO quantity - they must NOT appear in size_breakdown.
 
 - The STYLE column (RLC442, RLC443, etc.) is the style_number - it is an alphanumeric code, NOT a color word.
 - The COLOR column (WHITE, SLATE, PINE, BLACK) is the color_name - do NOT use this as the style_number.
 - The QTY column on the same row as the style (e.g., 3600) is the TOTAL quantity. Do NOT double count by also summing the size breakdown row.
 - PRICE EA. column (e.g., 3.15) is the unit_price. Always extract this value.
 - EXTN column is the total_amount (quantity × price).
-- The SIZE > and QTY > rows below each style show the size breakdown. The sum of size quantities equals the QTY column value.
+- The SIZE > and QTY > rows below each style show the size breakdown. CAREFULLY align each quantity value with its corresponding size column. If there are fewer quantity values than size labels, the missing sizes have ZERO quantity and must NOT be included. The sum of size quantities MUST equal the total quantity for that line item.
 - Each style block occupies multiple rows: header row (style, color, qty, price), category row, size label row, size quantity row.
 
 IMPORTANT RULES:
@@ -277,7 +280,7 @@ IMPORTANT RULES:
 - For quantity: Use the QTY column value from the style header row. Do NOT sum it again from the size breakdown - the size breakdown is just the detail of how that total breaks down by size.
 - For unit_price: Use the PRICE EA./Rate/Price/Unit Price/FOB/Cost column. This is REQUIRED - look carefully for it. Use 0 only if truly not present.
 - For dates: always convert to YYYY-MM-DD format regardless of the original format (e.g. 06-JUN-26 → 2026-06-06, 08-MAR-26 → 2026-03-08)
-- For size_breakdown: extract individual size quantities from the QTY > row. ONLY include sizes with explicit quantity values. The sum MUST equal the total quantity for that line item. Do NOT create a second line item from the size breakdown.
+- For size_breakdown: extract individual size quantities from the QTY > row. ONLY include sizes that have an explicit non-zero quantity value. If there are fewer QTY values than SIZE labels, map them carefully by column position - do NOT blindly assign from left to right. Sizes with no corresponding quantity (e.g., XS and 2XL when only S/M/L/XL have values) must be EXCLUDED entirely. The sum MUST equal the total quantity. Do NOT create a second line item from the size breakdown.
 - For buyer_name: Look at the prominent company name at the top of the document (NOT the vendor, NOT the customer). This is the buying house/sourcing company.
 - For customer_name: Look for "CUST:", "CUSTOMER:", or "CLIENT:" label. This is the retailer.
 - For vendor_name: Look for "Vendor:" label. This is the agent/supplier.
@@ -715,9 +718,24 @@ PROMPT;
                 $price = round($totalAmount / $qty, 2);
             }
 
-            // Validate and auto-correct size breakdown if present
+            // Validate and auto-correct size breakdown
             $sizeBreakdown = $item['size_breakdown'] ?? null;
-            if (is_array($sizeBreakdown) && !empty($sizeBreakdown)) {
+            $styleNumber = $item['style_number'] ?? null;
+
+            // Try to use prepack ratio from existing style in database
+            $prepackBreakdown = null;
+            if ($styleNumber && $qty > 0) {
+                $prepackBreakdown = $this->getPrepackSizeBreakdown($styleNumber, $qty);
+            }
+
+            if ($prepackBreakdown !== null) {
+                // Use prepack ratio from database - more reliable than PDF extraction
+                $sizeBreakdown = $prepackBreakdown;
+                Log::info('PDF import: using prepack ratio for size breakdown', [
+                    'style_number' => $styleNumber,
+                    'breakdown' => $sizeBreakdown,
+                ]);
+            } elseif (is_array($sizeBreakdown) && !empty($sizeBreakdown)) {
                 // Filter out sizes with zero or non-positive quantities
                 $sizeBreakdown = array_filter($sizeBreakdown, fn($v) => (int) $v > 0);
                 $sizeSum = array_sum($sizeBreakdown);
@@ -763,7 +781,8 @@ PROMPT;
                 'size_breakdown' => [
                     'value' => $sizeBreakdown,
                     'status' => $sizeBreakdown !== null ? 'parsed' : 'missing',
-                    'confidence' => $sizeBreakdown !== null ? 'high' : 'low',
+                    'confidence' => $prepackBreakdown !== null ? 'high' : ($sizeBreakdown !== null ? 'medium' : 'low'),
+                    'source' => $prepackBreakdown !== null ? 'prepack' : 'pdf',
                 ],
                 'quantity' => [
                     'value' => $qty,
@@ -784,6 +803,66 @@ PROMPT;
         }
 
         return $result;
+    }
+
+    /**
+     * Look up an existing style's prepack ratio and calculate size breakdown from it.
+     *
+     * @param string $styleNumber The style number to look up
+     * @param int $qty The total quantity to distribute
+     * @return array|null Size breakdown array or null if no prepack found
+     */
+    private function getPrepackSizeBreakdown(string $styleNumber, int $qty): ?array
+    {
+        $style = Style::where('style_number', $styleNumber)->first();
+        if (!$style) {
+            return null;
+        }
+
+        // Check if this style has prepack associations
+        $stylePrepack = $style->prepacks()->with('prepackCode')->first();
+        if (!$stylePrepack || !$stylePrepack->prepackCode) {
+            return null;
+        }
+
+        $prepackCode = $stylePrepack->prepackCode;
+        $sizes = $prepackCode->sizes; // e.g., {"S": 2, "M": 2, "L": 1, "XL": 1}
+        $totalPerPack = $prepackCode->total_pieces_per_pack;
+
+        if (!is_array($sizes) || empty($sizes) || $totalPerPack <= 0) {
+            return null;
+        }
+
+        // Check if quantity divides evenly into packs
+        if ($qty % $totalPerPack !== 0) {
+            // Doesn't divide evenly - still use ratio but scale proportionally
+            $breakdown = [];
+            $ratioSum = array_sum($sizes);
+            if ($ratioSum <= 0) {
+                return null;
+            }
+            $assigned = 0;
+            $sizeKeys = array_keys($sizes);
+            foreach ($sizeKeys as $i => $size) {
+                if ($i === count($sizeKeys) - 1) {
+                    $breakdown[$size] = $qty - $assigned;
+                } else {
+                    $val = (int) round($sizes[$size] * $qty / $ratioSum);
+                    $breakdown[$size] = $val;
+                    $assigned += $val;
+                }
+            }
+            return $breakdown;
+        }
+
+        // Divides evenly - calculate exact breakdown
+        $packs = $qty / $totalPerPack;
+        $breakdown = [];
+        foreach ($sizes as $size => $ratio) {
+            $breakdown[$size] = (int) ($ratio * $packs);
+        }
+
+        return $breakdown;
     }
 
     // ========================================================================
