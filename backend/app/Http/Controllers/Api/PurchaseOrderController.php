@@ -889,7 +889,7 @@ class PurchaseOrderController extends Controller
             }
 
             $scheduleService = app(SampleScheduleService::class);
-            $schedule = $scheduleService->generateSchedule($po->po_date, $po->etd_date);
+            $schedule = $scheduleService->generateSchedule($po->po_date, $po->etd_date, $po->ex_factory_date);
             $validation = $scheduleService->validateSchedule($po->po_date, $po->etd_date);
 
             return response()->json([
@@ -902,6 +902,7 @@ class PurchaseOrderController extends Controller
             $validator = Validator::make($request->all(), [
                 'po_date' => 'required|date',
                 'etd_date' => 'required|date|after:po_date',
+                'ex_factory_date' => 'nullable|date',
             ]);
 
             if ($validator->fails()) {
@@ -912,7 +913,7 @@ class PurchaseOrderController extends Controller
             }
 
             $scheduleService = app(SampleScheduleService::class);
-            $schedule = $scheduleService->generateSchedule($request->po_date, $request->etd_date);
+            $schedule = $scheduleService->generateSchedule($request->po_date, $request->etd_date, $request->ex_factory_date);
             $validation = $scheduleService->validateSchedule($request->po_date, $request->etd_date);
 
             return response()->json([

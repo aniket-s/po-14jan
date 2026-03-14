@@ -260,6 +260,7 @@ export function PdfImportDialog({
       const response = await api.post('/purchase-orders/sample-schedule', {
         po_date: poDate,
         etd_date: etdDate,
+        ex_factory_date: headerForm.ex_factory_date || undefined,
       });
       if (response.data?.schedule) {
         const schedule = response.data.schedule;
@@ -312,7 +313,7 @@ export function PdfImportDialog({
         header.headline = '';
         header.retailer_id = ph.retailer_id?.value || '';
         header.season_id = ph.season_id?.value || '';
-        header.currency_id = ph.currency_id?.value || '';
+        header.currency_id = ph.currency_id?.value || masterData.currencies.find((c: any) => c.code === 'USD')?.id || '';
         header.payment_term_id = ph.payment_term_id?.value || '';
         header.country_id = ph.country_id?.value || '';
         header.warehouse_id = ph.warehouse_id?.value || '';
@@ -1077,34 +1078,42 @@ export function PdfImportDialog({
                   <div className="space-y-1">
                     <Label>Lab Dip Submission</Label>
                     <Input type="date" value={sampleSchedule.lab_dip_submission || ''} disabled className="bg-muted" />
+                    <p className="text-[11px] text-muted-foreground">PO Date + 5 days</p>
                   </div>
                   <div className="space-y-1">
                     <Label>Fit Sample Submission</Label>
                     <Input type="date" value={sampleSchedule.fit_sample_submission || ''} disabled className="bg-muted" />
+                    <p className="text-[11px] text-muted-foreground">PO Date + 7 days</p>
                   </div>
                   <div className="space-y-1">
                     <Label>Trim Approvals</Label>
                     <Input type="date" value={sampleSchedule.trim_approvals || ''} disabled className="bg-muted" />
+                    <p className="text-[11px] text-muted-foreground">PO Date + 7 days</p>
                   </div>
                   <div className="space-y-1">
                     <Label>1st Proto Submission</Label>
                     <Input type="date" value={sampleSchedule.first_proto_submission || ''} disabled className="bg-muted" />
+                    <p className="text-[11px] text-muted-foreground">PO Date + 10 days</p>
                   </div>
                   <div className="space-y-1">
                     <Label>Bulk Fabric Inhouse</Label>
                     <Input type="date" value={sampleSchedule.bulk_fabric_inhouse || ''} disabled className="bg-muted" />
+                    <p className="text-[11px] text-muted-foreground">ETD − 40 days</p>
                   </div>
                   <div className="space-y-1">
                     <Label>PP Sample Submission</Label>
                     <Input type="date" value={sampleSchedule.pp_sample_submission || ''} disabled className="bg-muted" />
+                    <p className="text-[11px] text-muted-foreground">ETD − 35 days</p>
                   </div>
                   <div className="space-y-1">
                     <Label>Production Start</Label>
                     <Input type="date" value={sampleSchedule.production_start || ''} disabled className="bg-muted" />
+                    <p className="text-[11px] text-muted-foreground">ETD − 30 days</p>
                   </div>
                   <div className="space-y-1">
                     <Label>TOP Approval</Label>
                     <Input type="date" value={sampleSchedule.top_approval || ''} disabled className="bg-muted" />
+                    <p className="text-[11px] text-muted-foreground">Ex-Factory − 10 days</p>
                   </div>
                 </div>
               </div>
