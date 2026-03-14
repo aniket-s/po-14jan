@@ -313,31 +313,60 @@ PROMPT;
         $content = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', $content);
 
         $parsed = json_decode($content, true);
+        $parseError = json_last_error();
 
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            Log::warning('Initial JSON parse failed, attempting truncated JSON repair', [
-                'error' => json_last_error_msg(),
+        if ($parseError !== JSON_ERROR_NONE) {
+            $errorMsg = json_last_error_msg();
+
+            // Find the approximate position of the JSON error
+            $errorPos = $this->findJsonErrorPosition($content);
+
+            Log::warning('Initial JSON parse failed, attempting repair', [
+                'error' => $errorMsg,
                 'content_length' => strlen($content),
                 'content_tail' => substr($content, -200),
+                'error_context' => $errorPos !== null ? substr($content, max(0, $errorPos - 50), 100) : 'unknown',
             ]);
 
-            // Try to repair truncated JSON by closing open brackets/braces
-            $repaired = $this->repairTruncatedJson($content);
+            // Try sanitizing common JSON issues before structural repair
+            $sanitized = $content;
+            // Fix trailing commas before } or ]
+            $sanitized = preg_replace('/,\s*([\]}])/', '$1', $sanitized);
+            // Fix NaN/Infinity which aren't valid JSON
+            $sanitized = preg_replace('/:\s*NaN\b/', ': 0', $sanitized);
+            $sanitized = preg_replace('/:\s*Infinity\b/', ': 0', $sanitized);
+            // Fix single quotes used instead of double quotes
+            // (only if there are no double quotes in the content - rare edge case)
+
+            $parsed = json_decode($sanitized, true);
+            $parseError = json_last_error();
+            if ($parseError === JSON_ERROR_NONE) {
+                Log::info('JSON fixed by sanitization (trailing commas, etc.)');
+                $content = $sanitized;
+            }
+
+            // If sanitization didn't help, try structural repair
+            if ($parseError !== JSON_ERROR_NONE) {
+                $repaired = $this->repairTruncatedJson($sanitized);
+            } else {
+                $repaired = null;
+            }
             if ($repaired !== null) {
                 $parsed = json_decode($repaired, true);
-                if (json_last_error() === JSON_ERROR_NONE) {
+                $parseError = json_last_error();
+                if ($parseError === JSON_ERROR_NONE) {
                     Log::info('Successfully repaired truncated JSON response');
                 } else {
+                    $repairErrorMsg = json_last_error_msg();
                     Log::error('JSON repair failed', [
-                        'error' => json_last_error_msg(),
+                        'error' => $repairErrorMsg,
                         'repaired_tail' => substr($repaired, -300),
                     ]);
                 }
             }
 
-            if (json_last_error() !== JSON_ERROR_NONE) {
+            if ($parseError !== JSON_ERROR_NONE) {
                 Log::error('Failed to parse Claude JSON response even after repair', [
-                    'error' => json_last_error_msg(),
                     'content_preview' => substr($content, 0, 500),
                     'content_tail' => substr($content, -300),
                 ]);
@@ -346,14 +375,44 @@ PROMPT;
         }
 
         // Validate minimum required structure
-        if (!isset($parsed['po_header']) || !isset($parsed['line_items'])) {
+        if (!is_array($parsed) || !isset($parsed['po_header']) || !isset($parsed['line_items'])) {
             Log::error('Claude response missing required fields', [
-                'keys' => array_keys($parsed),
+                'keys' => is_array($parsed) ? array_keys($parsed) : 'not an array',
             ]);
             return null;
         }
 
         return $parsed;
+    }
+
+    /**
+     * Find the approximate byte position where a JSON parse error occurs
+     * by binary-searching for the longest valid JSON prefix.
+     */
+    private function findJsonErrorPosition(string $json): ?int
+    {
+        $len = strlen($json);
+        // Try parsing progressively longer prefixes
+        $lo = 0;
+        $hi = $len;
+        while ($lo < $hi - 1) {
+            $mid = intdiv($lo + $hi, 2);
+            $prefix = substr($json, 0, $mid);
+            // Close any open structures minimally to test
+            json_decode($prefix . ']}', true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $lo = $mid;
+            } else {
+                // Could be just truncation, try with more closings
+                json_decode($prefix . '"]}]}]}', true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $lo = $mid;
+                } else {
+                    $hi = $mid;
+                }
+            }
+        }
+        return $hi < $len ? $hi : null;
     }
 
     /**
