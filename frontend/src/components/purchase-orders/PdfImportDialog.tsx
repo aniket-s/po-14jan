@@ -60,6 +60,7 @@ import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialo
 import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
 import { CreatePaymentTermDialog } from '@/components/master-data/CreatePaymentTermDialog';
 import { CreateBuyerDialog } from '@/components/master-data/CreateBuyerDialog';
+import { CreateAgentDialog } from '@/components/master-data/CreateAgentDialog';
 
 interface PdfImportDialogProps {
   isOpen: boolean;
@@ -73,6 +74,7 @@ interface PdfImportDialogProps {
     countries: any[];
     warehouses: any[];
     buyers: any[];
+    agents: any[];
   };
   onRefreshMasterData?: () => void;
 }
@@ -121,6 +123,7 @@ export function PdfImportDialog({
   const [isCreateCountryOpen, setIsCreateCountryOpen] = useState(false);
   const [isCreateWarehouseOpen, setIsCreateWarehouseOpen] = useState(false);
   const [isCreateBuyerOpen, setIsCreateBuyerOpen] = useState(false);
+  const [isCreateAgentOpen, setIsCreateAgentOpen] = useState(false);
 
   // Raw text viewer toggle
   const [showRawText, setShowRawText] = useState(false);
@@ -743,6 +746,30 @@ export function PdfImportDialog({
                     </div>
                     {headerForm._buyer_name && getFieldStatus('buyer_id') === 'unrecognized' && (
                       <p className="text-xs text-yellow-600">Buyer &quot;{headerForm._buyer_name}&quot; not found in system. Click + to create.</p>
+                    )}
+                  </div>
+
+                  {/* Agent */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label>Agent</Label>
+                      <StatusBadge status={getFieldStatus('agency_id')} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={String(headerForm.agency_id || '')} onValueChange={(v) => updateHeader('agency_id', v)}>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Select agent" /></SelectTrigger>
+                        <SelectContent>
+                          {(masterData.agents || []).map((a: any) => (
+                            <SelectItem key={a.id} value={String(a.id)}>{a.name}{a.company ? ` (${a.company})` : ''}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsCreateAgentOpen(true)} title="Create new agent">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {headerForm._agent_name && getFieldStatus('agency_id') === 'unrecognized' && (
+                      <p className="text-xs text-yellow-600">Agent &quot;{headerForm._agent_name}&quot; not found in system. Click + to create.</p>
                     )}
                   </div>
 
@@ -1523,6 +1550,12 @@ export function PdfImportDialog({
         onOpenChange={setIsCreateBuyerOpen}
         onSuccess={handleMasterDataCreated}
         defaultName={headerForm._buyer_name || ''}
+      />
+      <CreateAgentDialog
+        open={isCreateAgentOpen}
+        onOpenChange={setIsCreateAgentOpen}
+        onSuccess={handleMasterDataCreated}
+        defaultName={headerForm._agent_name || ''}
       />
     </>
   );

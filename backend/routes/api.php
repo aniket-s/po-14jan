@@ -387,6 +387,10 @@ Route::middleware('auth:sanctum')->group(function () {
         // Trim Types
         Route::apiResource('trim-types', \App\Http\Controllers\Api\TrimTypeController::class);
         Route::post('trim-types/reorder', [\App\Http\Controllers\Api\TrimTypeController::class, 'reorder']);
+
+        // Agents (Users with Agency role)
+        Route::get('agents', [\App\Http\Controllers\Api\AgentController::class, 'index']);
+        Route::post('agents', [\App\Http\Controllers\Api\AgentController::class, 'store']);
     });
 
     // Purchase Order Management

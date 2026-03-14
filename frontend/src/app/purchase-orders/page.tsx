@@ -47,6 +47,7 @@ import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseD
 import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialog';
 import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
 import { CreatePaymentTermDialog } from '@/components/master-data/CreatePaymentTermDialog';
+import { CreateAgentDialog } from '@/components/master-data/CreateAgentDialog';
 import { useAuth } from '@/contexts/AuthContext';
 
 const poSchema = z.object({
@@ -57,6 +58,8 @@ const poSchema = z.object({
   currency_id: z.string().min(1, 'Currency is required'),
   shipping_method: z.string().optional(),
   notes: z.string().optional(),
+  agency_id: z.string().optional(),
+  buyer_id: z.string().optional(),
   season_id: z.string().optional(),
   warehouse_id: z.string().optional(),
   country_id: z.string().optional(),
@@ -113,6 +116,7 @@ export default function PurchaseOrdersPage() {
   const [isCreateCountryDialogOpen, setIsCreateCountryDialogOpen] = useState(false);
   const [isCreateCurrencyDialogOpen, setIsCreateCurrencyDialogOpen] = useState(false);
   const [isCreatePaymentTermDialogOpen, setIsCreatePaymentTermDialogOpen] = useState(false);
+  const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
 
   const [currencies, setCurrencies] = useState<any[]>([]);
   const [paymentTerms, setPaymentTerms] = useState<any[]>([]);
@@ -121,6 +125,7 @@ export default function PurchaseOrdersPage() {
   const [countries, setCountries] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [buyers, setBuyers] = useState<any[]>([]);
+  const [agents, setAgents] = useState<any[]>([]);
 
   const [autoGeneratePO, setAutoGeneratePO] = useState(true);
   const [isGeneratingPO, setIsGeneratingPO] = useState(false);
@@ -170,7 +175,7 @@ export default function PurchaseOrdersPage() {
 
   const fetchMasterData = async () => {
     try {
-      const [seasonsRes, retailersRes, countriesRes, warehousesRes, currenciesRes, paymentTermsRes, buyersRes] = await Promise.all([
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes, currenciesRes, paymentTermsRes, buyersRes, agentsRes] = await Promise.all([
         api.get('/master-data/seasons?all=true'),
         api.get('/master-data/retailers?all=true'),
         api.get('/master-data/countries?all=true'),
@@ -178,6 +183,7 @@ export default function PurchaseOrdersPage() {
         api.get('/master-data/currencies?all=true'),
         api.get('/master-data/payment-terms?all=true'),
         api.get('/master-data/buyers?all=true'),
+        api.get('/master-data/agents?all=true'),
       ]);
 
       setSeasons(seasonsRes.data || []);
@@ -187,6 +193,7 @@ export default function PurchaseOrdersPage() {
       setCurrencies(currenciesRes.data || []);
       setPaymentTerms(paymentTermsRes.data || []);
       setBuyers(buyersRes.data || []);
+      setAgents(agentsRes.data || []);
     } catch (error) {
       console.error('Failed to fetch master data:', error);
     }
@@ -282,6 +289,8 @@ export default function PurchaseOrdersPage() {
         po_number: data.po_number,
         headline: data.headline || null,
         retailer_id: data.retailer_id ? parseInt(data.retailer_id) : null,
+        agency_id: data.agency_id ? parseInt(data.agency_id) : null,
+        buyer_id: data.buyer_id ? parseInt(data.buyer_id) : null,
         po_date: data.po_date,
         currency_id: data.currency_id ? parseInt(data.currency_id) : null,
         shipping_method: data.shipping_method,
@@ -530,6 +539,60 @@ export default function PurchaseOrdersPage() {
                           {errors.retailer_id && (
                             <p className="text-sm text-destructive">{errors.retailer_id.message}</p>
                           )}
+                        </div>
+
+                        {/* Agent Dropdown with Create Button */}
+                        <div className="space-y-2">
+                          <Label htmlFor="agency_id">Agent</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => setValue('agency_id', value)}>
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select agent" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {agents.map((agent) => (
+                                  <SelectItem key={agent.id} value={agent.id.toString()}>
+                                    {agent.name}{agent.company ? ` (${agent.company})` : ''}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setIsCreateAgentDialogOpen(true)}
+                              title="Create new agent"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Buyer Dropdown with Create Button */}
+                        <div className="space-y-2">
+                          <Label htmlFor="buyer_id">Buyer</Label>
+                          <div className="flex gap-2">
+                            <Select onValueChange={(value) => setValue('buyer_id', value)}>
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select buyer" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {buyers.map((buyer) => (
+                                  <SelectItem key={buyer.id} value={buyer.id.toString()}>
+                                    {buyer.name}{buyer.code ? ` (${buyer.code})` : ''}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {}}
+                              title="Create new buyer"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                       <div className="space-y-2">
@@ -1286,6 +1349,7 @@ export default function PurchaseOrdersPage() {
             countries,
             warehouses,
             buyers,
+            agents,
           }}
           onRefreshMasterData={fetchMasterData}
         />
@@ -1319,6 +1383,11 @@ export default function PurchaseOrdersPage() {
         <CreatePaymentTermDialog
           open={isCreatePaymentTermDialogOpen}
           onOpenChange={setIsCreatePaymentTermDialogOpen}
+          onSuccess={fetchMasterData}
+        />
+        <CreateAgentDialog
+          open={isCreateAgentDialogOpen}
+          onOpenChange={setIsCreateAgentDialogOpen}
           onSuccess={fetchMasterData}
         />
       </div>
