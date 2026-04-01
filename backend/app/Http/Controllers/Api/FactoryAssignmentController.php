@@ -3,11 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendPurchaseOrderNotification;
 use App\Models\FactoryAssignment;
 use App\Models\PurchaseOrder;
+use App\Models\Style;
+use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\PermissionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class FactoryAssignmentController extends Controller
 {
@@ -28,27 +33,23 @@ class FactoryAssignmentController extends Controller
         $user = $request->user();
         $po = PurchaseOrder::findOrFail($poId);
 
-        // Check permission
         if (!$this->permissionService->canAccessPO($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to view factory assignments for this purchase order',
             ], 403);
         }
 
-        $query = FactoryAssignment::with(['factory', 'assignedBy'])
+        $query = FactoryAssignment::with(['style', 'factory', 'assignedBy'])
             ->where('purchase_order_id', $poId);
 
-        // Status filter
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
 
-        // Factory filter
         if ($request->has('factory_id')) {
             $query->where('factory_id', $request->factory_id);
         }
 
-        // Assignment type filter
         if ($request->has('assignment_type')) {
             $query->where('assignment_type', $request->assignment_type);
         }
@@ -59,16 +60,21 @@ class FactoryAssignmentController extends Controller
             'assignments' => $assignments->map(function ($assignment) {
                 return [
                     'id' => $assignment->id,
-                    'factory' => [
+                    'style' => $assignment->style ? [
+                        'id' => $assignment->style->id,
+                        'style_number' => $assignment->style->style_number,
+                        'description' => $assignment->style->description,
+                    ] : null,
+                    'factory' => $assignment->factory ? [
                         'id' => $assignment->factory->id,
                         'name' => $assignment->factory->name,
                         'email' => $assignment->factory->email,
                         'company' => $assignment->factory->company,
-                    ],
-                    'assigned_by' => [
+                    ] : null,
+                    'assigned_by' => $assignment->assignedBy ? [
                         'id' => $assignment->assignedBy->id,
                         'name' => $assignment->assignedBy->name,
-                    ],
+                    ] : null,
                     'assignment_type' => $assignment->assignment_type,
                     'status' => $assignment->status,
                     'accepted_at' => $assignment->accepted_at,
@@ -87,12 +93,11 @@ class FactoryAssignmentController extends Controller
     public function show(Request $request, $poId, $id)
     {
         $user = $request->user();
-        $assignment = FactoryAssignment::with(['factory', 'assignedBy', 'purchaseOrder'])
+        $assignment = FactoryAssignment::with(['factory', 'assignedBy', 'purchaseOrder', 'style'])
             ->where('id', $id)
             ->where('purchase_order_id', $poId)
             ->firstOrFail();
 
-        // Check permission
         if (!$this->permissionService->canAccessPO($user, $assignment->purchaseOrder)) {
             return response()->json([
                 'message' => 'You do not have permission to view this factory assignment',
@@ -107,25 +112,29 @@ class FactoryAssignmentController extends Controller
                     'po_number' => $assignment->purchaseOrder->po_number,
                     'brand_name' => $assignment->purchaseOrder->brand_name,
                 ],
-                'factory' => [
+                'style' => $assignment->style ? [
+                    'id' => $assignment->style->id,
+                    'style_number' => $assignment->style->style_number,
+                    'description' => $assignment->style->description,
+                ] : null,
+                'factory' => $assignment->factory ? [
                     'id' => $assignment->factory->id,
                     'name' => $assignment->factory->name,
                     'email' => $assignment->factory->email,
                     'company' => $assignment->factory->company,
                     'country' => $assignment->factory->country,
-                ],
-                'assigned_by' => [
+                ] : null,
+                'assigned_by' => $assignment->assignedBy ? [
                     'id' => $assignment->assignedBy->id,
                     'name' => $assignment->assignedBy->name,
                     'email' => $assignment->assignedBy->email,
-                ],
+                ] : null,
                 'assignment_type' => $assignment->assignment_type,
                 'status' => $assignment->status,
                 'accepted_at' => $assignment->accepted_at,
                 'rejected_at' => $assignment->rejected_at,
                 'rejection_reason' => $assignment->rejection_reason,
                 'notes' => $assignment->notes,
-                'metadata' => $assignment->metadata,
                 'created_at' => $assignment->created_at,
                 'updated_at' => $assignment->updated_at,
             ],
@@ -139,17 +148,15 @@ class FactoryAssignmentController extends Controller
     {
         $user = $request->user();
 
-        // User must be a factory
         if (!$user->hasRole('Factory')) {
             return response()->json([
                 'message' => 'You must be a factory to view assignments',
             ], 403);
         }
 
-        $query = FactoryAssignment::with(['purchaseOrder', 'assignedBy'])
+        $query = FactoryAssignment::with(['purchaseOrder', 'style', 'assignedBy'])
             ->where('factory_id', $user->id);
 
-        // Status filter
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
@@ -160,17 +167,22 @@ class FactoryAssignmentController extends Controller
             'assignments' => $assignments->map(function ($assignment) {
                 return [
                     'id' => $assignment->id,
-                    'purchase_order' => [
+                    'purchase_order' => $assignment->purchaseOrder ? [
                         'id' => $assignment->purchaseOrder->id,
                         'po_number' => $assignment->purchaseOrder->po_number,
                         'brand_name' => $assignment->purchaseOrder->brand_name,
                         'order_date' => $assignment->purchaseOrder->order_date?->format('Y-m-d'),
-                    ],
-                    'assigned_by' => [
+                    ] : null,
+                    'style' => $assignment->style ? [
+                        'id' => $assignment->style->id,
+                        'style_number' => $assignment->style->style_number,
+                        'description' => $assignment->style->description,
+                    ] : null,
+                    'assigned_by' => $assignment->assignedBy ? [
                         'id' => $assignment->assignedBy->id,
                         'name' => $assignment->assignedBy->name,
                         'company' => $assignment->assignedBy->company,
-                    ],
+                    ] : null,
                     'assignment_type' => $assignment->assignment_type,
                     'status' => $assignment->status,
                     'created_at' => $assignment->created_at,
@@ -190,14 +202,12 @@ class FactoryAssignmentController extends Controller
             ->where('purchase_order_id', $poId)
             ->firstOrFail();
 
-        // Check permission
         if (!$this->permissionService->canAccessPO($user, $assignment->purchaseOrder)) {
             return response()->json([
                 'message' => 'You do not have permission to view styles for this assignment',
             ], 403);
         }
 
-        // Get styles assigned to this factory for this PO
         $styles = $assignment->purchaseOrder->styles()
             ->where('assigned_factory_id', $assignment->factory_id)
             ->get();
@@ -236,7 +246,6 @@ class FactoryAssignmentController extends Controller
             ->where('purchase_order_id', $poId)
             ->firstOrFail();
 
-        // Check permission - only assigned_by user can update notes
         if ($assignment->assigned_by !== $user->id) {
             return response()->json([
                 'message' => 'You are not authorized to update notes for this assignment',
@@ -250,7 +259,6 @@ class FactoryAssignmentController extends Controller
         $assignment->notes = $request->notes;
         $assignment->save();
 
-        // Log update
         $this->activityLog->log(
             'assignment_notes_updated',
             'FactoryAssignment',
@@ -258,7 +266,7 @@ class FactoryAssignmentController extends Controller
             'Assignment notes updated',
             [
                 'factory_id' => $assignment->factory_id,
-                'po_number' => $assignment->purchaseOrder->po_number,
+                'purchase_order_id' => $assignment->purchase_order_id,
             ]
         );
 
@@ -274,36 +282,24 @@ class FactoryAssignmentController extends Controller
     public function destroy(Request $request, $poId, $id)
     {
         $user = $request->user();
-        $assignment = FactoryAssignment::where('id', $id)
+        $assignment = FactoryAssignment::with(['factory', 'purchaseOrder'])
+            ->where('id', $id)
             ->where('purchase_order_id', $poId)
             ->firstOrFail();
 
-        // Check permission - only assigned_by user can remove
-        if ($assignment->assigned_by !== $user->id) {
+        if ($assignment->assigned_by !== $user->id && !$user->hasRole('Super Admin')) {
             return response()->json([
                 'message' => 'You are not authorized to remove this assignment',
             ], 403);
         }
 
-        // Check if factory has styles assigned
-        $stylesCount = $assignment->purchaseOrder->styles()
-            ->where('assigned_factory_id', $assignment->factory_id)
-            ->count();
-
-        if ($stylesCount > 0) {
-            return response()->json([
-                'message' => "Cannot remove assignment. Factory has {$stylesCount} style(s) assigned.",
-                'styles_count' => $stylesCount,
-            ], 422);
-        }
-
         $assignmentData = [
             'factory_id' => $assignment->factory_id,
-            'factory_name' => $assignment->factory->name,
-            'po_number' => $assignment->purchaseOrder->po_number,
+            'factory_name' => $assignment->factory?->name,
+            'style_id' => $assignment->style_id,
+            'purchase_order_id' => $assignment->purchase_order_id,
         ];
 
-        // Log deletion
         $this->activityLog->logDeleted('FactoryAssignment', $assignment->id, $assignmentData);
 
         $assignment->delete();
@@ -321,7 +317,6 @@ class FactoryAssignmentController extends Controller
         $user = $request->user();
         $po = PurchaseOrder::findOrFail($poId);
 
-        // Check permission
         if (!$this->permissionService->canAccessPO($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to view statistics for this purchase order',
@@ -333,10 +328,10 @@ class FactoryAssignmentController extends Controller
         $stats = [
             'total_assignments' => $assignments->count(),
             'accepted' => $assignments->where('status', 'accepted')->count(),
-            'pending' => $assignments->where('status', 'pending')->count(),
+            'invited' => $assignments->where('status', 'invited')->count(),
             'rejected' => $assignments->where('status', 'rejected')->count(),
             'by_type' => [
-                'direct' => $assignments->where('assignment_type', 'direct')->count(),
+                'direct_to_factory' => $assignments->where('assignment_type', 'direct_to_factory')->count(),
                 'via_agency' => $assignments->where('assignment_type', 'via_agency')->count(),
             ],
             'factories' => $assignments->unique('factory_id')->count(),
@@ -354,19 +349,22 @@ class FactoryAssignmentController extends Controller
     {
         $user = $request->user();
 
-        $query = \App\Models\FactoryAssignment::with([
-            'purchaseOrder:id,po_number',
-            'factory:id,name,company',
+        $query = FactoryAssignment::with([
+            'purchaseOrder:id,po_number,brand_name',
+            'style:id,style_number,description',
+            'factory:id,name,email,company',
             'assignedBy:id,name'
         ]);
 
-        // Apply role-based filtering
+        // Role-based filtering
         if ($user->hasRole('Factory')) {
             $query->where('factory_id', $user->id);
         } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('purchaseOrder', function($q) use ($user) {
+            $query->whereHas('purchaseOrder', function ($q) use ($user) {
                 $q->where('created_by', $user->id);
             });
+        } elseif ($user->hasRole('Agency')) {
+            $query->where('assigned_by', $user->id);
         }
 
         // Factory filter
@@ -374,24 +372,368 @@ class FactoryAssignmentController extends Controller
             $query->where('factory_id', $request->factory_id);
         }
 
+        // Status filter
+        if ($request->has('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
+
         // Assignment type filter
         if ($request->has('assignment_type')) {
             $query->where('assignment_type', $request->assignment_type);
         }
 
-        // Search
-        if ($request->has('search')) {
+        // Search by style number, PO number, or factory name
+        if ($request->has('search') && $request->search) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->whereHas('purchaseOrder', function($pq) use ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('style', function ($sq) use ($search) {
+                    $sq->where('style_number', 'like', "%{$search}%")
+                       ->orWhere('description', 'like', "%{$search}%");
+                })->orWhereHas('purchaseOrder', function ($pq) use ($search) {
                     $pq->where('po_number', 'like', "%{$search}%");
-                })->orWhereHas('factory', function($fq) use ($search) {
+                })->orWhereHas('factory', function ($fq) use ($search) {
                     $fq->where('name', 'like', "%{$search}%")
                        ->orWhere('company', 'like', "%{$search}%");
                 });
             });
         }
 
-        return response()->json($query->orderBy('assigned_at', 'desc')->paginate($request->input('per_page', 15)));
+        return response()->json(
+            $query->orderBy('created_at', 'desc')
+                ->paginate($request->input('per_page', 15))
+        );
+    }
+
+    /**
+     * Bulk assign styles to a factory
+     * Importers and agencies can search and multi-select styles to assign to a factory
+     */
+    public function bulkAssign(Request $request)
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'style_ids' => 'required|array|min:1',
+            'style_ids.*' => 'required|integer|exists:styles,id',
+            'factory_id' => 'required|integer|exists:users,id',
+            'assignment_type' => 'required|in:direct_to_factory,via_agency',
+            'notes' => 'nullable|string',
+            'expected_completion_date' => 'nullable|date',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Verify the target user is a factory
+        $factoryUser = User::find($request->factory_id);
+        if (!$factoryUser || !$factoryUser->hasRole('Factory')) {
+            return response()->json(['message' => 'Selected user is not a factory'], 422);
+        }
+
+        $styles = Style::with('purchaseOrders')->whereIn('id', $request->style_ids)->get();
+
+        if ($styles->isEmpty()) {
+            return response()->json(['message' => 'No valid styles found'], 422);
+        }
+
+        $created = [];
+        $skipped = [];
+
+        DB::beginTransaction();
+        try {
+            foreach ($styles as $style) {
+                // Get the PO for this style (first associated PO)
+                $po = $style->purchaseOrders->first() ?? $style->purchaseOrder;
+
+                // Check if already assigned to this factory
+                $existing = FactoryAssignment::where('style_id', $style->id)
+                    ->where('factory_id', $request->factory_id)
+                    ->whereIn('status', ['invited', 'accepted'])
+                    ->first();
+
+                if ($existing) {
+                    $skipped[] = [
+                        'style_id' => $style->id,
+                        'style_number' => $style->style_number,
+                        'reason' => 'Already assigned to this factory',
+                    ];
+                    continue;
+                }
+
+                $assignment = FactoryAssignment::create([
+                    'purchase_order_id' => $po?->id,
+                    'style_id' => $style->id,
+                    'factory_id' => $request->factory_id,
+                    'assigned_by' => $user->id,
+                    'assigned_at' => now(),
+                    'assignment_type' => $request->assignment_type,
+                    'status' => 'invited',
+                    'notes' => $request->notes,
+                    'expected_completion_date' => $request->expected_completion_date,
+                ]);
+
+                // Update style model
+                $style->update([
+                    'assignment_type' => $request->assignment_type,
+                    'assigned_factory_id' => $request->factory_id,
+                ]);
+
+                // Update pivot table if PO exists
+                if ($po) {
+                    $po->styles()->updateExistingPivot($style->id, [
+                        'assignment_type' => $request->assignment_type,
+                        'assigned_factory_id' => $request->factory_id,
+                        'assigned_at' => now(),
+                    ]);
+                }
+
+                $created[] = [
+                    'id' => $assignment->id,
+                    'style_id' => $style->id,
+                    'style_number' => $style->style_number,
+                ];
+            }
+
+            DB::commit();
+
+            // Send notification to the factory
+            if (!empty($created)) {
+                $styleNumbers = collect($created)->pluck('style_number')->implode(', ');
+                // Use the first PO for notification context
+                $firstStyle = $styles->first();
+                $po = $firstStyle->purchaseOrders->first() ?? $firstStyle->purchaseOrder;
+
+                if ($po) {
+                    SendPurchaseOrderNotification::dispatch(
+                        $po,
+                        $factoryUser,
+                        'factory_assigned',
+                        [
+                            'style_number' => $styleNumbers,
+                            'assigned_by' => $user->name,
+                        ]
+                    );
+                }
+            }
+
+            $this->activityLog->log(
+                'styles_bulk_assigned',
+                'FactoryAssignment',
+                null,
+                'Bulk assigned ' . count($created) . ' style(s) to factory ' . $factoryUser->name,
+                [
+                    'factory_id' => $request->factory_id,
+                    'style_ids' => collect($created)->pluck('style_id')->toArray(),
+                    'assigned_by' => $user->id,
+                ]
+            );
+
+            return response()->json([
+                'message' => count($created) . ' style(s) assigned successfully',
+                'created' => $created,
+                'skipped' => $skipped,
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to assign styles: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Factory accepts an assignment
+     */
+    public function accept(Request $request, $id)
+    {
+        $user = $request->user();
+
+        if (!$user->hasRole('Factory')) {
+            return response()->json(['message' => 'Only factories can accept assignments'], 403);
+        }
+
+        $assignment = FactoryAssignment::where('id', $id)
+            ->where('factory_id', $user->id)
+            ->firstOrFail();
+
+        if ($assignment->status !== 'invited') {
+            return response()->json([
+                'message' => 'This assignment cannot be accepted (current status: ' . $assignment->status . ')',
+            ], 422);
+        }
+
+        $assignment->accept();
+
+        $this->activityLog->log(
+            'assignment_accepted',
+            'FactoryAssignment',
+            $assignment->id,
+            'Factory accepted assignment',
+            [
+                'factory_id' => $user->id,
+                'style_id' => $assignment->style_id,
+                'purchase_order_id' => $assignment->purchase_order_id,
+            ]
+        );
+
+        // Notify the assigner
+        if ($assignment->assignedBy && $assignment->purchaseOrder) {
+            SendPurchaseOrderNotification::dispatch(
+                $assignment->purchaseOrder,
+                $assignment->assignedBy,
+                'status_changed',
+                [
+                    'old_status' => 'invited',
+                    'new_status' => 'accepted',
+                    'changed_by' => $user->name,
+                    'style_number' => $assignment->style?->style_number,
+                ]
+            );
+        }
+
+        return response()->json([
+            'message' => 'Assignment accepted successfully',
+            'assignment' => $assignment->fresh(['style', 'purchaseOrder']),
+        ]);
+    }
+
+    /**
+     * Factory rejects an assignment
+     */
+    public function reject(Request $request, $id)
+    {
+        $user = $request->user();
+
+        if (!$user->hasRole('Factory')) {
+            return response()->json(['message' => 'Only factories can reject assignments'], 403);
+        }
+
+        $assignment = FactoryAssignment::where('id', $id)
+            ->where('factory_id', $user->id)
+            ->firstOrFail();
+
+        if ($assignment->status !== 'invited') {
+            return response()->json([
+                'message' => 'This assignment cannot be rejected (current status: ' . $assignment->status . ')',
+            ], 422);
+        }
+
+        $request->validate([
+            'rejection_reason' => 'nullable|string|max:1000',
+        ]);
+
+        $assignment->reject($request->rejection_reason);
+
+        // Clear the style's factory assignment since it was rejected
+        if ($assignment->style) {
+            $assignment->style->update([
+                'assigned_factory_id' => null,
+                'assignment_type' => null,
+            ]);
+        }
+
+        // Clear pivot if PO exists
+        if ($assignment->purchase_order_id && $assignment->style_id) {
+            $po = $assignment->purchaseOrder;
+            if ($po) {
+                $po->styles()->updateExistingPivot($assignment->style_id, [
+                    'assigned_factory_id' => null,
+                    'assignment_type' => null,
+                    'assigned_at' => null,
+                ]);
+            }
+        }
+
+        $this->activityLog->log(
+            'assignment_rejected',
+            'FactoryAssignment',
+            $assignment->id,
+            'Factory rejected assignment',
+            [
+                'factory_id' => $user->id,
+                'style_id' => $assignment->style_id,
+                'rejection_reason' => $request->rejection_reason,
+            ]
+        );
+
+        // Notify the assigner
+        if ($assignment->assignedBy && $assignment->purchaseOrder) {
+            SendPurchaseOrderNotification::dispatch(
+                $assignment->purchaseOrder,
+                $assignment->assignedBy,
+                'status_changed',
+                [
+                    'old_status' => 'invited',
+                    'new_status' => 'rejected',
+                    'changed_by' => $user->name,
+                    'style_number' => $assignment->style?->style_number,
+                    'rejection_reason' => $request->rejection_reason,
+                ]
+            );
+        }
+
+        return response()->json([
+            'message' => 'Assignment rejected',
+            'assignment' => $assignment->fresh(['style', 'purchaseOrder']),
+        ]);
+    }
+
+    /**
+     * Search styles for assignment (used by the assignment dialog)
+     */
+    public function searchStyles(Request $request)
+    {
+        $user = $request->user();
+        $search = $request->input('search', '');
+
+        $query = Style::with(['purchaseOrders:id,po_number,brand_name'])
+            ->select('id', 'style_number', 'description', 'quantity', 'status', 'assigned_factory_id', 'po_id');
+
+        // Role-based filtering
+        if ($user->hasRole('Importer')) {
+            $query->where(function ($q) use ($user) {
+                $q->where('created_by', $user->id)
+                  ->orWhereHas('purchaseOrders', function ($pq) use ($user) {
+                      $pq->where('created_by', $user->id);
+                  });
+            });
+        } elseif ($user->hasRole('Agency')) {
+            $query->where(function ($q) use ($user) {
+                $q->where('assigned_agency_id', $user->id)
+                  ->orWhereHas('purchaseOrders', function ($pq) use ($user) {
+                      $pq->where('agency_id', $user->id);
+                  });
+            });
+        }
+
+        // Search filter
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('style_number', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%")
+                  ->orWhereHas('purchaseOrders', function ($pq) use ($search) {
+                      $pq->where('po_number', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $styles = $query->orderBy('style_number', 'asc')
+            ->limit(50)
+            ->get()
+            ->map(function ($style) {
+                $po = $style->purchaseOrders->first() ?? $style->purchaseOrder;
+                return [
+                    'id' => $style->id,
+                    'style_number' => $style->style_number,
+                    'description' => $style->description,
+                    'quantity' => $style->quantity,
+                    'status' => $style->status,
+                    'assigned_factory_id' => $style->assigned_factory_id,
+                    'po_number' => $po?->po_number,
+                    'po_id' => $po?->id,
+                ];
+            });
+
+        return response()->json(['styles' => $styles]);
     }
 }
