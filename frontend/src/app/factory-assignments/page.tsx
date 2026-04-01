@@ -182,31 +182,40 @@ export default function FactoryAssignmentsPage() {
       .catch(() => setFactories([]));
   }, [authLoading, canAssign]);
 
-  // Search styles with debounce
-  useEffect(() => {
-    if (!styleSearch || styleSearch.length < 2) {
+  // Fetch styles - load all by default, filter on search
+  const fetchStyles = useCallback(async (search: string = '') => {
+    try {
+      setStyleSearchLoading(true);
+      const params: any = {};
+      if (search) params.search = search;
+      const response = await api.get<{ styles: StyleSearchResult[] }>(
+        '/factory-assignments/search-styles',
+        { params }
+      );
+      setStyleResults(response.data.styles || []);
+    } catch (error) {
+      console.error('Style search failed:', error);
       setStyleResults([]);
-      return;
+    } finally {
+      setStyleSearchLoading(false);
     }
+  }, []);
 
-    const timer = setTimeout(async () => {
-      try {
-        setStyleSearchLoading(true);
-        const response = await api.get<{ styles: StyleSearchResult[] }>(
-          '/factory-assignments/search-styles',
-          { params: { search: styleSearch } }
-        );
-        setStyleResults(response.data.styles || []);
-      } catch (error) {
-        console.error('Style search failed:', error);
-        setStyleResults([]);
-      } finally {
-        setStyleSearchLoading(false);
-      }
+  // Load all styles when dialog opens
+  useEffect(() => {
+    if (showAssignDialog) {
+      fetchStyles();
+    }
+  }, [showAssignDialog, fetchStyles]);
+
+  // Debounced search
+  useEffect(() => {
+    if (!showAssignDialog) return;
+    const timer = setTimeout(() => {
+      fetchStyles(styleSearch);
     }, 300);
-
     return () => clearTimeout(timer);
-  }, [styleSearch]);
+  }, [styleSearch, showAssignDialog, fetchStyles]);
 
   // Toggle style selection
   const toggleStyleSelection = (style: StyleSearchResult) => {
@@ -688,7 +697,7 @@ export default function FactoryAssignmentsPage() {
                     </Table>
                   </div>
                 )}
-                {styleSearch.length >= 2 && !styleSearchLoading && styleResults.length === 0 && (
+                {!styleSearchLoading && styleResults.length === 0 && (
                   <div className="text-sm text-muted-foreground py-2">No styles found</div>
                 )}
               </div>
