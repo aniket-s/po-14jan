@@ -75,6 +75,14 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+    if (error.response?.status === 403) {
+      // Permission denied - redirect to unauthorized page
+      if (typeof window !== 'undefined' &&
+          !window.location.pathname.includes('/unauthorized') &&
+          !window.location.pathname.includes('/login')) {
+        console.warn('Access denied: insufficient permissions');
+      }
+    }
     return Promise.reject(error);
   }
 );

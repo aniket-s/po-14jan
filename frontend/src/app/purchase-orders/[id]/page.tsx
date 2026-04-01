@@ -56,7 +56,7 @@ export default function PurchaseOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const poId = params.id as string;
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, can } = useAuth();
   const { getSetting, loading: settingsLoading } = useSystemSettings();
 
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null);
@@ -190,18 +190,22 @@ export default function PurchaseOrderDetailPage() {
 
   // Check if current user can create styles
   const canCreateStyle = () => {
+    if (!can('style.create')) {
+      return false;
+    }
+
     // Admins and importers can always create styles
-    if (hasRole('admin') || hasRole('importer')) {
+    if (hasRole('Super Admin') || hasRole('Importer')) {
       return true;
     }
 
     // Agencies can only create if the setting allows it
-    if (hasRole('agency')) {
+    if (hasRole('Agency')) {
       const agencyUploadEnabled = getSetting('agency_style_upload_enabled', true);
       return agencyUploadEnabled;
     }
 
-    // Default: allow
+    // Other roles with style.create permission
     return true;
   };
 
@@ -246,18 +250,22 @@ export default function PurchaseOrderDetailPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/purchase-orders/${poId}/edit`)}
-            >
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
-            </Button>
-            <Button variant="outline" size="sm">
-              <FileText className="mr-2 h-4 w-4" />
-              Export
-            </Button>
+            {can('po.edit') && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/purchase-orders/${poId}/edit`)}
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            )}
+            {can('po.export') && (
+              <Button variant="outline" size="sm">
+                <FileText className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            )}
             <Button
               variant="default"
               size="sm"
@@ -669,14 +677,16 @@ export default function PurchaseOrderDetailPage() {
                               )}
                             </TableCell>
                             <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDeleteStyle(style.id)}
-                                title="Remove style from PO"
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
+                              {can('style.edit') && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleDeleteStyle(style.id)}
+                                  title="Remove style from PO"
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))
@@ -745,14 +755,16 @@ export default function PurchaseOrderDetailPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleOpenAssignFactory(style)}
-                            >
-                              <Factory className="mr-2 h-4 w-4" />
-                              {style.pivot?.assignment_type ? 'Edit' : 'Assign'}
-                            </Button>
+                            {can('po.assign_factory') && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenAssignFactory(style)}
+                              >
+                                <Factory className="mr-2 h-4 w-4" />
+                                {style.pivot?.assignment_type ? 'Edit' : 'Assign'}
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
