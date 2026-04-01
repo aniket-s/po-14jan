@@ -278,7 +278,7 @@ class ProductionTrackingController extends Controller
         $tracking = ProductionTracking::with('style.purchaseOrder')->findOrFail($id);
 
         // Only admin or the submitter can delete
-        if (!$user->hasRole('admin') && $tracking->submitted_by !== $user->id) {
+        if (!$user->hasRole('Super Admin') && $tracking->submitted_by !== $user->id) {
             return response()->json([
                 'message' => 'You do not have permission to delete this production tracking',
             ], 403);
@@ -427,12 +427,12 @@ class ProductionTrackingController extends Controller
     private function canSubmitProductionUpdate(object $user, Style $style): bool
     {
         // Admin can always submit
-        if ($user->hasRole('admin')) {
+        if ($user->hasRole('Super Admin')) {
             return true;
         }
 
         // Check if user is factory role
-        if (!$user->hasRole('factory')) {
+        if (!$user->hasRole('Factory')) {
             return false;
         }
 

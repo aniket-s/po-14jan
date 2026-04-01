@@ -87,7 +87,7 @@ const trimSchema = z.object({
 type TrimFormData = z.infer<typeof trimSchema>;
 
 export default function TrimsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, can, loading: authLoading } = useAuth();
   const [trims, setTrims] = useState<TrimData[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
@@ -275,7 +275,7 @@ export default function TrimsPage() {
 
   if (authLoading || loading) {
     return (
-      <DashboardLayout>
+      <DashboardLayout requiredPermissions={['po.create', 'po.edit', 'style.create', 'style.edit', 'admin.configuration.view']} requireAll={false}>
         <div className="flex items-center justify-center h-64">
           <div className="text-muted-foreground">Loading...</div>
         </div>
@@ -284,7 +284,7 @@ export default function TrimsPage() {
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['po.create', 'po.edit', 'style.create', 'style.edit', 'admin.configuration.view']} requireAll={false}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -296,10 +296,12 @@ export default function TrimsPage() {
               Manage trims, labels, and packaging materials
             </p>
           </div>
-          <Button onClick={handleCreate}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Trim
-          </Button>
+          {can('admin.configuration.edit') && (
+            <Button onClick={handleCreate}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Trim
+            </Button>
+          )}
         </div>
 
         <Card>
@@ -372,21 +374,25 @@ export default function TrimsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(trim)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(trim.id)}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {can('admin.configuration.edit') && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEdit(trim)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(trim.id)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

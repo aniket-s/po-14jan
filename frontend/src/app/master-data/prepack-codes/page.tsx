@@ -27,7 +27,7 @@ const prepackSchema = z.object({
 });
 
 export default function PrepackCodesPage() {
-  const { loading: authLoading } = useAuth();
+  const { can, loading: authLoading } = useAuth();
   const [prepacks, setPrepacks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -137,9 +137,9 @@ export default function PrepackCodesPage() {
   const filtered = prepacks.filter(p => p.code.toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['po.create', 'po.edit', 'style.create', 'style.edit', 'admin.configuration.view']} requireAll={false}>
       <div className="space-y-6">
-        <div className="flex justify-between items-center"><div><h1 className="text-3xl font-bold">Prepack Codes</h1><p className="text-muted-foreground">Manage prepack configurations</p></div><Button onClick={handleCreate}><Plus className="mr-2 h-4 w-4" />Add Prepack</Button></div>
+        <div className="flex justify-between items-center"><div><h1 className="text-3xl font-bold">Prepack Codes</h1><p className="text-muted-foreground">Manage prepack configurations</p></div>{can('admin.configuration.edit') && (<Button onClick={handleCreate}><Plus className="mr-2 h-4 w-4" />Add Prepack</Button>)}</div>
         <Card><CardHeader><CardTitle>Search</CardTitle></CardHeader><CardContent><div className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-8" /></div></CardContent></Card>
         <Card>
           <CardHeader>
@@ -176,12 +176,16 @@ export default function PrepackCodesPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => handleEdit(p)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {can('admin.configuration.edit') && (
+                            <>
+                              <Button variant="ghost" size="icon" onClick={() => handleEdit(p)}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
