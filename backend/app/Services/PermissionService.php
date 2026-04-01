@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Models\FactoryAssignment;
 use Illuminate\Database\Eloquent\Model;
 
 class PermissionService
@@ -22,10 +23,20 @@ class PermissionService
             return true;
         }
 
+        // Read-only view permission (Viewer, Quality Inspector) — can see all POs
+        if ($user->hasPermissionTo('po.view')) {
+            return true;
+        }
+
         // Check if user has permission to view own POs
         if ($user->hasPermissionTo('po.view_own')) {
             // User is the importer
             if ($po->importer_id === $user->id) {
+                return true;
+            }
+
+            // User is the PO creator
+            if ($po->creator_id === $user->id) {
                 return true;
             }
 
@@ -34,13 +45,26 @@ class PermissionService
                 return true;
             }
 
-            // User is assigned factory for any style in this PO
+            // User is assigned factory for any style in this PO (via pivot)
             if ($po->styles()->where('purchase_order_style.assigned_factory_id', $user->id)->exists()) {
+                return true;
+            }
+
+            // User has an accepted factory assignment for this PO (via invitation)
+            if ($po->factoryAssignments()->where('factory_id', $user->id)->where('status', 'accepted')->exists()) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Alias for canAccessPO() - used by Production, Shipment, and QualityInspection controllers.
+     */
+    public function canAccessPurchaseOrder(User $user, $po): bool
+    {
+        return $this->canAccessPO($user, $po);
     }
 
     /**
@@ -50,6 +74,11 @@ class PermissionService
     {
         // Super admin can access everything
         if ($user->hasRole('Super Admin')) {
+            return true;
+        }
+
+        // Read-only view permission (Viewer, Quality Inspector) — can see all styles
+        if ($user->hasPermissionTo('style.view')) {
             return true;
         }
 
@@ -63,9 +92,16 @@ class PermissionService
             return true;
         }
 
+        // Style creator
+        if ($style->created_by === $user->id) {
+            return true;
+        }
+
         // Check via direct PO relationship
         if ($style->purchaseOrder) {
-            return $this->canAccessPO($user, $style->purchaseOrder);
+            if ($this->canAccessPO($user, $style->purchaseOrder)) {
+                return true;
+            }
         }
 
         // Check via many-to-many PO relationship (pivot table)
@@ -75,11 +111,6 @@ class PermissionService
                     return true;
                 }
             }
-        }
-
-        // Style creator
-        if ($style->created_by === $user->id) {
-            return true;
         }
 
         return false;
@@ -175,21 +206,35 @@ class PermissionService
             return \App\Models\PurchaseOrder::pluck('id')->toArray();
         }
 
+        // Read-only view permission (Viewer, Quality Inspector) — can see all POs
+        if ($user->hasPermissionTo('po.view')) {
+            return \App\Models\PurchaseOrder::pluck('id')->toArray();
+        }
+
         $poIds = [];
 
         if ($user->hasPermissionTo('po.view_own')) {
             // POs where user is importer
             $importerPOs = \App\Models\PurchaseOrder::where('importer_id', $user->id)->pluck('id')->toArray();
 
+            // POs where user is creator
+            $creatorPOs = \App\Models\PurchaseOrder::where('creator_id', $user->id)->pluck('id')->toArray();
+
             // POs where user is agency
             $agencyPOs = \App\Models\PurchaseOrder::where('agency_id', $user->id)->pluck('id')->toArray();
 
-            // POs where user is assigned factory
+            // POs where user is assigned factory (via pivot table)
             $factoryPOs = \App\Models\PurchaseOrder::whereHas('styles', function ($query) use ($user) {
                 $query->where('purchase_order_style.assigned_factory_id', $user->id);
             })->pluck('id')->toArray();
 
-            $poIds = array_unique(array_merge($importerPOs, $agencyPOs, $factoryPOs));
+            // POs where user has an accepted factory assignment (via invitation)
+            $factoryAssignmentPOs = FactoryAssignment::where('factory_id', $user->id)
+                ->where('status', 'accepted')
+                ->pluck('purchase_order_id')
+                ->toArray();
+
+            $poIds = array_unique(array_merge($importerPOs, $creatorPOs, $agencyPOs, $factoryPOs, $factoryAssignmentPOs));
         }
 
         return $poIds;

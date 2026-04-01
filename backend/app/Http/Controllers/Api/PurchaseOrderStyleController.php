@@ -9,12 +9,20 @@ use App\Models\SampleType;
 use App\Models\Style;
 use App\Models\StyleSampleProcess;
 use App\Models\User;
+use App\Services\PermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 
 class PurchaseOrderStyleController extends Controller
 {
+    protected PermissionService $permissionService;
+
+    public function __construct(PermissionService $permissionService)
+    {
+        $this->permissionService = $permissionService;
+    }
+
     /**
      * Get all styles associated with a purchase order
      *
@@ -22,10 +30,15 @@ class PurchaseOrderStyleController extends Controller
      */
     public function index(Request $request, $poId)
     {
+        $user = $request->user();
         $po = PurchaseOrder::findOrFail($poId);
 
-        // Check permissions
-        // Add permission checks as needed
+        // Check if the user can access this PO
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json([
+                'message' => 'You do not have permission to view styles for this purchase order',
+            ], 403);
+        }
 
         $query = $po->styles();
 

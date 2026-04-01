@@ -9,11 +9,23 @@ use Illuminate\Auth\Access\Response;
 class PurchaseOrderPolicy
 {
     /**
+     * Super Admin bypasses all policy checks.
+     */
+    public function before(User $user, string $ability): bool|null
+    {
+        if ($user->hasRole('Super Admin')) {
+            return true;
+        }
+
+        return null;
+    }
+
+    /**
      * Determine whether the user can view any models.
      */
     public function viewAny(User $user): bool
     {
-        return $user->can('po.view') || $user->can('po.view_all');
+        return $user->can('po.view') || $user->can('po.view_all') || $user->can('po.view_own');
     }
 
     /**
@@ -21,19 +33,32 @@ class PurchaseOrderPolicy
      */
     public function view(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        // Can view all POs
-        if ($user->can('po.view_all')) {
+        // Can view all POs (read-only roles like Viewer, Quality Inspector)
+        if ($user->can('po.view_all') || $user->can('po.view')) {
             return true;
         }
 
-        // Can view own POs
+        // Can view own POs - check all ownership/assignment relationships
         if ($user->can('po.view_own')) {
-            return $purchaseOrder->creator_id === $user->id;
-        }
+            // User is the importer/creator
+            if ($purchaseOrder->importer_id === $user->id || $purchaseOrder->creator_id === $user->id) {
+                return true;
+            }
 
-        // General view permission
-        if ($user->can('po.view')) {
-            return true;
+            // User is the assigned agency
+            if ($purchaseOrder->agency_id === $user->id) {
+                return true;
+            }
+
+            // User is assigned factory for any style in this PO
+            if ($purchaseOrder->styles()->where('purchase_order_style.assigned_factory_id', $user->id)->exists()) {
+                return true;
+            }
+
+            // User has an accepted factory assignment for this PO
+            if ($purchaseOrder->factoryAssignments()->where('factory_id', $user->id)->where('status', 'accepted')->exists()) {
+                return true;
+            }
         }
 
         return false;
@@ -106,7 +131,8 @@ class PurchaseOrderPolicy
         // Importer or agency can assign factory
         if ($user->hasRole(['Importer', 'Agency'])) {
             return $purchaseOrder->creator_id === $user->id ||
-                   $purchaseOrder->assigned_agency_id === $user->id;
+                   $purchaseOrder->importer_id === $user->id ||
+                   $purchaseOrder->agency_id === $user->id;
         }
 
         return true;
@@ -145,8 +171,9 @@ class PurchaseOrderPolicy
             return false;
         }
 
-        // Only PO creator or assigned agency can send invitations
+        // Only PO creator/importer or assigned agency can send invitations
         return $purchaseOrder->creator_id === $user->id ||
-               $purchaseOrder->assigned_agency_id === $user->id;
+               $purchaseOrder->importer_id === $user->id ||
+               $purchaseOrder->agency_id === $user->id;
     }
 }

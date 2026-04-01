@@ -808,14 +808,14 @@ class PurchaseOrderController extends Controller
             ], 403);
         }
 
-        $total = $query->count();
-        $byStatus = DB::table('purchase_orders')
+        $total = (clone $query)->count();
+        $byStatus = (clone $query)
             ->select('status', DB::raw('count(*) as count'))
             ->groupBy('status')
             ->get();
 
-        $totalValue = $query->sum('total_value');
-        $totalQuantity = $query->sum('total_quantity');
+        $totalValue = (clone $query)->sum('total_value');
+        $totalQuantity = (clone $query)->sum('total_quantity');
 
         return response()->json([
             'statistics' => [
