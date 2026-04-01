@@ -53,8 +53,36 @@ class PermissionService
             return true;
         }
 
-        // Check via PO access
-        return $this->canAccessPO($user, $style->purchaseOrder);
+        // Factory assigned directly to this style
+        if ($style->assigned_factory_id === $user->id) {
+            return true;
+        }
+
+        // Agency assigned directly to this style
+        if ($style->assigned_agency_id === $user->id) {
+            return true;
+        }
+
+        // Check via direct PO relationship
+        if ($style->purchaseOrder) {
+            return $this->canAccessPO($user, $style->purchaseOrder);
+        }
+
+        // Check via many-to-many PO relationship (pivot table)
+        if ($style->purchaseOrders()->exists()) {
+            foreach ($style->purchaseOrders as $po) {
+                if ($this->canAccessPO($user, $po)) {
+                    return true;
+                }
+            }
+        }
+
+        // Style creator
+        if ($style->created_by === $user->id) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
