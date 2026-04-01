@@ -259,7 +259,7 @@ export default function QualityInspectionsPage() {
   const aqlLevels = [0.010, 0.015, 0.025, 0.040, 0.065, 0.10, 0.15, 0.25, 0.40, 0.65, 1.0, 1.5, 2.5, 4.0, 6.5, 10.0];
 
   return (
-    <DashboardLayout requiredPermissions={['quality_inspection.view', 'quality.view_inspection', 'quality.view_all_inspections', 'quality_inspection.create', 'quality.create_inspection']} requireAll={false}>
+    <DashboardLayout requiredPermissions={['quality.view_inspection', 'quality.view_all_inspections', 'quality.create_inspection']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

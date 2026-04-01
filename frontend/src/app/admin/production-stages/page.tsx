@@ -88,7 +88,7 @@ export default function ProductionStagesManagementPage() {
   // Check permissions
   useEffect(() => {
     if (authLoading) return;
-    if (!can('admin.production_stages.view')) {
+    if (!can('admin.configuration.view')) {
       router.push('/dashboard');
     }
   }, [can, router, authLoading]);
@@ -239,7 +239,7 @@ export default function ProductionStagesManagementPage() {
               Configure production stages and weight percentages for progress tracking
             </p>
           </div>
-          {can('admin.production_stages.create') && (
+          {can('admin.configuration.edit') && (
             <Button onClick={() => setShowCreateDialog(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Create Production Stage
@@ -389,7 +389,7 @@ export default function ProductionStagesManagementPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          {can('admin.production_stages.edit') && (
+                          {can('admin.configuration.edit') && (
                             <>
                               <Button
                                 variant="ghost"
@@ -416,7 +416,7 @@ export default function ProductionStagesManagementPage() {
                               </Button>
                             </>
                           )}
-                          {can('admin.production_stages.delete') && (
+                          {can('admin.configuration.edit') && (
                             <Button
                               variant="ghost"
                               size="sm"

@@ -103,7 +103,7 @@ export default function SampleTypesManagementPage() {
   // Check permissions
   useEffect(() => {
     if (authLoading) return;
-    if (!can('admin.sample_types.view')) {
+    if (!can('admin.configuration.view')) {
       router.push('/dashboard');
     }
   }, [can, router, authLoading]);
@@ -252,7 +252,7 @@ export default function SampleTypesManagementPage() {
               Configure sample types and workflow prerequisites
             </p>
           </div>
-          {can('admin.sample_types.create') && (
+          {can('admin.configuration.edit') && (
             <Button onClick={() => setShowCreateDialog(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Create Sample Type
@@ -387,7 +387,7 @@ export default function SampleTypesManagementPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          {can('admin.sample_types.edit') && (
+                          {can('admin.configuration.edit') && (
                             <>
                               <Button
                                 variant="ghost"
@@ -414,7 +414,7 @@ export default function SampleTypesManagementPage() {
                               </Button>
                             </>
                           )}
-                          {can('admin.sample_types.delete') && (
+                          {can('admin.configuration.edit') && (
                             <Button
                               variant="ghost"
                               size="sm"

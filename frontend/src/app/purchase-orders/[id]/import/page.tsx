@@ -400,7 +400,7 @@ export default function POImportPage() {
   const requiredMappedCount = requiredFields.filter(f => columnMapping[f.key] !== null && columnMapping[f.key] !== undefined).length;
 
   return (
-    <DashboardLayout requiredPermissions={['style.create']} requireAll={false}>
+    <DashboardLayout requiredPermissions={['po.import', 'style.create']} requireAll={false}>
       <div className="space-y-6">
         {/* Page Header */}
         <div className="flex items-center justify-between">
