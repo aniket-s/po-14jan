@@ -581,6 +581,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/invitations/{id}/reject', [InvitationController::class, 'rejectById']);
     });
     Route::get('/factory-assignments', [FactoryAssignmentController::class, 'indexAll']);
+    Route::get('/factory-assignments/search-styles', [FactoryAssignmentController::class, 'searchStyles']);
+    Route::post('/factory-assignments/bulk-assign', [FactoryAssignmentController::class, 'bulkAssign']);
+    Route::post('/factory-assignments/{id}/accept', [FactoryAssignmentController::class, 'accept']);
+    Route::post('/factory-assignments/{id}/reject', [FactoryAssignmentController::class, 'reject']);
     Route::get('/factories', [\App\Http\Controllers\Api\FactoryController::class, 'index']);
 
     // Aggregate Shipping Approvals (cross-PO, with filters)

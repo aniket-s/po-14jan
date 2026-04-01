@@ -10,23 +10,36 @@ class FactoryAssignment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'purchase_order_id',
         'style_id',
         'factory_id',
         'invitation_id',
+        'assigned_by',
+        'assigned_at',
         'assignment_type',
         'status',
         'accepted_at',
         'rejected_at',
         'rejection_reason',
         'special_instructions',
+        'notes',
         'expected_completion_date',
     ];
 
     protected $casts = [
+        'assigned_at' => 'datetime',
         'accepted_at' => 'datetime',
         'rejected_at' => 'datetime',
         'expected_completion_date' => 'date',
     ];
+
+    /**
+     * Get the purchase order
+     */
+    public function purchaseOrder()
+    {
+        return $this->belongsTo(PurchaseOrder::class);
+    }
 
     /**
      * Get the style
@@ -42,6 +55,14 @@ class FactoryAssignment extends Model
     public function factory()
     {
         return $this->belongsTo(User::class, 'factory_id');
+    }
+
+    /**
+     * Get the user who assigned
+     */
+    public function assignedBy()
+    {
+        return $this->belongsTo(User::class, 'assigned_by');
     }
 
     /**
