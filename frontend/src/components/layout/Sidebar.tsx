@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -293,7 +294,7 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user, can, canAny } = useAuth();
+  const { user, loading, can, canAny } = useAuth();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   const hasPermission = (item: NavItem): boolean => {
@@ -406,22 +407,38 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-          {filteredNavItems.map((item) => (
-            <NavItemComponent key={item.href} item={item} />
-          ))}
+          {loading ? (
+            Array.from({ length: 10 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full rounded-lg" />
+            ))
+          ) : (
+            filteredNavItems.map((item) => (
+              <NavItemComponent key={item.href} item={item} />
+            ))
+          )}
         </nav>
 
         {/* User Info */}
         <div className="border-t p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Users className="h-5 w-5" />
+          {loading ? (
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="flex-1">
+                <Skeleton className="h-4 w-24 mb-1" />
+                <Skeleton className="h-3 w-32" />
+              </div>
             </div>
-            <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium">{user?.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <Users className="h-5 w-5" />
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <p className="truncate text-sm font-medium">{user?.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </aside>
