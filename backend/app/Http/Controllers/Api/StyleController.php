@@ -200,6 +200,13 @@ class StyleController extends Controller
             ], 403);
         }
 
+        // Check access - user must have access to this specific style
+        if (!$this->permissionService->canAccessStyle($user, $style)) {
+            return response()->json([
+                'message' => 'You do not have permission to edit this style',
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'style_number' => 'required|string|max:100|unique:styles,style_number,' . $id,
             'description' => 'nullable|string',
@@ -354,6 +361,13 @@ class StyleController extends Controller
         if (!$user->hasPermissionTo('style.delete')) {
             return response()->json([
                 'message' => 'You do not have permission to delete styles',
+            ], 403);
+        }
+
+        // Check access - user must have access to this specific style
+        if (!$this->permissionService->canAccessStyle($user, $style)) {
+            return response()->json([
+                'message' => 'You do not have permission to delete this style',
             ], 403);
         }
 

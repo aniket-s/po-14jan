@@ -60,6 +60,14 @@ class PermissionService
     }
 
     /**
+     * Alias for canAccessPO() - used by Production, Shipment, and QualityInspection controllers.
+     */
+    public function canAccessPurchaseOrder(User $user, $po): bool
+    {
+        return $this->canAccessPO($user, $po);
+    }
+
+    /**
      * Check if user can access a specific style
      */
     public function canAccessStyle(User $user, $style): bool
