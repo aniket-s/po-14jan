@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Loader2, CheckCircle, XCircle, Clock, PackageCheck, AlertCircle, Upload } from 'lucide-react';
+import { Plus, Search, Loader2, CheckCircle, XCircle, Clock, PackageCheck, AlertCircle, Upload, RefreshCw, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -378,6 +378,38 @@ export default function SamplesPage() {
 
   const canApproveAsImporter = (sample: Sample) => {
     return hasRole('Importer') && sample.agency_status === 'approved' && sample.importer_status === 'pending';
+  };
+
+  // Factory can resubmit rejected samples
+  const canResubmit = (sample: Sample) => {
+    return (hasRole('Factory') || sample.submitted_by?.id === user?.id) && sample.final_status === 'rejected';
+  };
+
+  // Factory can delete own pending samples (not yet reviewed)
+  const canDelete = (sample: Sample) => {
+    return (hasRole('Factory') || sample.submitted_by?.id === user?.id) && sample.agency_status === 'pending';
+  };
+
+  const handleResubmit = async (sample: Sample) => {
+    if (!confirm('Resubmit this sample? It will be sent for approval again.')) return;
+    try {
+      await api.post(`/samples/${sample.id}/resubmit`);
+      fetchSamples();
+    } catch (error: any) {
+      console.error('Failed to resubmit:', error);
+      alert(error.response?.data?.message || 'Failed to resubmit sample');
+    }
+  };
+
+  const handleDeleteSample = async (sample: Sample) => {
+    if (!confirm('Delete this sample? This action cannot be undone.')) return;
+    try {
+      await api.delete(`/samples/${sample.id}`);
+      fetchSamples();
+    } catch (error: any) {
+      console.error('Failed to delete:', error);
+      alert(error.response?.data?.message || 'Failed to delete sample');
+    }
   };
 
   const getSampleTypeInfo = (sampleTypeId: number) => {
@@ -813,6 +845,28 @@ export default function SamplesPage() {
                                   Reject
                                 </Button>
                               </>
+                            )}
+                            {canResubmit(sample) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleResubmit(sample)}
+                                className="text-blue-600 hover:text-blue-700"
+                              >
+                                <RefreshCw className="mr-1 h-4 w-4" />
+                                Resubmit
+                              </Button>
+                            )}
+                            {canDelete(sample) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteSample(sample)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="mr-1 h-4 w-4" />
+                                Delete
+                              </Button>
                             )}
                           </div>
                         </TableCell>

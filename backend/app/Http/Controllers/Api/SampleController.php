@@ -878,4 +878,133 @@ class SampleController extends Controller
             ],
         ], 201);
     }
+
+    /**
+     * Get a single sample (aggregate endpoint)
+     */
+    public function showSample(Request $request, $id)
+    {
+        $user = $request->user();
+        $sample = Sample::with([
+            'style.purchaseOrder',
+            'sampleType',
+            'submittedBy',
+            'agencyApprovedBy',
+            'importerApprovedBy',
+        ])->findOrFail($id);
+
+        if (!$this->permissionService->canAccessStyle($user, $sample->style)) {
+            return response()->json(['message' => 'You do not have permission to view this sample'], 403);
+        }
+
+        return response()->json(['sample' => $sample]);
+    }
+
+    /**
+     * Resubmit a rejected sample (factory resubmits with updated data)
+     */
+    public function resubmit(Request $request, $id)
+    {
+        $user = $request->user();
+
+        if (!$user->hasAnyPermission(['sample.create', 'sample.submit'])) {
+            return response()->json(['message' => 'You do not have permission to resubmit samples'], 403);
+        }
+
+        $sample = Sample::with(['style.purchaseOrder', 'sampleType'])->findOrFail($id);
+
+        if (!$this->permissionService->canAccessStyle($user, $sample->style)) {
+            return response()->json(['message' => 'You do not have permission to resubmit this sample'], 403);
+        }
+
+        // Only rejected samples can be resubmitted
+        if ($sample->final_status !== 'rejected') {
+            return response()->json([
+                'message' => 'Only rejected samples can be resubmitted (current status: ' . $sample->final_status . ')',
+            ], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'notes' => 'nullable|string',
+            'images' => 'nullable|array',
+            'images.*' => 'string',
+            'attachment_paths' => 'nullable|array',
+            'attachment_paths.*' => 'string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        // Reset the sample statuses and update with new data
+        $sample->update([
+            'submitted_by' => $user->id,
+            'submission_date' => now(),
+            'notes' => $request->notes ?? $sample->notes,
+            'images' => $request->has('images') ? $request->images : $sample->images,
+            'attachment_paths' => $request->has('attachment_paths') ? $request->attachment_paths : $sample->attachment_paths,
+            'agency_status' => 'pending',
+            'agency_approved_by' => null,
+            'agency_approved_at' => null,
+            'agency_rejection_reason' => null,
+            'importer_status' => 'pending',
+            'importer_approved_by' => null,
+            'importer_approved_at' => null,
+            'importer_rejection_reason' => null,
+            'final_status' => 'pending',
+        ]);
+
+        $this->sendSampleSubmittedNotifications($sample, $sample->style);
+
+        $this->activityLog->log(
+            'sample_resubmitted',
+            'Sample',
+            $sample->id,
+            'Sample resubmitted after rejection',
+            [
+                'sample_type' => $sample->sampleType->name,
+                'style_number' => $sample->style->style_number,
+                'sample_reference' => $sample->sample_reference,
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Sample resubmitted successfully',
+            'sample' => $sample->fresh(['style', 'sampleType', 'submittedBy']),
+        ]);
+    }
+
+    /**
+     * Delete a sample (only own pending samples)
+     */
+    public function destroySample(Request $request, $id)
+    {
+        $user = $request->user();
+
+        $sample = Sample::with(['style', 'sampleType'])->findOrFail($id);
+
+        // Must be the one who submitted it
+        if ($sample->submitted_by !== $user->id && !$user->hasRole('Super Admin')) {
+            return response()->json(['message' => 'You can only delete your own samples'], 403);
+        }
+
+        // Can only delete pending samples (not yet approved/rejected at any level)
+        if ($sample->agency_status !== 'pending') {
+            return response()->json([
+                'message' => 'Cannot delete this sample as it has already been reviewed',
+            ], 422);
+        }
+
+        $sampleData = [
+            'sample_type' => $sample->sampleType?->name,
+            'style_number' => $sample->style?->style_number,
+            'sample_reference' => $sample->sample_reference,
+        ];
+
+        $this->activityLog->logDeleted('Sample', $sample->id, $sampleData);
+
+        $sample->delete();
+
+        return response()->json(['message' => 'Sample deleted successfully']);
+    }
 }
