@@ -52,7 +52,7 @@ class SamplePolicy
      */
     public function create(User $user): bool
     {
-        return $user->can('sample.create');
+        return $user->can('sample.create') || $user->can('sample.submit');
     }
 
     /**

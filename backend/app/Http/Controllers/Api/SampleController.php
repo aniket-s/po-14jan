@@ -171,7 +171,7 @@ class SampleController extends Controller
             ], 404);
         }
 
-        if (!$user->hasPermissionTo('sample.create')) {
+        if (!$user->hasAnyPermission(['sample.create', 'sample.submit'])) {
             return response()->json([
                 'message' => 'You do not have permission to submit samples',
             ], 403);
@@ -801,7 +801,7 @@ class SampleController extends Controller
 
         $style = Style::with('purchaseOrder')->findOrFail($request->style_id);
 
-        if (!$user->hasPermissionTo('sample.create')) {
+        if (!$user->hasAnyPermission(['sample.create', 'sample.submit'])) {
             return response()->json([
                 'message' => 'You do not have permission to submit samples',
             ], 403);
