@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { StatCardsSkeleton, FilterBarSkeleton, NotificationListSkeleton } from '@/components/skeletons';
 
 export default function NotificationsPage() {
   const {
@@ -209,9 +210,7 @@ export default function NotificationsPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              </div>
+              <NotificationListSkeleton count={5} />
             ) : filteredNotifications.length === 0 ? (
               <div className="text-center py-12">
                 <Bell className="mx-auto h-12 w-12 text-muted-foreground opacity-50 mb-4" />

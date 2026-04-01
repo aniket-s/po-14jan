@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dialog';
 import { Plus, Search, Edit, Trash2, Package } from 'lucide-react';
 import api from '@/lib/api';
+import { MasterDataPageSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -198,7 +199,28 @@ export default function BrandsPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-8">Loading...</div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><div className="h-4 w-24 animate-pulse rounded bg-muted" /></TableCell>
+                      <TableCell><div className="h-4 w-16 animate-pulse rounded bg-muted" /></TableCell>
+                      <TableCell><div className="h-4 w-40 animate-pulse rounded bg-muted" /></TableCell>
+                      <TableCell><div className="h-5 w-14 animate-pulse rounded-full bg-muted" /></TableCell>
+                      <TableCell className="text-right"><div className="h-4 w-16 animate-pulse rounded bg-muted ml-auto" /></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             ) : filteredBrands.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 No brands found. Click "Add Brand" to create one.

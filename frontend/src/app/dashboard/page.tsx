@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
+import { DashboardPageSkeleton } from '@/components/skeletons';
 
 interface RecentOrder {
   id: number;
@@ -115,12 +116,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex h-96 items-center justify-center">
-          <div className="text-center">
-            <div className="h-16 w-16 animate-spin rounded-full border-b-2 border-t-2 border-primary"></div>
-            <p className="mt-4 text-muted-foreground">Loading dashboard...</p>
-          </div>
-        </div>
+        <DashboardPageSkeleton />
       </DashboardLayout>
     );
   }

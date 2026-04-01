@@ -31,6 +31,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Search, Edit, Trash2, Shield, Users } from 'lucide-react';
 import api from '@/lib/api';
+import { ListPageSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -264,9 +265,7 @@ export default function RolesManagementPage() {
   if (loading) {
     return (
       <DashboardLayout requiredPermissions={['admin.roles.view']} requireAll={false}>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
+        <ListPageSkeleton statCards={4} filterCount={1} columns={7} rows={5} />
       </DashboardLayout>
     );
   }

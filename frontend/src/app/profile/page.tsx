@@ -16,6 +16,7 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar } from '@/components/ui/avatar';
 import { User, Mail, Building2, Shield, Calendar, Edit, Save, X } from 'lucide-react';
 import api from '@/lib/api';
+import { FormSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -164,7 +165,11 @@ export default function ProfilePage() {
   };
 
   if (!user) {
-    return null;
+    return (
+      <DashboardLayout>
+        <FormSkeleton fields={6} />
+      </DashboardLayout>
+    );
   }
 
   return (

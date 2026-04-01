@@ -16,6 +16,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Loader2, Save } from 'lucide-react';
 import api from '@/lib/api';
+import { FormSkeleton } from '@/components/skeletons';
 import { PurchaseOrder } from '@/types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -354,9 +355,7 @@ export default function EditPurchaseOrderPage() {
   if (loading) {
     return (
       <DashboardLayout requiredPermissions={['po.edit']} requireAll={false}>
-        <div className="flex h-96 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
+        <FormSkeleton fields={10} />
       </DashboardLayout>
     );
   }

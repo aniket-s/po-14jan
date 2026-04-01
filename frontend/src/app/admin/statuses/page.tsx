@@ -53,6 +53,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import api from '@/lib/api';
+import { ListPageSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -270,9 +271,7 @@ export default function StatusManagementPage() {
         requiredPermissions={['admin.statuses.view', 'admin.statuses.edit']}
         requireAll={false}
       >
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
+        <ListPageSkeleton statCards={4} filterCount={0} columns={6} rows={5} />
       </DashboardLayout>
     );
   }

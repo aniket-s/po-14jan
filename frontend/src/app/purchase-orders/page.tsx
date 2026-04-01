@@ -35,6 +35,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Plus, Search, Eye, Edit, Trash2, FileDown, FileUp, FileText, Loader2, List, Sheet } from 'lucide-react';
 import api from '@/lib/api';
+import { TableSkeleton } from '@/components/skeletons';
 import { PurchaseOrder, PaginatedResponse } from '@/types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -1176,9 +1177,7 @@ export default function PurchaseOrdersPage() {
         <Card>
               <CardContent className="p-0">
                 {loading ? (
-                  <div className="flex h-96 items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
+                  <TableSkeleton columns={6} rows={5} hasHeader={false} />
                 ) : (
                   <Table>
                     <TableHeader>

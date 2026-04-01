@@ -83,10 +83,18 @@ export function PoListSpreadsheetView({ searchTerm, onBack }: PoListSpreadsheetV
 
   if (loading && rows.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full w-full bg-white">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-[#217346]" />
-          <span className="text-sm text-gray-500">Loading purchase orders...</span>
+      <div className="flex flex-col h-full w-full bg-white">
+        <div className="h-10 border-b bg-gray-50 animate-pulse" />
+        <div className="h-8 border-b bg-gray-50 animate-pulse" />
+        <div className="flex-1 p-0">
+          <div className="grid grid-cols-6 gap-px bg-gray-200">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-8 bg-gray-100 animate-pulse" />
+            ))}
+            {Array.from({ length: 30 }).map((_, i) => (
+              <div key={i} className="h-7 bg-white animate-pulse" />
+            ))}
+          </div>
         </div>
       </div>
     );

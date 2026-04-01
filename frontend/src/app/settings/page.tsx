@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Settings, Bell, Globe, Palette, Shield, Save } from 'lucide-react';
+import { FormSkeleton } from '@/components/skeletons';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -49,6 +50,14 @@ export default function SettingsPage() {
       router.push('/login');
     }
   }, [user, router]);
+
+  if (!user) {
+    return (
+      <DashboardLayout>
+        <FormSkeleton fields={8} />
+      </DashboardLayout>
+    );
+  }
 
   const handleSave = async () => {
     try {

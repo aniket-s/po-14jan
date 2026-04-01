@@ -40,6 +40,7 @@ import {
   ListCheck,
 } from 'lucide-react';
 import api from '@/lib/api';
+import { DetailPageSkeleton } from '@/components/skeletons';
 import { PurchaseOrder, Style } from '@/types';
 import { StyleSelectorDialog } from '@/components/purchase-orders/StyleSelectorDialog';
 import { AssignmentSelector } from '@/components/styles/AssignmentSelector';
@@ -212,9 +213,7 @@ export default function PurchaseOrderDetailPage() {
   if (loading) {
     return (
       <DashboardLayout requiredPermissions={['po.view', 'po.view_all', 'po.view_own']} requireAll={false}>
-        <div className="flex h-96 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
+        <DetailPageSkeleton />
       </DashboardLayout>
     );
   }

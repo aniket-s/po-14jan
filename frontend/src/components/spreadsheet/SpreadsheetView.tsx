@@ -150,10 +150,19 @@ export function SpreadsheetView({ poId }: SpreadsheetViewProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen bg-white">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-[#217346]" />
-          <span className="text-sm text-gray-500">Loading spreadsheet...</span>
+      <div className="flex flex-col h-screen w-screen bg-white">
+        <div className="h-10 border-b bg-gray-50 animate-pulse" />
+        <div className="h-8 border-b bg-gray-50 animate-pulse" />
+        <div className="flex-1 p-0">
+          <div className="grid grid-cols-8 gap-px bg-gray-200">
+            <div className="h-8 bg-gray-100 animate-pulse" />
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="h-8 bg-gray-50 animate-pulse" />
+            ))}
+            {Array.from({ length: 40 }).map((_, i) => (
+              <div key={i} className="h-7 bg-white animate-pulse" />
+            ))}
+          </div>
         </div>
       </div>
     );
