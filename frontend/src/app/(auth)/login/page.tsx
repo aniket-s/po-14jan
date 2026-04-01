@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -11,8 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { authService } from '@/lib/authService';
-import { AxiosError } from 'axios';
+import { useAuth } from '@/contexts/AuthContext';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -23,7 +21,7 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const router = useRouter();
+  const { login: authLogin, error: authError, clearError } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,19 +36,14 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true);
     setError(null);
+    clearError();
 
     try {
-      const response = await authService.login(data);
-
-      // Store the token
-      localStorage.setItem('auth_token', response.token);
-
-      // Use window.location.href instead of router.push to force a full page reload
-      // This ensures AuthContext loads the user before ProtectedRoute checks authentication
-      window.location.href = '/dashboard';
-    } catch (err) {
-      const axiosError = err as AxiosError<{ message: string }>;
-      setError(axiosError.response?.data?.message || 'Login failed. Please try again.');
+      await authLogin(data);
+      // AuthContext.login() stores the token, sets user state, and navigates to /dashboard
+    } catch (err: any) {
+      const message = err?.response?.data?.message || authError || 'Login failed. Please try again.';
+      setError(message);
       setIsLoading(false);
     }
   };
