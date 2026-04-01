@@ -85,10 +85,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
-      fetchDashboardStats();
-    }
-  }, [user]);
+    fetchDashboardStats();
+  }, []);
 
   const fetchDashboardStats = async () => {
     try {
