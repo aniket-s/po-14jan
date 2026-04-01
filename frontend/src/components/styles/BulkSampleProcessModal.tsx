@@ -132,10 +132,13 @@ export function BulkSampleProcessModal({
         .filter(t => !t.is_custom)
         .map(t => t.id);
 
-      await api.post('/styles/bulk-assign-sample-processes', {
-        style_ids: selectedStyleIds,
-        sample_type_ids: sampleTypeIds,
-      });
+      // Only call bulk-assign if there are standard (non-custom) types
+      if (sampleTypeIds.length > 0) {
+        await api.post('/styles/bulk-assign-sample-processes', {
+          style_ids: selectedStyleIds,
+          sample_type_ids: sampleTypeIds,
+        });
+      }
 
       // Handle custom types separately if needed
       for (const customType of selectedTypes.filter(t => t.is_custom)) {

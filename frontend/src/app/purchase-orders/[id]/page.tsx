@@ -482,7 +482,7 @@ export default function PurchaseOrderDetailPage() {
                         <div className="space-y-1">
                           <p className="text-xs text-muted-foreground">Lab Dip Submission</p>
                           <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.lab_dip_submission)}</p>
-                          <p className="text-[10px] text-muted-foreground/70">PO Date + 5 days</p>
+                          <p className="text-[10px] text-muted-foreground/70">PO Date + 7 days</p>
                         </div>
                       )}
                       {purchaseOrder.sample_schedule.fit_sample_submission && (
@@ -496,7 +496,7 @@ export default function PurchaseOrderDetailPage() {
                         <div className="space-y-1">
                           <p className="text-xs text-muted-foreground">Trim Approvals</p>
                           <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.trim_approvals)}</p>
-                          <p className="text-[10px] text-muted-foreground/70">PO Date + 7 days</p>
+                          <p className="text-[10px] text-muted-foreground/70">PO Date + 10 days</p>
                         </div>
                       )}
                       {purchaseOrder.sample_schedule.first_proto_submission && (
@@ -795,7 +795,7 @@ export default function PurchaseOrderDetailPage() {
                               <TableRow>
                                 <TableCell className="font-medium">Lab Dip Submission</TableCell>
                                 <TableCell>{formatDate(purchaseOrder.sample_schedule.lab_dip_submission)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">PO Date + 5 days</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">PO Date + 7 days</TableCell>
                                 <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
                               </TableRow>
                             )}
@@ -811,7 +811,7 @@ export default function PurchaseOrderDetailPage() {
                               <TableRow>
                                 <TableCell className="font-medium">Trim Approvals</TableCell>
                                 <TableCell>{formatDate(purchaseOrder.sample_schedule.trim_approvals)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">PO Date + 7 days</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">PO Date + 10 days</TableCell>
                                 <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
                               </TableRow>
                             )}

@@ -800,7 +800,7 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
-                      <p className="text-[11px] text-muted-foreground">PO Date + 5 days</p>
+                      <p className="text-[11px] text-muted-foreground">PO Date + 7 days</p>
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="fit_sample_submission">Fit Sample Submission (Auto)</Label>
@@ -824,7 +824,7 @@ export default function EditPurchaseOrderPage() {
                         disabled
                         className="bg-muted"
                       />
-                      <p className="text-[11px] text-muted-foreground">PO Date + 7 days</p>
+                      <p className="text-[11px] text-muted-foreground">PO Date + 10 days</p>
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="first_proto_submission">1st Proto Submission (Auto)</Label>

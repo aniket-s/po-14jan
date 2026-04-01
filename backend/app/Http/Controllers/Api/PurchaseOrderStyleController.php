@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendPurchaseOrderNotification;
 use App\Models\PurchaseOrder;
+use App\Models\SampleType;
 use App\Models\Style;
+use App\Models\StyleSampleProcess;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -325,6 +327,24 @@ class PurchaseOrderStyleController extends Controller
                         'assigned_by' => $request->user()->name,
                     ]
                 );
+            }
+        }
+
+        // Auto-assign default sample processes if style doesn't have any yet
+        if ($style->sampleProcesses()->count() === 0) {
+            $defaultTypes = SampleType::where('is_active', true)
+                ->where('required_for_production', true)
+                ->orderBy('display_order')
+                ->get();
+
+            foreach ($defaultTypes as $index => $sampleType) {
+                StyleSampleProcess::create([
+                    'style_id' => $style->id,
+                    'sample_type_id' => $sampleType->id,
+                    'priority' => $index + 1,
+                    'is_required' => true,
+                    'status' => 'pending',
+                ]);
             }
         }
 

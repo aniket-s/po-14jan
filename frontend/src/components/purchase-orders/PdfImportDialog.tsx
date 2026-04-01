@@ -1078,7 +1078,7 @@ export function PdfImportDialog({
                   <div className="space-y-1">
                     <Label>Lab Dip Submission</Label>
                     <Input type="date" value={sampleSchedule.lab_dip_submission || ''} disabled className="bg-muted" />
-                    <p className="text-[11px] text-muted-foreground">PO Date + 5 days</p>
+                    <p className="text-[11px] text-muted-foreground">PO Date + 7 days</p>
                   </div>
                   <div className="space-y-1">
                     <Label>Fit Sample Submission</Label>
@@ -1088,7 +1088,7 @@ export function PdfImportDialog({
                   <div className="space-y-1">
                     <Label>Trim Approvals</Label>
                     <Input type="date" value={sampleSchedule.trim_approvals || ''} disabled className="bg-muted" />
-                    <p className="text-[11px] text-muted-foreground">PO Date + 7 days</p>
+                    <p className="text-[11px] text-muted-foreground">PO Date + 10 days</p>
                   </div>
                   <div className="space-y-1">
                     <Label>1st Proto Submission</Label>

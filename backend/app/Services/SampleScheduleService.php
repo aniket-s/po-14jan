@@ -10,9 +10,9 @@ class SampleScheduleService
      * Generate complete sample schedule based on PO date and ETD date
      *
      * Milestones:
-     * - Lab Dip: PO Date + 5 days
+     * - Lab Dip: PO Date + 7 days
      * - Fit Samples: PO Date + 7 days
-     * - Trim Approvals: PO Date + 7 days
+     * - Trim Approvals: PO Date + 10 days
      * - 1st Proto Samples: PO Date + 10 days
      * - Bulk Fabric In-house: ETD Date - 40 days
      * - PP Sample: ETD Date - 35 days
@@ -35,9 +35,9 @@ class SampleScheduleService
         return [
             'lab_dip' => [
                 'name' => 'Lab Dip',
-                'date' => $po->copy()->addDays(5),
-                'description' => 'Within 5 days of PO Date',
-                'days_from_po' => 5,
+                'date' => $po->copy()->addDays(7),
+                'description' => 'Within 7 days of PO Date',
+                'days_from_po' => 7,
                 'type' => 'po_based',
             ],
             'fit_samples' => [
@@ -49,9 +49,9 @@ class SampleScheduleService
             ],
             'trim_approvals' => [
                 'name' => 'Trim Approvals',
-                'date' => $po->copy()->addDays(7),
-                'description' => 'Within 7 days of PO Date',
-                'days_from_po' => 7,
+                'date' => $po->copy()->addDays(10),
+                'description' => 'Within 10 days of PO Date',
+                'days_from_po' => 10,
                 'type' => 'po_based',
             ],
             'first_proto_samples' => [
