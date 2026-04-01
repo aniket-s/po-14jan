@@ -266,7 +266,30 @@ function SizesContent() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-8">Loading...</div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Gender</TableHead>
+                    <TableHead>Size Code</TableHead>
+                    <TableHead>Size Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Display Order</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      {Array.from({ length: 7 }).map((_, j) => (
+                        <TableCell key={j}>
+                          <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             ) : filteredSizes.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 No sizes found. Click "Add Size" to create one.

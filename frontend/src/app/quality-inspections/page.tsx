@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Search, Loader2, ClipboardCheck, CheckCircle, XCircle, AlertCircle, Calculator } from 'lucide-react';
 import api from '@/lib/api';
+import { TableSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -651,9 +652,7 @@ export default function QualityInspectionsPage() {
         <Card>
           <CardContent className="p-0">
             {loading ? (
-              <div className="flex h-96 items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
+              <TableSkeleton columns={12} rows={5} hasHeader={false} />
             ) : (
               <Table>
                 <TableHeader>

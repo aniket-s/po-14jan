@@ -23,6 +23,7 @@ import {
   AlertCircle, Send, ShieldCheck, Search, RotateCcw, Anchor,
 } from 'lucide-react';
 import api from '@/lib/api';
+import { TableSkeleton } from '@/components/skeletons';
 import { useAuth } from '@/contexts/AuthContext';
 
 // ---------------------------------------------------------------------------
@@ -646,9 +647,7 @@ export default function ShippingApprovalsPage() {
           </CardHeader>
           <CardContent className="p-0">
             {loading ? (
-              <div className="flex h-96 items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
+              <TableSkeleton columns={10} rows={5} hasHeader={false} />
             ) : (
               <div className="overflow-x-auto">
                 <Table>

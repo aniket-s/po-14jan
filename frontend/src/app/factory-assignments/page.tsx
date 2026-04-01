@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Search, Trash2, Factory, CheckCircle, XCircle, Clock } from 'lucide-react';
 import api from '@/lib/api';
+import { ListPageSkeleton } from '@/components/skeletons';
 
 interface StyleSearchResult {
   id: number;
@@ -336,9 +337,7 @@ export default function FactoryAssignmentsPage() {
   if (loading && assignments.length === 0) {
     return (
       <DashboardLayout requiredPermissions={['po.assign_factory', 'style.assign_factory']} requireAll={false}>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
+        <ListPageSkeleton statCards={0} filterCount={2} columns={7} />
       </DashboardLayout>
     );
   }

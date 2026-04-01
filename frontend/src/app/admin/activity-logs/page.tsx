@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/select';
 import { Activity, Search, Calendar, User, FileText, Download } from 'lucide-react';
 import api from '@/lib/api';
+import { ListPageSkeleton } from '@/components/skeletons';
 
 interface ActivityLog {
   id: number;
@@ -226,9 +227,7 @@ function ActivityLogsPageContent() {
   if (loading && logs.length === 0) {
     return (
       <DashboardLayout requiredPermissions={['admin.activity_logs.view']} requireAll={false}>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
+        <ListPageSkeleton statCards={4} filterCount={4} columns={6} rows={5} />
       </DashboardLayout>
     );
   }
@@ -526,9 +525,7 @@ export default function ActivityLogsPage() {
   return (
     <Suspense fallback={
       <DashboardLayout requiredPermissions={['admin.activity_logs.view']} requireAll={false}>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
+        <ListPageSkeleton statCards={4} filterCount={4} columns={6} rows={5} />
       </DashboardLayout>
     }>
       <ActivityLogsPageContent />

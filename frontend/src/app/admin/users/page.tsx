@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Search, Edit, Trash2, UserCheck, UserX, Shield, Activity, ShieldCheck } from 'lucide-react';
 import api from '@/lib/api';
+import { ListPageSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -354,9 +355,7 @@ export default function UsersManagementPage() {
   if (loading && users.length === 0) {
     return (
       <DashboardLayout requiredPermissions={['admin.users.view']} requireAll={false}>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
+        <ListPageSkeleton statCards={4} filterCount={4} columns={9} rows={5} />
       </DashboardLayout>
     );
   }

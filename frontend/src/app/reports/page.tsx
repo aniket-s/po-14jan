@@ -28,6 +28,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import api from '@/lib/api';
+import { StatCardsSkeleton } from '@/components/skeletons';
 
 interface DashboardStats {
   purchase_orders: {
@@ -185,9 +186,7 @@ export default function ReportsPage() {
 
         {/* Summary Statistics */}
         {loading ? (
-          <div className="flex h-96 items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
+          <StatCardsSkeleton count={4} />
         ) : dashboardStats ? (
           <>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

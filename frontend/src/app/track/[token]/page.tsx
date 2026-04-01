@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Package, Calendar, MapPin, Ship, CheckCircle, Clock, AlertCircle, Truck } from 'lucide-react';
 import api from '@/lib/api';
+import { DetailPageSkeleton } from '@/components/skeletons';
 
 interface Shipment {
   id: number;
@@ -129,10 +130,9 @@ export default function PublicShipmentTrackingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading shipment details...</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4 md:p-8">
+        <div className="max-w-5xl mx-auto">
+          <DetailPageSkeleton />
         </div>
       </div>
     );

@@ -28,6 +28,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Settings, Save, RotateCcw, AlertCircle } from 'lucide-react';
 import api from '@/lib/api';
+import { FormSkeleton } from '@/components/skeletons';
 
 interface Setting {
   key: string;
@@ -273,9 +274,7 @@ export default function SystemSettingsPage() {
         requiredPermissions={['admin.settings.view', 'admin.settings.edit']}
         requireAll={false}
       >
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
+        <FormSkeleton fields={6} />
       </DashboardLayout>
     );
   }

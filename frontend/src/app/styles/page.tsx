@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/table';
 import { Package, Search, ListChecks, Plus, Edit, Trash2, FileUp } from 'lucide-react';
 import api from '@/lib/api';
+import { ListPageSkeleton } from '@/components/skeletons';
 import { BulkSampleProcessModal } from '@/components/styles/BulkSampleProcessModal';
 import { CreateStyleDialog } from '@/components/styles/CreateStyleDialog';
 import { EditStyleDialog } from '@/components/styles/EditStyleDialog';
@@ -162,9 +163,7 @@ export default function StylesPage() {
   if (loading && styles.length === 0) {
     return (
       <DashboardLayout requiredPermissions={['style.view', 'style.view_own', 'style.create', 'style.edit']} requireAll={false}>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
+        <ListPageSkeleton statCards={1} filterCount={2} columns={9} />
       </DashboardLayout>
     );
   }

@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { Plus, Search, Edit, Trash2, Store } from 'lucide-react';
 import api from '@/lib/api';
+import { MasterDataPageSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -182,9 +183,7 @@ export default function RetailersPage() {
   if (authLoading || loading) {
     return (
       <DashboardLayout requiredPermissions={['po.create', 'po.edit', 'style.create', 'style.edit', 'admin.configuration.view']} requireAll={false}>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-muted-foreground">Loading...</div>
-        </div>
+        <MasterDataPageSkeleton columns={6} />
       </DashboardLayout>
     );
   }
