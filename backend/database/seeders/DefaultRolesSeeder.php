@@ -111,6 +111,7 @@ class DefaultRolesSeeder extends Seeder
             // Invitation Permissions
             'invitation.respond',
             // Sample Permissions
+            'sample.create',
             'sample.submit',
             'sample.view_own',
             // Production Permissions

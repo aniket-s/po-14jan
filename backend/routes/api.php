@@ -686,7 +686,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // Submit samples
-        Route::middleware('permission:sample.create')->group(function () {
+        Route::middleware('permission:sample.create,sample.submit')->group(function () {
             Route::post('/', [SampleController::class, 'store']);
         });
 

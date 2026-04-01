@@ -444,7 +444,7 @@ export default function SamplesPage() {
                 </Button>
               </>
             )}
-            {can('sample.create') && (
+            {(can('sample.create') || can('sample.submit')) && (
               <Dialog open={isSubmitDialogOpen} onOpenChange={setIsSubmitDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm">
