@@ -181,7 +181,7 @@ export default function StylesPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {selectedStyles.length > 0 && (
+            {selectedStyles.length > 0 && can('style.edit') && (
               <>
                 <Badge variant="secondary" className="text-sm">
                   {selectedStyles.length} selected
@@ -401,23 +401,27 @@ export default function StylesPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEdit(style)}
-                                title="Edit style"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDelete(style)}
-                                className="text-destructive hover:text-destructive"
-                                title="Delete style"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {can('style.edit') && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEdit(style)}
+                                  title="Edit style"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {can('style.delete') && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDelete(style)}
+                                  className="text-destructive hover:text-destructive"
+                                  title="Delete style"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>

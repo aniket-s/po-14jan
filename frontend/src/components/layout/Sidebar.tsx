@@ -193,7 +193,7 @@ const navItems: NavItem[] = [
     title: 'Quality Inspections',
     href: '/quality-inspections',
     icon: ClipboardCheck,
-    permissions: ['quality_inspection.view', 'quality.view_inspection', 'quality.view_all_inspections', 'quality_inspection.create', 'quality.create_inspection'],
+    permissions: ['quality.view_inspection', 'quality.view_all_inspections', 'quality.create_inspection'],
     requireAny: true,
   },
   {

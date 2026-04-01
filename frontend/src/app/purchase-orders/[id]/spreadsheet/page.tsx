@@ -2,6 +2,7 @@
 
 import { use } from 'react';
 import { SpreadsheetView } from '@/components/spreadsheet/SpreadsheetView';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -13,11 +14,17 @@ export default function SpreadsheetPage({ params }: PageProps) {
 
   if (isNaN(numericId)) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-red-600">Invalid PO ID</p>
-      </div>
+      <DashboardLayout requiredPermissions={['po.view', 'po.view_all', 'po.view_own']} requireAll={false}>
+        <div className="flex items-center justify-center h-screen">
+          <p className="text-red-600">Invalid PO ID</p>
+        </div>
+      </DashboardLayout>
     );
   }
 
-  return <SpreadsheetView poId={numericId} />;
+  return (
+    <DashboardLayout requiredPermissions={['po.view', 'po.view_all', 'po.view_own']} requireAll={false}>
+      <SpreadsheetView poId={numericId} />
+    </DashboardLayout>
+  );
 }

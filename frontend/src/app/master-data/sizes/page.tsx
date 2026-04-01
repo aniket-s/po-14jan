@@ -76,7 +76,7 @@ type SizeFormData = z.infer<typeof sizeSchema>;
 
 function SizesContent() {
   const searchParams = useSearchParams();
-  const { user, loading: authLoading } = useAuth();
+  const { user, can, loading: authLoading } = useAuth();
   const [sizes, setSizes] = useState<SizeData[]>([]);
   const [genders, setGenders] = useState<Gender[]>([]);
   const [loading, setLoading] = useState(true);
@@ -207,7 +207,7 @@ function SizesContent() {
   });
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['po.create', 'po.edit', 'style.create', 'style.edit', 'admin.configuration.view']} requireAll={false}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center">
@@ -217,10 +217,12 @@ function SizesContent() {
               Manage size options for different gender categories
             </p>
           </div>
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Size
-          </Button>
+          {can('admin.configuration.edit') && (
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Size
+            </Button>
+          )}
         </div>
 
         {/* Search & Filter */}
@@ -303,20 +305,24 @@ function SizesContent() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEdit(size)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(size.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {can('admin.configuration.edit') && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleEdit(size)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(size.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

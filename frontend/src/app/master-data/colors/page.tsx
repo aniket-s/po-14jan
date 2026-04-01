@@ -59,7 +59,7 @@ const colorSchema = z.object({
 type ColorFormData = z.infer<typeof colorSchema>;
 
 export default function ColorsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, can, loading: authLoading } = useAuth();
   const [colors, setColors] = useState<ColorData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -185,17 +185,19 @@ export default function ColorsPage() {
   );
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['po.create', 'po.edit', 'style.create', 'style.edit', 'admin.configuration.view']} requireAll={false}>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Colors</h1>
             <p className="text-muted-foreground">Manage color information and fabric type associations</p>
           </div>
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Color
-          </Button>
+          {can('admin.configuration.edit') && (
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Color
+            </Button>
+          )}
         </div>
 
         <Card>
@@ -267,20 +269,24 @@ export default function ColorsPage() {
                       <TableCell>{color.display_order}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(color)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(color.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {can('admin.configuration.edit') && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEdit(color)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(color.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

@@ -61,7 +61,7 @@ const warehouseSchema = z.object({
 type WarehouseFormData = z.infer<typeof warehouseSchema>;
 
 export default function WarehousesPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, can, loading: authLoading } = useAuth();
   const [warehouses, setWarehouses] = useState<WarehouseData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -174,7 +174,7 @@ export default function WarehousesPage() {
 
   if (authLoading || loading) {
     return (
-      <DashboardLayout>
+      <DashboardLayout requiredPermissions={['po.create', 'po.edit', 'style.create', 'style.edit', 'admin.configuration.view']} requireAll={false}>
         <div className="flex items-center justify-center h-64">
           <div className="text-muted-foreground">Loading...</div>
         </div>
@@ -183,7 +183,7 @@ export default function WarehousesPage() {
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['po.create', 'po.edit', 'style.create', 'style.edit', 'admin.configuration.view']} requireAll={false}>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -195,10 +195,12 @@ export default function WarehousesPage() {
               Manage warehouse locations and details
             </p>
           </div>
-          <Button onClick={handleCreate}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Warehouse
-          </Button>
+          {can('admin.configuration.edit') && (
+            <Button onClick={handleCreate}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Warehouse
+            </Button>
+          )}
         </div>
 
         <Card>
@@ -248,21 +250,25 @@ export default function WarehousesPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(warehouse)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(warehouse.id)}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {can('admin.configuration.edit') && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEdit(warehouse)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(warehouse.id)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

@@ -623,7 +623,7 @@ class ShipmentController extends Controller
     private function canManageShipment(object $user, PurchaseOrder $po): bool
     {
         // Admin can always manage
-        if ($user->hasRole('admin')) {
+        if ($user->hasRole('Super Admin')) {
             return true;
         }
 

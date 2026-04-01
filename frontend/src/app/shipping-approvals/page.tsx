@@ -414,7 +414,7 @@ export default function ShippingApprovalsPage() {
   // Permission helpers
   // ---------------------------------------------------------------------------
 
-  const isSuperOrAdmin = hasRole('Super Admin') || hasRole('Admin');
+  const isSuperOrAdmin = hasRole('Super Admin');
 
   const canSetEstDate = (row: ShippingApprovalRow): boolean => {
     if (!isSuperOrAdmin && !hasRole('Factory')) return false;

@@ -80,7 +80,7 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, can, canAny } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -325,22 +325,30 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <Link href="/purchase-orders" className="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-accent">
-                <ShoppingCart className="h-5 w-5 text-primary" />
-                <span className="text-sm font-medium">Create PO</span>
-              </Link>
-              <Link href="/invitations" className="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-accent">
-                <Users className="h-5 w-5 text-primary" />
-                <span className="text-sm font-medium">Send Invitation</span>
-              </Link>
-              <Link href="/quality-inspections" className="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-accent">
-                <ClipboardCheck className="h-5 w-5 text-primary" />
-                <span className="text-sm font-medium">Schedule QC</span>
-              </Link>
-              <Link href="/shipments" className="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-accent">
-                <Truck className="h-5 w-5 text-primary" />
-                <span className="text-sm font-medium">Track Shipment</span>
-              </Link>
+              {can('po.create') && (
+                <Link href="/purchase-orders" className="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-accent">
+                  <ShoppingCart className="h-5 w-5 text-primary" />
+                  <span className="text-sm font-medium">Create PO</span>
+                </Link>
+              )}
+              {can('invitation.send') && (
+                <Link href="/invitations" className="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-accent">
+                  <Users className="h-5 w-5 text-primary" />
+                  <span className="text-sm font-medium">Send Invitation</span>
+                </Link>
+              )}
+              {can('quality.create_inspection') && (
+                <Link href="/quality-inspections" className="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-accent">
+                  <ClipboardCheck className="h-5 w-5 text-primary" />
+                  <span className="text-sm font-medium">Schedule QC</span>
+                </Link>
+              )}
+              {canAny(['shipment.view', 'shipment.view_own', 'shipment.track']) && (
+                <Link href="/shipments" className="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors hover:bg-accent">
+                  <Truck className="h-5 w-5 text-primary" />
+                  <span className="text-sm font-medium">Track Shipment</span>
+                </Link>
+              )}
             </div>
           </CardContent>
         </Card>

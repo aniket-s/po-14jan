@@ -55,7 +55,7 @@ const buyerSchema = z.object({
 type BuyerFormData = z.infer<typeof buyerSchema>;
 
 export default function BuyersPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, can, loading: authLoading } = useAuth();
   const [buyers, setBuyers] = useState<BuyerData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -164,17 +164,19 @@ export default function BuyersPage() {
   );
 
   return (
-    <DashboardLayout>
+    <DashboardLayout requiredPermissions={['po.create', 'po.edit', 'style.create', 'style.edit', 'admin.configuration.view']} requireAll={false}>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Buyers</h1>
             <p className="text-muted-foreground">Manage buyer organizations (Rebel Minds, R3bel Denim, etc.)</p>
           </div>
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Buyer
-          </Button>
+          {can('admin.configuration.edit') && (
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Buyer
+            </Button>
+          )}
         </div>
 
         <Card>
@@ -234,20 +236,24 @@ export default function BuyersPage() {
                       <TableCell>{buyer.display_order}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(buyer)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(buyer.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {can('admin.configuration.edit') && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEdit(buyer)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(buyer.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

@@ -485,7 +485,7 @@ export default function UsersManagementPage() {
             </div>
 
             {/* Bulk Actions */}
-            {selectedUsers.length > 0 && can('admin.users.manage') && (
+            {selectedUsers.length > 0 && can('admin.users.edit') && (
               <div className="flex items-center gap-2 pt-4 border-t">
                 <span className="text-sm text-muted-foreground">
                   {selectedUsers.length} users selected
@@ -533,7 +533,7 @@ export default function UsersManagementPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {can('admin.users.manage') && (
+                  {can('admin.users.edit') && (
                     <TableHead className="w-12">
                       <input
                         type="checkbox"
@@ -563,7 +563,7 @@ export default function UsersManagementPage() {
                 ) : (
                   users.map((user) => (
                     <TableRow key={user.id}>
-                      {can('admin.users.manage') && (
+                      {can('admin.users.edit') && (
                         <TableCell>
                           <input
                             type="checkbox"
@@ -621,7 +621,7 @@ export default function UsersManagementPage() {
                               <ShieldCheck className="h-4 w-4" />
                             </Button>
                           )}
-                          {can('admin.users.manage') && (
+                          {can('admin.users.edit') && (
                             <Button
                               variant="ghost"
                               size="sm"

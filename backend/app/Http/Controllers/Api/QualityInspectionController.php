@@ -724,7 +724,7 @@ class QualityInspectionController extends Controller
     private function canUpdateInspection(object $user, QualityInspection $inspection): bool
     {
         // Admin can always update
-        if ($user->hasRole('admin')) {
+        if ($user->hasRole('Super Admin')) {
             return true;
         }
 
