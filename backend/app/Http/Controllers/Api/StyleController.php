@@ -394,8 +394,11 @@ class StyleController extends Controller
 
                 // OR include styles attached to accessible POs
                 if ($user->hasRole('Factory')) {
-                    // Factories see styles assigned to them
-                    $q->orWhere('styles.assigned_factory_id', $user->id);
+                    // Factories see styles assigned to them (direct or via pivot)
+                    $q->orWhere('styles.assigned_factory_id', $user->id)
+                       ->orWhereHas('purchaseOrders', function($poQuery) use ($user) {
+                           $poQuery->where('purchase_order_style.assigned_factory_id', $user->id);
+                       });
                 } elseif ($user->hasRole('Importer')) {
                     // Importers see their own POs
                     $q->orWhereHas('purchaseOrder', function($poQuery) use ($user) {

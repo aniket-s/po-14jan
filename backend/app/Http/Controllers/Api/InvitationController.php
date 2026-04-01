@@ -805,9 +805,11 @@ class InvitationController extends Controller
             ], 403);
         }
 
-        if (!$invitation->isPending()) {
+        // For authenticated users, allow acceptance if status is pending
+        // even if the invitation has expired (expiry is mainly for public token links)
+        if ($invitation->status !== 'pending') {
             return response()->json([
-                'message' => 'This invitation is no longer valid',
+                'message' => 'This invitation has already been ' . $invitation->status,
                 'status' => $invitation->status,
             ], 422);
         }
@@ -850,9 +852,11 @@ class InvitationController extends Controller
             ], 403);
         }
 
-        if (!$invitation->isPending()) {
+        // For authenticated users, allow rejection if status is pending
+        // even if the invitation has expired (expiry is mainly for public token links)
+        if ($invitation->status !== 'pending') {
             return response()->json([
-                'message' => 'This invitation is no longer valid',
+                'message' => 'This invitation has already been ' . $invitation->status,
                 'status' => $invitation->status,
             ], 422);
         }

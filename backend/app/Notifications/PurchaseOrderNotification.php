@@ -72,6 +72,27 @@ class PurchaseOrderNotification extends Notification implements ShouldQueue
                 $mail->line('Purchase order ' . $this->purchaseOrder->po_number . ' has been cancelled.')
                     ->line('Please review and take necessary actions.');
                 break;
+
+            case 'factory_assigned':
+                $mail->line('You have been assigned as the factory for a style in purchase order ' . $this->purchaseOrder->po_number . '.');
+                if (isset($this->changes['style_number'])) {
+                    $mail->line('**Style:** ' . $this->changes['style_number']);
+                }
+                if (isset($this->changes['assigned_by'])) {
+                    $mail->line('**Assigned by:** ' . $this->changes['assigned_by']);
+                }
+                $mail->line('Please review and confirm the assignment.');
+                break;
+
+            case 'agency_assigned':
+                $mail->line('You have been assigned as the agency for a style in purchase order ' . $this->purchaseOrder->po_number . '.');
+                if (isset($this->changes['style_number'])) {
+                    $mail->line('**Style:** ' . $this->changes['style_number']);
+                }
+                if (isset($this->changes['assigned_by'])) {
+                    $mail->line('**Assigned by:** ' . $this->changes['assigned_by']);
+                }
+                break;
         }
 
         $mail->action('View Purchase Order', url('/purchase-orders/' . $this->purchaseOrder->id));
@@ -106,6 +127,8 @@ class PurchaseOrderNotification extends Notification implements ShouldQueue
             'updated' => 'Purchase Order Updated: ' . $this->purchaseOrder->po_number,
             'status_changed' => 'PO Status Changed: ' . $this->purchaseOrder->po_number,
             'cancelled' => 'Purchase Order Cancelled: ' . $this->purchaseOrder->po_number,
+            'factory_assigned' => 'Factory Assignment: ' . $this->purchaseOrder->po_number,
+            'agency_assigned' => 'Agency Assignment: ' . $this->purchaseOrder->po_number,
             default => 'Purchase Order Notification: ' . $this->purchaseOrder->po_number,
         };
     }
