@@ -104,8 +104,12 @@ export default function PurchaseOrdersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSelectPODialogOpen, setIsSelectPODialogOpen] = useState(false);
   const [isPdfImportDialogOpen, setIsPdfImportDialogOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'excel'>('list');
-  const [viewModeReady, setViewModeReady] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'excel'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('po-view-mode') as 'list' | 'excel') || 'list';
+    }
+    return 'list';
+  });
   const [isCreateRetailerDialogOpen, setIsCreateRetailerDialogOpen] = useState(false);
   const [isCreateSeasonDialogOpen, setIsCreateSeasonDialogOpen] = useState(false);
   const [isCreateWarehouseDialogOpen, setIsCreateWarehouseDialogOpen] = useState(false);
@@ -144,15 +148,6 @@ export default function PurchaseOrdersPage() {
   } = useForm<POFormData>({
     resolver: zodResolver(poSchema),
   });
-
-  // Restore view mode from localStorage after hydration
-  useEffect(() => {
-    const saved = localStorage.getItem('po-view-mode') as 'list' | 'excel' | null;
-    if (saved === 'list' || saved === 'excel') {
-      setViewMode(saved);
-    }
-    setViewModeReady(true);
-  }, []);
 
   useEffect(() => {
     fetchPurchaseOrders();
@@ -364,15 +359,6 @@ export default function PurchaseOrdersPage() {
       day: 'numeric',
     });
   };
-
-  // Show loading spinner until viewMode is resolved from localStorage
-  if (!viewModeReady) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-primary" />
-      </div>
-    );
-  }
 
   // Full-screen Excel view — rendered outside DashboardLayout
   if (viewMode === 'excel') {
