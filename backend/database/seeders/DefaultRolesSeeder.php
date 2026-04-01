@@ -25,7 +25,7 @@ class DefaultRolesSeeder extends Seeder
             ?? Role::create(['name' => 'Importer', 'guard_name' => 'web']);
         $importer->syncPermissions([
             // PO Permissions
-            'po.view_all',
+            'po.view_own',
             'po.create',
             'po.edit',
             'po.delete',
@@ -35,7 +35,7 @@ class DefaultRolesSeeder extends Seeder
             'po.import',
             'po.export',
             // Style Permissions
-            'style.view',
+            'style.view_own',
             'style.create',
             'style.edit',
             'style.delete',
@@ -55,11 +55,11 @@ class DefaultRolesSeeder extends Seeder
             'sample.create_auto_rule',
             'sample.bulk_approve',
             // Production Permissions
-            'production.view_all',
+            'production.view_own',
             // Quality Permissions
-            'quality.view_all_inspections',
+            'quality.view_inspection',
             // Shipment Permissions
-            'shipment.view_all',
+            'shipment.view_own',
             'shipment.track',
             // Report Permissions
             'reports.view',

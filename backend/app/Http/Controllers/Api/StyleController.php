@@ -161,6 +161,7 @@ class StyleController extends Controller
      */
     public function showStandalone(Request $request, $id)
     {
+        $user = $request->user();
         $style = Style::with([
             'brand',
             'retailer',
@@ -173,6 +174,13 @@ class StyleController extends Controller
             'creator',
             'updatedBy'
         ])->findOrFail($id);
+
+        // Check access permission
+        if (!$this->permissionService->canAccessStyle($user, $style)) {
+            return response()->json([
+                'message' => 'You do not have permission to view this style',
+            ], 403);
+        }
 
         return response()->json($style);
     }
@@ -383,7 +391,11 @@ class StyleController extends Controller
         ]);
 
         // Apply role-based filtering
-        if (!$user->can('style.view_all')) {
+        // Roles with style.view (Viewer, Quality Inspector) see all styles — read-only
+        // Roles with style.view_own (Importer, Agency, Factory) see only their own
+        if ($user->can('style.view')) {
+            // No filtering needed — read-only access to all styles
+        } else {
             // Filter based on user role and accessible styles
             $query->where(function($q) use ($user) {
                 // Include standalone styles (not attached to any PO) created by this user
@@ -392,7 +404,6 @@ class StyleController extends Controller
                          ->where('created_by', $user->id);
                 });
 
-                // OR include styles attached to accessible POs
                 if ($user->hasRole('Factory')) {
                     // Factories see styles assigned to them (direct or via pivot)
                     $q->orWhere('styles.assigned_factory_id', $user->id)
@@ -400,13 +411,25 @@ class StyleController extends Controller
                            $poQuery->where('purchase_order_style.assigned_factory_id', $user->id);
                        });
                 } elseif ($user->hasRole('Importer')) {
-                    // Importers see their own POs
+                    // Importers see styles from POs where they are the importer
                     $q->orWhereHas('purchaseOrder', function($poQuery) use ($user) {
-                        $poQuery->where('created_by', $user->id);
+                        $poQuery->where('importer_id', $user->id);
+                    })
+                    ->orWhereHas('purchaseOrders', function($poQuery) use ($user) {
+                        $poQuery->where('importer_id', $user->id);
                     });
-                } else {
-                    // Other roles see all styles attached to POs
-                    $q->orWhereHas('purchaseOrder');
+                } elseif ($user->hasRole('Agency')) {
+                    // Agencies see styles from POs assigned to them, or styles directly assigned to them
+                    $q->orWhere('styles.assigned_agency_id', $user->id)
+                       ->orWhereHas('purchaseOrder', function($poQuery) use ($user) {
+                           $poQuery->where('agency_id', $user->id);
+                       })
+                       ->orWhereHas('purchaseOrders', function($poQuery) use ($user) {
+                           $poQuery->where('agency_id', $user->id);
+                       })
+                       ->orWhereHas('purchaseOrders', function($poQuery) use ($user) {
+                           $poQuery->where('purchase_order_style.assigned_agency_id', $user->id);
+                       });
                 }
             });
         }
