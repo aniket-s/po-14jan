@@ -326,71 +326,75 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Master Data Management
     Route::prefix('master-data')->group(function () {
-        // Brands
-        Route::apiResource('brands', \App\Http\Controllers\Api\BrandController::class);
-
-        // Seasons
-        Route::apiResource('seasons', \App\Http\Controllers\Api\SeasonController::class);
-
-        // Divisions
-        Route::apiResource('divisions', \App\Http\Controllers\Api\DivisionController::class);
-
-        // Customers
-        Route::apiResource('customers', \App\Http\Controllers\Api\CustomerController::class);
-
-        // Retailers
-        Route::apiResource('retailers', \App\Http\Controllers\Api\RetailerController::class);
-
-        // Countries
-        Route::apiResource('countries', \App\Http\Controllers\Api\CountryController::class);
-
-        // Warehouses
-        Route::apiResource('warehouses', \App\Http\Controllers\Api\WarehouseController::class);
-
-        // Prepack Codes
-        Route::apiResource('prepack-codes', \App\Http\Controllers\Api\PrepackCodeController::class);
-
-        // Trims
-        Route::apiResource('trims', \App\Http\Controllers\Api\TrimController::class);
-        Route::post('trims/upload-image', [\App\Http\Controllers\Api\TrimController::class, 'uploadImage']);
-        Route::post('trims/upload-file', [\App\Http\Controllers\Api\TrimController::class, 'uploadFile']);
+        // Read-only access (for dropdowns) - all authenticated users
+        Route::get('brands', [\App\Http\Controllers\Api\BrandController::class, 'index']);
+        Route::get('brands/{brand}', [\App\Http\Controllers\Api\BrandController::class, 'show']);
+        Route::get('seasons', [\App\Http\Controllers\Api\SeasonController::class, 'index']);
+        Route::get('seasons/{season}', [\App\Http\Controllers\Api\SeasonController::class, 'show']);
+        Route::get('divisions', [\App\Http\Controllers\Api\DivisionController::class, 'index']);
+        Route::get('divisions/{division}', [\App\Http\Controllers\Api\DivisionController::class, 'show']);
+        Route::get('customers', [\App\Http\Controllers\Api\CustomerController::class, 'index']);
+        Route::get('customers/{customer}', [\App\Http\Controllers\Api\CustomerController::class, 'show']);
+        Route::get('retailers', [\App\Http\Controllers\Api\RetailerController::class, 'index']);
+        Route::get('retailers/{retailer}', [\App\Http\Controllers\Api\RetailerController::class, 'show']);
+        Route::get('countries', [\App\Http\Controllers\Api\CountryController::class, 'index']);
+        Route::get('countries/{country}', [\App\Http\Controllers\Api\CountryController::class, 'show']);
+        Route::get('warehouses', [\App\Http\Controllers\Api\WarehouseController::class, 'index']);
+        Route::get('warehouses/{warehouse}', [\App\Http\Controllers\Api\WarehouseController::class, 'show']);
+        Route::get('prepack-codes', [\App\Http\Controllers\Api\PrepackCodeController::class, 'index']);
+        Route::get('prepack-codes/{prepack_code}', [\App\Http\Controllers\Api\PrepackCodeController::class, 'show']);
+        Route::get('trims', [\App\Http\Controllers\Api\TrimController::class, 'index']);
+        Route::get('trims/{trim}', [\App\Http\Controllers\Api\TrimController::class, 'show']);
         Route::get('trims/types/all', [\App\Http\Controllers\Api\TrimController::class, 'types']);
-
-        // Genders
-        Route::apiResource('genders', \App\Http\Controllers\Api\GenderController::class);
+        Route::get('genders', [\App\Http\Controllers\Api\GenderController::class, 'index']);
+        Route::get('genders/{gender}', [\App\Http\Controllers\Api\GenderController::class, 'show']);
         Route::get('genders/{id}/sizes', [\App\Http\Controllers\Api\GenderController::class, 'getSizes']);
-
-        // Sizes
-        Route::apiResource('sizes', \App\Http\Controllers\Api\SizeController::class);
-
-        // Colors
-        Route::apiResource('colors', \App\Http\Controllers\Api\ColorController::class);
-
-        // Buyers
-        Route::apiResource('buyers', \App\Http\Controllers\Api\BuyerController::class);
-
-        // Categories
-        Route::apiResource('categories', \App\Http\Controllers\Api\CategoryController::class);
-
-        // Fabric Types
-        Route::apiResource('fabric-types', \App\Http\Controllers\Api\FabricTypeController::class);
-
-        // Fabric Qualities
-        Route::apiResource('fabric-qualities', \App\Http\Controllers\Api\FabricQualityController::class);
-
-        // Currencies
-        Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
-
-        // Payment Terms
-        Route::apiResource('payment-terms', \App\Http\Controllers\Api\PaymentTermController::class);
-
-        // Trim Types
-        Route::apiResource('trim-types', \App\Http\Controllers\Api\TrimTypeController::class);
-        Route::post('trim-types/reorder', [\App\Http\Controllers\Api\TrimTypeController::class, 'reorder']);
-
-        // Agents (Users with Agency role)
+        Route::get('sizes', [\App\Http\Controllers\Api\SizeController::class, 'index']);
+        Route::get('sizes/{size}', [\App\Http\Controllers\Api\SizeController::class, 'show']);
+        Route::get('colors', [\App\Http\Controllers\Api\ColorController::class, 'index']);
+        Route::get('colors/{color}', [\App\Http\Controllers\Api\ColorController::class, 'show']);
+        Route::get('buyers', [\App\Http\Controllers\Api\BuyerController::class, 'index']);
+        Route::get('buyers/{buyer}', [\App\Http\Controllers\Api\BuyerController::class, 'show']);
+        Route::get('categories', [\App\Http\Controllers\Api\CategoryController::class, 'index']);
+        Route::get('categories/{category}', [\App\Http\Controllers\Api\CategoryController::class, 'show']);
+        Route::get('fabric-types', [\App\Http\Controllers\Api\FabricTypeController::class, 'index']);
+        Route::get('fabric-types/{fabric_type}', [\App\Http\Controllers\Api\FabricTypeController::class, 'show']);
+        Route::get('fabric-qualities', [\App\Http\Controllers\Api\FabricQualityController::class, 'index']);
+        Route::get('fabric-qualities/{fabric_quality}', [\App\Http\Controllers\Api\FabricQualityController::class, 'show']);
+        Route::get('currencies', [\App\Http\Controllers\Api\CurrencyController::class, 'index']);
+        Route::get('currencies/{currency}', [\App\Http\Controllers\Api\CurrencyController::class, 'show']);
+        Route::get('payment-terms', [\App\Http\Controllers\Api\PaymentTermController::class, 'index']);
+        Route::get('payment-terms/{payment_term}', [\App\Http\Controllers\Api\PaymentTermController::class, 'show']);
+        Route::get('trim-types', [\App\Http\Controllers\Api\TrimTypeController::class, 'index']);
+        Route::get('trim-types/{trim_type}', [\App\Http\Controllers\Api\TrimTypeController::class, 'show']);
         Route::get('agents', [\App\Http\Controllers\Api\AgentController::class, 'index']);
-        Route::post('agents', [\App\Http\Controllers\Api\AgentController::class, 'store']);
+
+        // Write operations - restricted to non-factory users
+        Route::middleware('permission:po.create,po.edit,style.create,style.edit,admin.configuration.view')->group(function () {
+            Route::apiResource('brands', \App\Http\Controllers\Api\BrandController::class)->except(['index', 'show']);
+            Route::apiResource('seasons', \App\Http\Controllers\Api\SeasonController::class)->except(['index', 'show']);
+            Route::apiResource('divisions', \App\Http\Controllers\Api\DivisionController::class)->except(['index', 'show']);
+            Route::apiResource('customers', \App\Http\Controllers\Api\CustomerController::class)->except(['index', 'show']);
+            Route::apiResource('retailers', \App\Http\Controllers\Api\RetailerController::class)->except(['index', 'show']);
+            Route::apiResource('countries', \App\Http\Controllers\Api\CountryController::class)->except(['index', 'show']);
+            Route::apiResource('warehouses', \App\Http\Controllers\Api\WarehouseController::class)->except(['index', 'show']);
+            Route::apiResource('prepack-codes', \App\Http\Controllers\Api\PrepackCodeController::class)->except(['index', 'show']);
+            Route::apiResource('trims', \App\Http\Controllers\Api\TrimController::class)->except(['index', 'show']);
+            Route::post('trims/upload-image', [\App\Http\Controllers\Api\TrimController::class, 'uploadImage']);
+            Route::post('trims/upload-file', [\App\Http\Controllers\Api\TrimController::class, 'uploadFile']);
+            Route::apiResource('genders', \App\Http\Controllers\Api\GenderController::class)->except(['index', 'show']);
+            Route::apiResource('sizes', \App\Http\Controllers\Api\SizeController::class)->except(['index', 'show']);
+            Route::apiResource('colors', \App\Http\Controllers\Api\ColorController::class)->except(['index', 'show']);
+            Route::apiResource('buyers', \App\Http\Controllers\Api\BuyerController::class)->except(['index', 'show']);
+            Route::apiResource('categories', \App\Http\Controllers\Api\CategoryController::class)->except(['index', 'show']);
+            Route::apiResource('fabric-types', \App\Http\Controllers\Api\FabricTypeController::class)->except(['index', 'show']);
+            Route::apiResource('fabric-qualities', \App\Http\Controllers\Api\FabricQualityController::class)->except(['index', 'show']);
+            Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class)->except(['index', 'show']);
+            Route::apiResource('payment-terms', \App\Http\Controllers\Api\PaymentTermController::class)->except(['index', 'show']);
+            Route::apiResource('trim-types', \App\Http\Controllers\Api\TrimTypeController::class)->except(['index', 'show']);
+            Route::post('trim-types/reorder', [\App\Http\Controllers\Api\TrimTypeController::class, 'reorder']);
+            Route::post('agents', [\App\Http\Controllers\Api\AgentController::class, 'store']);
+        });
     });
 
     // Purchase Order Management

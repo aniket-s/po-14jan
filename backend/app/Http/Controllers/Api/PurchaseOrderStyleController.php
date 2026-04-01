@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendPurchaseOrderNotification;
 use App\Models\PurchaseOrder;
 use App\Models\Style;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -286,6 +288,45 @@ class PurchaseOrderStyleController extends Controller
             'assigned_agency_id' => $request->assigned_agency_id,
             'assigned_at' => now(),
         ]);
+
+        // Also update the style model for direct filtering
+        $style->update([
+            'assignment_type' => $request->assignment_type,
+            'assigned_factory_id' => $request->assigned_factory_id,
+            'assigned_agency_id' => $request->assigned_agency_id,
+        ]);
+
+        // Send notification to the assigned factory user
+        if ($request->assigned_factory_id) {
+            $factoryUser = User::find($request->assigned_factory_id);
+            if ($factoryUser) {
+                SendPurchaseOrderNotification::dispatch(
+                    $po,
+                    $factoryUser,
+                    'factory_assigned',
+                    [
+                        'style_number' => $style->style_number,
+                        'assigned_by' => $request->user()->name,
+                    ]
+                );
+            }
+        }
+
+        // Send notification to the assigned agency user
+        if ($request->assigned_agency_id) {
+            $agencyUser = User::find($request->assigned_agency_id);
+            if ($agencyUser) {
+                SendPurchaseOrderNotification::dispatch(
+                    $po,
+                    $agencyUser,
+                    'agency_assigned',
+                    [
+                        'style_number' => $style->style_number,
+                        'assigned_by' => $request->user()->name,
+                    ]
+                );
+            }
+        }
 
         return response()->json(['message' => 'Factory assigned successfully']);
     }

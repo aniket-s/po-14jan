@@ -737,9 +737,10 @@ class SampleController extends Controller
         // Apply role-based filtering
         if ($user->hasRole('Factory')) {
             $query->whereHas('style', function($q) use ($user) {
-                $q->whereHas('purchaseOrders', function($pq) use ($user) {
-                    $pq->wherePivot('assigned_factory_id', $user->id);
-                });
+                $q->where('assigned_factory_id', $user->id)
+                  ->orWhereHas('purchaseOrders', function($pq) use ($user) {
+                      $pq->where('purchase_order_style.assigned_factory_id', $user->id);
+                  });
             });
         } elseif ($user->hasRole('Importer')) {
             $query->whereHas('style.purchaseOrder', function($q) use ($user) {
