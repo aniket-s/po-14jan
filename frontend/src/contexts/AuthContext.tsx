@@ -51,9 +51,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const userData = await authService.getUser();
       setUser(userData);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load user:', err);
-      localStorage.removeItem('auth_token');
+      // Only remove token on 401 (unauthorized) responses
+      // Network errors or other failures should not wipe the token
+      if (err?.response?.status === 401) {
+        localStorage.removeItem('auth_token');
+      }
     } finally {
       setLoading(false);
     }
