@@ -65,16 +65,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     }
   }, [user, loading, router, requiredPermission, requiredPermissions, requireAll, requiredRole, fallbackPath]);
 
-  // Show loading state
+  // While auth is loading, render children directly so page-level
+  // skeletons are visible inside the real layout shell (sidebar + header).
+  // The sidebar/header gracefully handle null user via optional chaining.
   if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-primary"></div>
-          <p className="mt-4 text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
+    return <>{children}</>;
   }
 
   // Show nothing if not authenticated (will redirect)

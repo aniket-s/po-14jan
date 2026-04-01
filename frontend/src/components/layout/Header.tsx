@@ -3,6 +3,7 @@
 import { Bell, LogOut, User, Settings, Trash2, Check } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotifications } from '@/contexts/NotificationsContext';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -17,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 
 export function Header() {
-  const { user, logout } = useAuth();
+  const { user, loading, logout } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
 
   const getInitials = (name: string) => {
@@ -49,6 +50,19 @@ export function Header() {
     if (hours < 24) return `${hours}h ago`;
     return `${days}d ago`;
   };
+
+  if (loading) {
+    return (
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background px-6">
+        <Skeleton className="h-6 w-64" />
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-9 w-9 rounded-md" />
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <Skeleton className="h-4 w-24 hidden md:block" />
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background px-6">
