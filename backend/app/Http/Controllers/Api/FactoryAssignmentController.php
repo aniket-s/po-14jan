@@ -107,11 +107,11 @@ class FactoryAssignmentController extends Controller
         return response()->json([
             'assignment' => [
                 'id' => $assignment->id,
-                'purchase_order' => [
+                'purchase_order' => $assignment->purchaseOrder ? [
                     'id' => $assignment->purchaseOrder->id,
                     'po_number' => $assignment->purchaseOrder->po_number,
-                    'brand_name' => $assignment->purchaseOrder->brand_name,
-                ],
+                    'headline' => $assignment->purchaseOrder->headline,
+                ] : null,
                 'style' => $assignment->style ? [
                     'id' => $assignment->style->id,
                     'style_number' => $assignment->style->style_number,
@@ -170,8 +170,8 @@ class FactoryAssignmentController extends Controller
                     'purchase_order' => $assignment->purchaseOrder ? [
                         'id' => $assignment->purchaseOrder->id,
                         'po_number' => $assignment->purchaseOrder->po_number,
-                        'brand_name' => $assignment->purchaseOrder->brand_name,
-                        'order_date' => $assignment->purchaseOrder->order_date?->format('Y-m-d'),
+                        'headline' => $assignment->purchaseOrder->headline,
+                        'po_date' => $assignment->purchaseOrder->po_date?->format('Y-m-d'),
                     ] : null,
                     'style' => $assignment->style ? [
                         'id' => $assignment->style->id,
@@ -227,12 +227,12 @@ class FactoryAssignmentController extends Controller
                     'description' => $style->description,
                     'quantity' => $style->total_quantity,
                     'unit_price' => $style->unit_price,
-                    'total_price' => $style->total_price,
+                    'fob_price' => $style->fob_price,
                     'status' => $style->status,
                 ];
             }),
-            'total_quantity' => $styles->sum('quantity'),
-            'total_value' => $styles->sum('total_price'),
+            'total_quantity' => $styles->sum('total_quantity'),
+            'total_value' => $styles->sum('fob_price'),
         ]);
     }
 
@@ -350,7 +350,7 @@ class FactoryAssignmentController extends Controller
         $user = $request->user();
 
         $query = FactoryAssignment::with([
-            'purchaseOrder:id,po_number,brand_name',
+            'purchaseOrder:id,po_number,headline',
             'style:id,style_number,description',
             'factory:id,name,email,company',
             'assignedBy:id,name'
@@ -361,7 +361,7 @@ class FactoryAssignmentController extends Controller
             $query->where('factory_id', $user->id);
         } elseif ($user->hasRole('Importer')) {
             $query->whereHas('purchaseOrder', function ($q) use ($user) {
-                $q->where('created_by', $user->id);
+                $q->where('creator_id', $user->id);
             });
         } elseif ($user->hasRole('Agency')) {
             $query->where('assigned_by', $user->id);
@@ -686,7 +686,7 @@ class FactoryAssignmentController extends Controller
         $user = $request->user();
         $search = $request->input('search', '');
 
-        $query = Style::with(['purchaseOrders:id,po_number,brand_name'])
+        $query = Style::with(['purchaseOrders:id,po_number,headline'])
             ->select('id', 'style_number', 'description', 'total_quantity', 'status', 'assigned_factory_id', 'po_id');
 
         // Role-based filtering
@@ -694,7 +694,7 @@ class FactoryAssignmentController extends Controller
             $query->where(function ($q) use ($user) {
                 $q->where('created_by', $user->id)
                   ->orWhereHas('purchaseOrders', function ($pq) use ($user) {
-                      $pq->where('created_by', $user->id);
+                      $pq->where('creator_id', $user->id);
                   });
             });
         } elseif ($user->hasRole('Agency')) {
