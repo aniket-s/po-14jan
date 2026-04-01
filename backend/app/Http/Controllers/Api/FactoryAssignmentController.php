@@ -225,7 +225,7 @@ class FactoryAssignmentController extends Controller
                     'id' => $style->id,
                     'style_number' => $style->style_number,
                     'description' => $style->description,
-                    'quantity' => $style->quantity,
+                    'quantity' => $style->total_quantity,
                     'unit_price' => $style->unit_price,
                     'total_price' => $style->total_price,
                     'status' => $style->status,
@@ -687,7 +687,7 @@ class FactoryAssignmentController extends Controller
         $search = $request->input('search', '');
 
         $query = Style::with(['purchaseOrders:id,po_number,brand_name'])
-            ->select('id', 'style_number', 'description', 'quantity', 'status', 'assigned_factory_id', 'po_id');
+            ->select('id', 'style_number', 'description', 'total_quantity', 'status', 'assigned_factory_id', 'po_id');
 
         // Role-based filtering
         if ($user->hasRole('Importer')) {
@@ -726,7 +726,7 @@ class FactoryAssignmentController extends Controller
                     'id' => $style->id,
                     'style_number' => $style->style_number,
                     'description' => $style->description,
-                    'quantity' => $style->quantity,
+                    'quantity' => $style->total_quantity,
                     'status' => $style->status,
                     'assigned_factory_id' => $style->assigned_factory_id,
                     'po_number' => $po?->po_number,
