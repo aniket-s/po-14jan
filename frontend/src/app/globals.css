@@ -216,7 +216,7 @@
 /* Ensure full height inheritance */
 html, body {
   height: 100%;
-  overflow: hidden;
+  overflow: auto;
 }
 
 #__next {
