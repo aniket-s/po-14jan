@@ -35,7 +35,8 @@ import { FileDropzone } from '@/components/ui/file-dropzone';
 const styleSchema = z.object({
   style_number: z.string().min(1, 'Style number is required'),
   description: z.string().optional(),
-  fabric_type_name: z.string().optional(),
+  fabric_type_id: z.coerce.number().optional(),
+  fabric_quality_id: z.coerce.number().optional(),
   fabric_weight: z.string().optional(),
   color_id: z.coerce.number().optional(),
   fit: z.string().optional(),
@@ -79,6 +80,8 @@ export function EditStyleDialog({
   const [categories, setCategories] = useState<any[]>([]);
   const [seasons, setSeasons] = useState<any[]>([]);
   const [colors, setColors] = useState<any[]>([]);
+  const [fabricTypes, setFabricTypes] = useState<any[]>([]);
+  const [fabricQualities, setFabricQualities] = useState<any[]>([]);
   const [trimOptions, setTrimOptions] = useState<MultiSelectOption[]>([]);
   const [sizes, setSizes] = useState<any[]>([]); // Sizes based on selected gender
   const [selectedGender, setSelectedGender] = useState<number | undefined>();
@@ -88,7 +91,8 @@ export function EditStyleDialog({
     defaultValues: {
       style_number: '',
       description: '',
-      fabric_type_name: '',
+      fabric_type_id: undefined,
+      fabric_quality_id: undefined,
       fabric_weight: '',
       color_id: undefined,
       fit: '',
@@ -118,6 +122,8 @@ export function EditStyleDialog({
           categoriesResponse,
           seasonsResponse,
           colorsResponse,
+          fabricTypesResponse,
+          fabricQualitiesResponse,
         ] = await Promise.all([
           api.get('/master-data/trims?all=true'),
           api.get('/master-data/genders?active_only=true&all=true'),
@@ -126,6 +132,8 @@ export function EditStyleDialog({
           api.get('/master-data/categories?all=true'),
           api.get('/master-data/seasons?all=true'),
           api.get('/master-data/colors?all=true'),
+          api.get('/master-data/fabric-types?all=true'),
+          api.get('/master-data/fabric-qualities?all=true'),
         ]);
         const fetchedTrims = trimsResponse.data || [];
         setTrims(fetchedTrims);
@@ -135,6 +143,8 @@ export function EditStyleDialog({
         setCategories(categoriesResponse.data || []);
         setSeasons(seasonsResponse.data || []);
         setColors(colorsResponse.data || []);
+        setFabricTypes(fabricTypesResponse.data || []);
+        setFabricQualities(fabricQualitiesResponse.data || []);
 
         // Transform trims to multi-select options
         const options: MultiSelectOption[] = fetchedTrims.map((trim: any) => ({
@@ -182,7 +192,8 @@ export function EditStyleDialog({
       form.reset({
         style_number: style.style_number || '',
         description: style.description || '',
-        fabric_type_name: style.fabric_type_name || '',
+        fabric_type_id: style.fabric_type_id || undefined,
+        fabric_quality_id: style.fabric_quality_id || undefined,
         fabric_weight: style.fabric_weight || '',
         color_id: style.color_id || undefined,
         fit: style.fit || '',
@@ -249,7 +260,8 @@ export function EditStyleDialog({
       const styleData: any = {
         style_number: data.style_number,
         description: data.description || undefined,
-        fabric_type_name: data.fabric_type_name || undefined,
+        fabric_type_id: data.fabric_type_id || undefined,
+        fabric_quality_id: data.fabric_quality_id || undefined,
         fabric_weight: data.fabric_weight || undefined,
         color_id: data.color_id || undefined,
         fit: data.fit || undefined,
@@ -438,23 +450,59 @@ export function EditStyleDialog({
 
             {/* Fabric & Color Details */}
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold border-b pb-2">Fabric & Color Details</h3>
+              <h3 className="text-sm font-semibold border-b pb-2">Fabric Details</h3>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
-                  name="fabric_type_name"
+                  name="fabric_type_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Fabric Type Name</FormLabel>
+                      <FormLabel>Fabric Type</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="e.g., 60/40 CVC 200GSM, Premium Cotton Twill"
-                          {...field}
-                        />
+                        <select
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select fabric type...</option>
+                          {fabricTypes.map((ft: any) => (
+                            <option key={ft.id} value={ft.id}>
+                              {ft.name}
+                            </option>
+                          ))}
+                        </select>
                       </FormControl>
-                      <FormDescription>
-                        Combined fabric type and name
-                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="fabric_quality_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fabric Quality</FormLabel>
+                      <FormControl>
+                        <select
+                          value={field.value || ''}
+                          onChange={(e) => {
+                            const value = e.target.value ? parseInt(e.target.value) : undefined;
+                            field.onChange(value);
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Select fabric quality...</option>
+                          {fabricQualities.map((fq: any) => (
+                            <option key={fq.id} value={fq.id}>
+                              {fq.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

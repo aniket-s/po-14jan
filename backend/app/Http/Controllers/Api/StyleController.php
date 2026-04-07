@@ -53,6 +53,8 @@ class StyleController extends Controller
             'season_id' => 'nullable|exists:seasons,id',
             'gender_id' => 'required|exists:genders,id',
             'color_id' => 'nullable|exists:colors,id',
+            'fabric_type_id' => 'nullable|exists:fabric_types,id',
+            'fabric_quality_id' => 'nullable|exists:fabric_qualities,id',
             // Enhanced style fields
             'fabric_name' => 'nullable|string|max:255',
             'fabric_type' => 'nullable|string|max:100',
@@ -85,6 +87,15 @@ class StyleController extends Controller
             ], 422);
         }
 
+        // Auto-resolve fabric_type_name from fabric_type_id if not explicitly provided
+        $fabricTypeName = $request->fabric_type_name;
+        if (!$fabricTypeName && $request->fabric_type_id) {
+            $fabricType = \App\Models\FabricType::find($request->fabric_type_id);
+            if ($fabricType) {
+                $fabricTypeName = $fabricType->name;
+            }
+        }
+
         $style = Style::create([
             'style_number' => $request->style_number,
             'description' => $request->description,
@@ -101,10 +112,12 @@ class StyleController extends Controller
             'season_id' => $request->season_id,
             'gender_id' => $request->gender_id,
             'color_id' => $request->color_id,
+            'fabric_type_id' => $request->fabric_type_id,
+            'fabric_quality_id' => $request->fabric_quality_id,
             // Enhanced style fields
             'fabric_name' => $request->fabric_name,
             'fabric_type' => $request->fabric_type,
-            'fabric_type_name' => $request->fabric_type_name,
+            'fabric_type_name' => $fabricTypeName,
             'fabric_weight' => $request->fabric_weight,
             'country_of_origin' => $request->country_of_origin,
             'item_description' => $request->item_description,
@@ -225,6 +238,8 @@ class StyleController extends Controller
             'season_id' => 'nullable|exists:seasons,id',
             'gender_id' => 'nullable|exists:genders,id',
             'color_id' => 'nullable|exists:colors,id',
+            'fabric_type_id' => 'nullable|exists:fabric_types,id',
+            'fabric_quality_id' => 'nullable|exists:fabric_qualities,id',
             // Enhanced fields
             'color_code' => 'nullable|string|max:50',
             'color_name' => 'nullable|string|max:100',
@@ -265,6 +280,15 @@ class StyleController extends Controller
             'unit_price' => $style->unit_price,
         ];
 
+        // Auto-resolve fabric_type_name from fabric_type_id if not explicitly provided
+        $fabricTypeName = $request->fabric_type_name;
+        if (!$fabricTypeName && $request->fabric_type_id) {
+            $fabricType = \App\Models\FabricType::find($request->fabric_type_id);
+            if ($fabricType) {
+                $fabricTypeName = $fabricType->name;
+            }
+        }
+
         $style->update([
             'style_number' => $request->style_number,
             'description' => $request->description,
@@ -283,12 +307,14 @@ class StyleController extends Controller
             'season_id' => $request->season_id,
             'gender_id' => $request->gender_id,
             'color_id' => $request->color_id,
+            'fabric_type_id' => $request->fabric_type_id,
+            'fabric_quality_id' => $request->fabric_quality_id,
             // Enhanced fields
             'color_code' => $request->color_code,
             'color_name' => $request->color_name,
             'fabric_name' => $request->fabric_name,
             'fabric_type' => $request->fabric_type,
-            'fabric_type_name' => $request->fabric_type_name,
+            'fabric_type_name' => $fabricTypeName,
             'fabric_weight' => $request->fabric_weight,
             'country_of_origin' => $request->country_of_origin,
             'item_description' => $request->item_description,
