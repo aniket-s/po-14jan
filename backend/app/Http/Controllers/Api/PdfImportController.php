@@ -172,11 +172,16 @@ class PdfImportController extends Controller
         // Additional cross-validation
         $crossErrors = [];
 
-        // Check for duplicate style numbers within this PO
-        $styleNumbers = array_column($stylesData, 'style_number');
-        $duplicates = array_unique(array_diff_assoc($styleNumbers, array_unique($styleNumbers)));
+        // Check for duplicate style number + color combinations within this PO
+        $styleKeys = array_map(function ($s) {
+            $sn = strtoupper(trim($s['style_number'] ?? ''));
+            $color = strtoupper(trim($s['color_name'] ?? ''));
+            return $color ? "{$sn}|{$color}" : $sn;
+        }, $stylesData);
+        $duplicates = array_unique(array_diff_assoc($styleKeys, array_unique($styleKeys)));
         if (!empty($duplicates)) {
-            $crossErrors['styles'] = ['Duplicate style numbers found: ' . implode(', ', array_unique($duplicates))];
+            $displayDuplicates = array_map(fn($key) => str_replace('|', ' / ', $key), array_unique($duplicates));
+            $crossErrors['styles'] = ['Duplicate style/color combinations found: ' . implode(', ', $displayDuplicates)];
         }
 
         // Validate size breakdown sums match quantity for each style

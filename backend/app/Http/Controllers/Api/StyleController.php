@@ -38,7 +38,7 @@ class StyleController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'style_number' => 'required|string|max:100|unique:styles,style_number',
+            'style_number' => 'required|string|max:100',
             'description' => 'nullable|string',
             'size_breakup' => 'nullable|array',
             'total_quantity' => 'nullable|integer|min:1',
@@ -221,7 +221,7 @@ class StyleController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'style_number' => 'required|string|max:100|unique:styles,style_number,' . $id,
+            'style_number' => 'required|string|max:100',
             'description' => 'nullable|string',
             'fabric' => 'nullable|string|max:255',
             'color' => 'nullable|string|max:100',

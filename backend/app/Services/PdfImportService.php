@@ -109,17 +109,18 @@ class PdfImportService
                 $warnings[] = "Price is \$0.00 for style(s): {$styleList}{$more} - please ask importer or agency to fill the price manually";
             }
 
-            // Check for duplicate style numbers
-            $styleNumbers = [];
+            // Check for duplicate style number + color combinations
+            $styleKeys = [];
             foreach ($lineItems as $item) {
-                $sn = $item['style_number']['value'] ?? '';
+                $sn = strtoupper(trim($item['style_number']['value'] ?? ''));
+                $color = strtoupper(trim($item['color']['value'] ?? ''));
                 if (!empty($sn)) {
-                    $styleNumbers[] = $sn;
+                    $styleKeys[] = $color ? "{$sn} / {$color}" : $sn;
                 }
             }
-            $duplicates = array_unique(array_diff_assoc($styleNumbers, array_unique($styleNumbers)));
+            $duplicates = array_unique(array_diff_assoc($styleKeys, array_unique($styleKeys)));
             if (!empty($duplicates)) {
-                $warnings[] = 'Duplicate style number(s) found: ' . implode(', ', array_unique($duplicates)) . ' - please review';
+                $warnings[] = 'Duplicate style/color combination(s) found: ' . implode(', ', array_unique($duplicates)) . ' - please review';
             }
 
             // Cross-validate size breakdown sums against total quantity per style

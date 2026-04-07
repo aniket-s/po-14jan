@@ -128,11 +128,15 @@ class ClaudePdfImportService
                 $warnings[] = "Price is \$0.00 for style(s): {$styleList}{$more} - please fill the price manually";
             }
 
-            // Check for duplicate style numbers
-            $styleNumbers = array_filter(array_map(fn($item) => $item['style_number']['value'] ?? '', $lineItems));
-            $duplicates = array_unique(array_diff_assoc($styleNumbers, array_unique($styleNumbers)));
+            // Check for duplicate style number + color combinations
+            $styleKeys = array_map(function ($item) {
+                $sn = strtoupper(trim($item['style_number']['value'] ?? ''));
+                $color = strtoupper(trim($item['color']['value'] ?? ''));
+                return $color ? "{$sn} / {$color}" : $sn;
+            }, $lineItems);
+            $duplicates = array_unique(array_diff_assoc($styleKeys, array_unique($styleKeys)));
             if (!empty($duplicates)) {
-                $warnings[] = 'Duplicate style number(s) found: ' . implode(', ', array_unique($duplicates)) . ' - please review';
+                $warnings[] = 'Duplicate style/color combination(s) found: ' . implode(', ', array_unique($duplicates)) . ' - please review';
             }
 
             // Cross-validate totals
