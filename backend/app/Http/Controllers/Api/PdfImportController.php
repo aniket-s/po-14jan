@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use App\Jobs\SendPurchaseOrderNotification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
@@ -252,14 +253,28 @@ class PdfImportController extends Controller
 
                 foreach ($stylesData as $index => $styleData) {
                     try {
+                        // Attempt to look up color_id from colors table
+                        $colorId = null;
+                        $colorName = $styleData['color_name'] ?? null;
+                        if ($colorName) {
+                            $color = \App\Models\Color::where('name', $colorName)->first();
+                            if ($color) {
+                                $colorId = $color->id;
+                            }
+                        }
+
                         $style = Style::create([
                             'style_number' => $styleData['style_number'],
                             'description' => $styleData['description'] ?? null,
-                            'color_name' => $styleData['color_name'] ?? null,
+                            'color_name' => $colorName,
+                            'color_id' => $colorId,
                             'size_breakup' => $styleData['size_breakdown'] ?? null,
                             'total_quantity' => $styleData['quantity'],
                             'unit_price' => $styleData['unit_price'],
                             'fob_price' => $styleData['unit_price'],
+                            'retailer_id' => $headerData['retailer_id'] ?? null,
+                            'season_id' => $headerData['season_id'] ?? null,
+                            'country_of_origin' => $headerData['country_of_origin'] ?? null,
                             'created_by' => $user->id,
                             'is_active' => true,
                         ]);
@@ -304,6 +319,18 @@ class PdfImportController extends Controller
                     $tnaService->generateTNAChart($po);
                 } catch (\Exception $e) {
                     \Log::error('Failed to auto-generate TNA chart for PDF-imported PO ' . $po->id . ': ' . $e->getMessage());
+                }
+
+                // Send notifications
+                if ($po->agency_id) {
+                    $agency = \App\Models\User::find($po->agency_id);
+                    if ($agency) {
+                        SendPurchaseOrderNotification::dispatch($po, $agency, 'created', [
+                            'created_by' => $user->name,
+                            'source' => 'pdf_import',
+                            'styles_count' => $stylesCreated,
+                        ]);
+                    }
                 }
 
                 // Clean up temp file if provided

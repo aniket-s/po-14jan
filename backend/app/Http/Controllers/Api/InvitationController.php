@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\EmailService;
 use App\Services\PermissionService;
+use App\Jobs\SendPurchaseOrderNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -188,6 +189,15 @@ class InvitationController extends Controller
             // Send email
             $this->sendInvitationEmail($invitation, $po);
 
+            // Send in-app notification if invited user exists
+            if ($invitedUser) {
+                SendPurchaseOrderNotification::dispatch($po, $invitedUser, 'status_changed', [
+                    'event' => 'invitation_received',
+                    'invitation_type' => $request->invitation_type,
+                    'invited_by' => $user->name,
+                ]);
+            }
+
             $invitations[] = $invitation;
             $sent++;
         }
@@ -315,6 +325,16 @@ class InvitationController extends Controller
             ]
         );
 
+        // Notify the inviter
+        $inviter = User::find($invitation->invited_by);
+        if ($inviter) {
+            SendPurchaseOrderNotification::dispatch($invitation->purchaseOrder, $inviter, 'status_changed', [
+                'event' => 'invitation_accepted',
+                'accepted_by' => $user->name,
+                'invitation_type' => $invitation->invitation_type,
+            ]);
+        }
+
         return response()->json([
             'message' => 'Invitation accepted successfully',
             'invitation' => [
@@ -379,6 +399,16 @@ class InvitationController extends Controller
             ]
         );
 
+        // Notify the inviter
+        $inviter = User::find($invitation->invited_by);
+        if ($inviter) {
+            SendPurchaseOrderNotification::dispatch($invitation->purchaseOrder, $inviter, 'status_changed', [
+                'event' => 'invitation_accepted',
+                'accepted_by' => $user->name,
+                'invitation_type' => $invitation->invitation_type,
+            ]);
+        }
+
         return response()->json([
             'message' => 'Account created and invitation accepted successfully',
             'user' => [
@@ -442,6 +472,17 @@ class InvitationController extends Controller
                 'reason' => $request->reason,
             ]
         );
+
+        // Notify the inviter
+        $inviter = User::find($invitation->invited_by);
+        if ($inviter) {
+            SendPurchaseOrderNotification::dispatch($invitation->purchaseOrder, $inviter, 'status_changed', [
+                'event' => 'invitation_rejected',
+                'rejected_by' => $user->name,
+                'invitation_type' => $invitation->invitation_type,
+                'reason' => $request->reason,
+            ]);
+        }
 
         return response()->json([
             'message' => 'Invitation rejected successfully',
@@ -828,6 +869,16 @@ class InvitationController extends Controller
             ]
         );
 
+        // Notify the inviter
+        $inviter = User::find($invitation->invited_by);
+        if ($inviter) {
+            SendPurchaseOrderNotification::dispatch($invitation->purchaseOrder, $inviter, 'status_changed', [
+                'event' => 'invitation_accepted',
+                'accepted_by' => $user->name,
+                'invitation_type' => $invitation->invitation_type,
+            ]);
+        }
+
         return response()->json([
             'message' => 'Invitation accepted successfully',
             'invitation' => [
@@ -885,6 +936,17 @@ class InvitationController extends Controller
                 'reason' => $request->reason,
             ]
         );
+
+        // Notify the inviter
+        $inviter = User::find($invitation->invited_by);
+        if ($inviter) {
+            SendPurchaseOrderNotification::dispatch($invitation->purchaseOrder, $inviter, 'status_changed', [
+                'event' => 'invitation_rejected',
+                'rejected_by' => $user->name,
+                'invitation_type' => $invitation->invitation_type,
+                'reason' => $request->reason,
+            ]);
+        }
 
         return response()->json([
             'message' => 'Invitation rejected successfully',

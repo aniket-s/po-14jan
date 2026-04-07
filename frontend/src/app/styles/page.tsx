@@ -369,6 +369,8 @@ export default function StylesPage() {
                                 {style.color.name}
                                 {style.color.code && <span className="ml-1 text-xs opacity-70">({style.color.code})</span>}
                               </Badge>
+                            ) : style.color_name ? (
+                              <span className="text-sm">{style.color_name}</span>
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}

@@ -9,6 +9,7 @@ use App\Models\ShipOption;
 use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\PermissionService;
+use App\Jobs\SendPurchaseOrderNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -307,6 +308,29 @@ class ShippingApprovalController extends Controller
             ]
         );
 
+        // Notify agency and importer of shipping approval request
+        $po = $pivot->purchaseOrder;
+        if ($po && $po->agency_id) {
+            $agency = User::find($po->agency_id);
+            if ($agency) {
+                SendPurchaseOrderNotification::dispatch($po, $agency, 'status_changed', [
+                    'event' => 'shipping_approval_requested',
+                    'requested_by' => $user->name,
+                    'style_id' => $styleId,
+                ]);
+            }
+        }
+        if ($po && $po->importer_id) {
+            $importer = User::find($po->importer_id);
+            if ($importer) {
+                SendPurchaseOrderNotification::dispatch($po, $importer, 'status_changed', [
+                    'event' => 'shipping_approval_requested',
+                    'requested_by' => $user->name,
+                    'style_id' => $styleId,
+                ]);
+            }
+        }
+
         return response()->json([
             'message' => 'Shipping approval requested successfully',
             'shipping_approval_status' => $pivot->shipping_approval_status,
@@ -357,6 +381,18 @@ class ShippingApprovalController extends Controller
             ['po_id' => $poId, 'style_id' => $styleId, 'ship_option_id' => $request->ship_option_id]
         );
 
+        // Notify importer of agency approval
+        if ($po->importer_id) {
+            $importer = User::find($po->importer_id);
+            if ($importer) {
+                SendPurchaseOrderNotification::dispatch($po, $importer, 'status_changed', [
+                    'event' => 'shipping_agency_approved',
+                    'approved_by' => $user->name,
+                    'style_id' => $styleId,
+                ]);
+            }
+        }
+
         return response()->json([
             'message' => 'Shipping approved by agency',
             'shipping_approval_status' => $pivot->shipping_approval_status,
@@ -392,6 +428,28 @@ class ShippingApprovalController extends Controller
             "Importer approved shipping for style in PO",
             ['po_id' => $poId, 'style_id' => $styleId]
         );
+
+        // Notify factory and agency of final approval
+        if ($pivot->assigned_factory_id) {
+            $factory = User::find($pivot->assigned_factory_id);
+            if ($factory) {
+                SendPurchaseOrderNotification::dispatch($po, $factory, 'status_changed', [
+                    'event' => 'shipping_final_approved',
+                    'approved_by' => $user->name,
+                    'style_id' => $styleId,
+                ]);
+            }
+        }
+        if ($po->agency_id) {
+            $agency = User::find($po->agency_id);
+            if ($agency) {
+                SendPurchaseOrderNotification::dispatch($po, $agency, 'status_changed', [
+                    'event' => 'shipping_final_approved',
+                    'approved_by' => $user->name,
+                    'style_id' => $styleId,
+                ]);
+            }
+        }
 
         return response()->json([
             'message' => 'Shipping approved by importer (final approval)',
@@ -443,6 +501,19 @@ class ShippingApprovalController extends Controller
             "Shipping approval rejected: {$request->reason}",
             ['po_id' => $poId, 'style_id' => $styleId, 'reason' => $request->reason]
         );
+
+        // Notify factory of rejection
+        if ($pivot->assigned_factory_id) {
+            $factory = User::find($pivot->assigned_factory_id);
+            if ($factory) {
+                SendPurchaseOrderNotification::dispatch($po, $factory, 'status_changed', [
+                    'event' => 'shipping_rejected',
+                    'rejected_by' => $user->name,
+                    'reason' => $request->reason,
+                    'style_id' => $styleId,
+                ]);
+            }
+        }
 
         return response()->json([
             'message' => 'Shipping approval rejected',
