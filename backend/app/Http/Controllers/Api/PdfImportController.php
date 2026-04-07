@@ -258,7 +258,6 @@ class PdfImportController extends Controller
                             'size_breakup' => $styleData['size_breakdown'] ?? null,
                             'total_quantity' => $styleData['quantity'],
                             'unit_price' => $styleData['unit_price'],
-                            'total_price' => round($styleData['quantity'] * $styleData['unit_price'], 2),
                             'fob_price' => $styleData['unit_price'],
                             'created_by' => $user->id,
                             'is_active' => true,
