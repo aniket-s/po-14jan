@@ -14,12 +14,9 @@ class Style extends Model
         'description',
         'fabric',
         'color',
-        'size_breakdown',
         'size_breakup',
-        'quantity',
         'total_quantity',
         'unit_price',
-        'total_price',
         'fob_price',
         'technical_file_paths',
         'images',
@@ -63,12 +60,9 @@ class Style extends Model
     ];
 
     protected $casts = [
-        'size_breakdown' => 'array',
         'size_breakup' => 'array',
-        'quantity' => 'integer',
         'total_quantity' => 'integer',
         'unit_price' => 'decimal:2',
-        'total_price' => 'decimal:2',
         'fob_price' => 'decimal:2',
         'msrp' => 'decimal:2',
         'wholesale_price' => 'decimal:2',
