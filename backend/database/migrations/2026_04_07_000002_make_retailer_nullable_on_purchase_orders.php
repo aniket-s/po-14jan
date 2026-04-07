@@ -7,20 +7,20 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Make the legacy retailer string column nullable.
-     * POs now use retailer_id (FK) instead, but the old column still exists.
+     * Drop the legacy retailer string column.
+     * POs now use retailer_id (FK to retailers table) instead.
      */
     public function up(): void
     {
         Schema::table('purchase_orders', function (Blueprint $table) {
-            $table->string('retailer')->nullable()->default(null)->change();
+            $table->dropColumn('retailer');
         });
     }
 
     public function down(): void
     {
         Schema::table('purchase_orders', function (Blueprint $table) {
-            $table->string('retailer')->nullable(false)->default(null)->change();
+            $table->string('retailer')->nullable()->after('po_date');
         });
     }
 };
