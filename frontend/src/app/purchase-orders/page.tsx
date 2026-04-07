@@ -335,15 +335,10 @@ export default function PurchaseOrdersPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this purchase order?')) {
-      return;
-    }
-
     try {
       await api.delete(`/purchase-orders/${id}`);
       fetchPurchaseOrders();
     } catch (error: any) {
-      const message = error.response?.data?.message || '';
       const stylesCount = error.response?.data?.styles_count;
       if (stylesCount && stylesCount > 0) {
         const po = purchaseOrders.find((p) => p.id === id);
