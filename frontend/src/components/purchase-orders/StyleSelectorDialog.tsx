@@ -352,7 +352,7 @@ export function StyleSelectorDialog({
                           {style.total_quantity?.toLocaleString() || '-'}
                         </TableCell>
                         <TableCell className="text-right">
-                          {style.unit_price ? `$${style.unit_price.toFixed(2)}` : '-'}
+                          {style.unit_price ? `$${Number(style.unit_price).toFixed(2)}` : '-'}
                         </TableCell>
                       </TableRow>
                     ))
