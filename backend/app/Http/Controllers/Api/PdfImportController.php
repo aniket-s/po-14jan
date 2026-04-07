@@ -255,7 +255,7 @@ class PdfImportController extends Controller
                             'style_number' => $styleData['style_number'],
                             'description' => $styleData['description'] ?? null,
                             'color_name' => $styleData['color_name'] ?? null,
-                            'size_breakdown' => $styleData['size_breakdown'] ?? null,
+                            'size_breakup' => $styleData['size_breakdown'] ?? null,
                             'total_quantity' => $styleData['quantity'],
                             'unit_price' => $styleData['unit_price'],
                             'total_price' => round($styleData['quantity'] * $styleData['unit_price'], 2),
