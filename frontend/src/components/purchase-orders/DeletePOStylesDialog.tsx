@@ -52,7 +52,7 @@ export function DeletePOStylesDialog({
     setIsLoading(true);
     try {
       const result = await getPOStyles(poId, { per_page: 100 });
-      setStyles(result.data);
+      setStyles(result.data || []);
     } catch (error) {
       console.error('Failed to fetch styles:', error);
       toast.error('Failed to load styles');
@@ -134,7 +134,7 @@ export function DeletePOStylesDialog({
     setIsDeleting(false);
   };
 
-  const allSelected = styles.length > 0 && selectedIds.size === styles.length;
+  const allSelected = styles && styles.length > 0 && selectedIds.size === styles.length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

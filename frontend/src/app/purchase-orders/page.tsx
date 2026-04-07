@@ -33,7 +33,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Plus, Search, Eye, Edit, Trash2, FileDown, FileUp, FileText, Loader2, List, Sheet } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Plus, Search, Eye, Edit, Trash2, FileDown, FileUp, FileText, Loader2, List, Sheet, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
 import { TableSkeleton } from '@/components/skeletons';
 import { PurchaseOrder, PaginatedResponse } from '@/types';
@@ -121,6 +131,8 @@ export default function PurchaseOrdersPage() {
   const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
   const [deleteStylesDialogOpen, setDeleteStylesDialogOpen] = useState(false);
   const [deletePOTarget, setDeletePOTarget] = useState<{ id: number; po_number: string } | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [isDeleteLoading, setIsDeleteLoading] = useState(false);
 
   const [currencies, setCurrencies] = useState<any[]>([]);
   const [paymentTerms, setPaymentTerms] = useState<any[]>([]);
@@ -334,24 +346,30 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this purchase order?')) {
-      return;
-    }
+  const handleDelete = (id: number) => {
+    const po = purchaseOrders.find((p) => p.id === id);
+    setDeletePOTarget({ id, po_number: po?.po_number || `#${id}` });
+    setDeleteConfirmOpen(true);
+  };
 
+  const confirmDeletePO = async () => {
+    if (!deletePOTarget) return;
+    setIsDeleteLoading(true);
     try {
-      await api.delete(`/purchase-orders/${id}`);
+      await api.delete(`/purchase-orders/${deletePOTarget.id}`);
+      setDeleteConfirmOpen(false);
+      setDeletePOTarget(null);
       fetchPurchaseOrders();
     } catch (error: any) {
-      const message = error.response?.data?.message || '';
       const stylesCount = error.response?.data?.styles_count;
       if (stylesCount && stylesCount > 0) {
-        const po = purchaseOrders.find((p) => p.id === id);
-        setDeletePOTarget({ id, po_number: po?.po_number || `#${id}` });
+        setDeleteConfirmOpen(false);
         setDeleteStylesDialogOpen(true);
       } else {
         console.error('Failed to delete purchase order:', error);
       }
+    } finally {
+      setIsDeleteLoading(false);
     }
   };
 
@@ -1400,6 +1418,41 @@ export default function PurchaseOrdersPage() {
           onOpenChange={setIsCreateAgentDialogOpen}
           onSuccess={fetchMasterData}
         />
+
+        {/* Delete PO Confirmation */}
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                Delete Purchase Order?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete purchase order <strong>{deletePOTarget?.po_number}</strong>? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleteLoading}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  confirmDeletePO();
+                }}
+                disabled={isDeleteLoading}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeleteLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Delete PO Styles Dialog */}
         <DeletePOStylesDialog
