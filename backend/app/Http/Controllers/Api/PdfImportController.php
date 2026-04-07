@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class PdfImportController extends Controller
@@ -264,12 +265,18 @@ class PdfImportController extends Controller
                         ]);
 
                         // Attach style to PO via pivot table
-                        $po->styles()->attach($style->id, [
+                        $pivotData = [
                             'quantity_in_po' => $styleData['quantity'],
                             'unit_price_in_po' => $styleData['unit_price'],
-                            'size_breakdown' => json_encode($styleData['size_breakdown'] ?? null),
                             'status' => 'pending',
-                        ]);
+                        ];
+
+                        // Add size_breakdown to pivot if the column exists
+                        if (Schema::hasColumn('purchase_order_style', 'size_breakdown')) {
+                            $pivotData['size_breakdown'] = json_encode($styleData['size_breakdown'] ?? null);
+                        }
+
+                        $po->styles()->attach($style->id, $pivotData);
 
                         $stylesCreated++;
                     } catch (\Exception $e) {
