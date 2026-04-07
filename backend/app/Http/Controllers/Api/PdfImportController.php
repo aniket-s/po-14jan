@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use App\Jobs\SendPurchaseOrderNotification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
@@ -318,6 +319,18 @@ class PdfImportController extends Controller
                     $tnaService->generateTNAChart($po);
                 } catch (\Exception $e) {
                     \Log::error('Failed to auto-generate TNA chart for PDF-imported PO ' . $po->id . ': ' . $e->getMessage());
+                }
+
+                // Send notifications
+                if ($po->agency_id) {
+                    $agency = \App\Models\User::find($po->agency_id);
+                    if ($agency) {
+                        SendPurchaseOrderNotification::dispatch($po, $agency, 'created', [
+                            'created_by' => $user->name,
+                            'source' => 'pdf_import',
+                            'styles_count' => $stylesCreated,
+                        ]);
+                    }
                 }
 
                 // Clean up temp file if provided

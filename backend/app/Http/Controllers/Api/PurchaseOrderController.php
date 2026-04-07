@@ -13,6 +13,7 @@ use App\Services\SampleScheduleService;
 use App\Models\Style;
 use App\Models\PurchaseOrderStyle;
 use App\Services\TNAChartService;
+use App\Jobs\SendPurchaseOrderNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -522,6 +523,16 @@ class PurchaseOrderController extends Controller
         } catch (\Exception $e) {
             // Log the error but don't fail PO creation
             \Log::error('Failed to auto-generate TNA chart for PO ' . $po->id . ': ' . $e->getMessage());
+        }
+
+        // Send notifications
+        if ($po->agency_id) {
+            $agency = User::find($po->agency_id);
+            if ($agency) {
+                SendPurchaseOrderNotification::dispatch($po, $agency, 'created', [
+                    'created_by' => $request->user()->name,
+                ]);
+            }
         }
 
         return response()->json([

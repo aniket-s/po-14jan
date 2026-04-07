@@ -11,6 +11,7 @@ use App\Services\ActivityLogService;
 use App\Services\EmailService;
 use App\Services\PermissionService;
 use App\Services\SampleExcelApprovalService;
+use App\Jobs\SendSampleNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -599,6 +600,7 @@ class SampleController extends Controller
         if ($po->agency_id) {
             $agency = User::find($po->agency_id);
             if ($agency) {
+                SendSampleNotification::dispatch($sample, $agency, 'submitted');
                 $this->emailService->sendFromTemplate(
                     'sample_submitted',
                     $agency->email,
@@ -615,6 +617,7 @@ class SampleController extends Controller
 
         // Notify importer
         if ($po->importer) {
+            SendSampleNotification::dispatch($sample, $po->importer, 'submitted');
             $this->emailService->sendFromTemplate(
                 'sample_submitted_to_importer',
                 $po->importer->email,
@@ -639,6 +642,7 @@ class SampleController extends Controller
             return;
         }
 
+        SendSampleNotification::dispatch($sample, $po->importer, 'approved');
         $this->emailService->sendFromTemplate(
             'sample_approved_by_agency',
             $po->importer->email,
@@ -657,6 +661,9 @@ class SampleController extends Controller
      */
     private function sendAgencyRejectedNotification(Sample $sample): void
     {
+        if ($sample->submittedBy) {
+            SendSampleNotification::dispatch($sample, $sample->submittedBy, 'rejected', $sample->agency_rejection_reason);
+        }
         $this->emailService->sendFromTemplate(
             'sample_factory_rejected',
             $sample->submittedBy->email,
@@ -681,6 +688,7 @@ class SampleController extends Controller
 
         // Notify the factory who submitted the sample
         if ($sample->submittedBy) {
+            SendSampleNotification::dispatch($sample, $sample->submittedBy, 'approved');
             $this->emailService->sendFromTemplate(
                 'sample_fully_approved',
                 $sample->submittedBy->email,
@@ -705,6 +713,7 @@ class SampleController extends Controller
         }
 
         if ($sample->submittedBy) {
+            SendSampleNotification::dispatch($sample, $sample->submittedBy, 'rejected', $sample->importer_rejection_reason);
             $this->emailService->sendFromTemplate(
                 'sample_importer_rejected',
                 $sample->submittedBy->email,
