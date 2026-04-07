@@ -48,6 +48,7 @@ import { CreateWarehouseDialog } from '@/components/master-data/CreateWarehouseD
 import { CreateCountryDialog } from '@/components/master-data/CreateCountryDialog';
 import { CreateCurrencyDialog } from '@/components/master-data/CreateCurrencyDialog';
 import { CreatePaymentTermDialog } from '@/components/master-data/CreatePaymentTermDialog';
+import { DeletePOStylesDialog } from '@/components/purchase-orders/DeletePOStylesDialog';
 import { CreateAgentDialog } from '@/components/master-data/CreateAgentDialog';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -118,6 +119,8 @@ export default function PurchaseOrdersPage() {
   const [isCreateCurrencyDialogOpen, setIsCreateCurrencyDialogOpen] = useState(false);
   const [isCreatePaymentTermDialogOpen, setIsCreatePaymentTermDialogOpen] = useState(false);
   const [isCreateAgentDialogOpen, setIsCreateAgentDialogOpen] = useState(false);
+  const [deleteStylesDialogOpen, setDeleteStylesDialogOpen] = useState(false);
+  const [deletePOTarget, setDeletePOTarget] = useState<{ id: number; po_number: string } | null>(null);
 
   const [currencies, setCurrencies] = useState<any[]>([]);
   const [paymentTerms, setPaymentTerms] = useState<any[]>([]);
@@ -339,8 +342,16 @@ export default function PurchaseOrdersPage() {
     try {
       await api.delete(`/purchase-orders/${id}`);
       fetchPurchaseOrders();
-    } catch (error) {
-      console.error('Failed to delete purchase order:', error);
+    } catch (error: any) {
+      const message = error.response?.data?.message || '';
+      const stylesCount = error.response?.data?.styles_count;
+      if (stylesCount && stylesCount > 0) {
+        const po = purchaseOrders.find((p) => p.id === id);
+        setDeletePOTarget({ id, po_number: po?.po_number || `#${id}` });
+        setDeleteStylesDialogOpen(true);
+      } else {
+        console.error('Failed to delete purchase order:', error);
+      }
     }
   };
 
@@ -1388,6 +1399,15 @@ export default function PurchaseOrdersPage() {
           open={isCreateAgentDialogOpen}
           onOpenChange={setIsCreateAgentDialogOpen}
           onSuccess={fetchMasterData}
+        />
+
+        {/* Delete PO Styles Dialog */}
+        <DeletePOStylesDialog
+          open={deleteStylesDialogOpen}
+          onOpenChange={setDeleteStylesDialogOpen}
+          poId={deletePOTarget?.id ?? null}
+          poNumber={deletePOTarget?.po_number ?? ''}
+          onSuccess={fetchPurchaseOrders}
         />
       </div>
     </DashboardLayout>
