@@ -52,7 +52,7 @@ export function DeletePOStylesDialog({
     setIsLoading(true);
     try {
       const result = await getPOStyles(poId, { per_page: 100 });
-      setStyles(result.data || []);
+      setStyles((result as any).styles || result.data || []);
     } catch (error) {
       console.error('Failed to fetch styles:', error);
       toast.error('Failed to load styles');
