@@ -419,7 +419,7 @@ class StyleController extends Controller
         $user = $request->user();
 
         $query = Style::with([
-            'purchaseOrder:id,po_number,status',
+            'purchaseOrders:id,po_number,status',
             'prepacks.prepackCode',
             'brand:id,name',
             'retailer:id,name',
@@ -495,7 +495,7 @@ class StyleController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('style_number', 'like', "%{$search}%")
                   ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhereHas('purchaseOrder', function($q) use ($search) {
+                  ->orWhereHas('purchaseOrders', function($q) use ($search) {
                       $q->where('po_number', 'like', "%{$search}%");
                   });
             });
