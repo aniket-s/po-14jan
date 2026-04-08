@@ -462,6 +462,9 @@ class ProductionTrackingController extends Controller
         try {
             $style = $tracking->style;
             $po = $style->getEffectivePurchaseOrder();
+            if (!$po) {
+                return;
+            }
             $stage = $tracking->productionStage;
 
             // Notify importer

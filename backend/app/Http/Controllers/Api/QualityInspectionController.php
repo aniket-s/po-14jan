@@ -308,16 +308,17 @@ class QualityInspectionController extends Controller
     {
         $user = $request->user();
         $inspection = QualityInspection::with([
-            'style.purchaseOrder',
+            'style',
             'inspectionType',
             'inspector:id,name,email',
             'submittedBy:id,name',
             'approvedBy:id,name',
             'defects.defectType',
         ])->findOrFail($id);
+        $po = \App\Models\PurchaseOrder::findOrFail($poId);
 
         // Check access permission
-        if (!$this->permissionService->canAccessPurchaseOrder($user, $inspection->style->purchaseOrder)) {
+        if (!$this->permissionService->canAccessPurchaseOrder($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to view this quality inspection',
             ], 403);
@@ -335,7 +336,7 @@ class QualityInspectionController extends Controller
     public function update(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
-        $inspection = QualityInspection::with('style.purchaseOrder')->findOrFail($id);
+        $inspection = QualityInspection::with('style')->findOrFail($id);
 
         // Check permission
         if (!$this->canUpdateInspection($user, $inspection)) {
@@ -404,7 +405,7 @@ class QualityInspectionController extends Controller
     public function addDefects(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
-        $inspection = QualityInspection::with('style.purchaseOrder')->findOrFail($id);
+        $inspection = QualityInspection::with('style')->findOrFail($id);
 
         // Check permission
         if (!$this->canUpdateInspection($user, $inspection)) {
@@ -488,7 +489,7 @@ class QualityInspectionController extends Controller
     public function complete(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
-        $inspection = QualityInspection::with('style.purchaseOrder')->findOrFail($id);
+        $inspection = QualityInspection::with('style')->findOrFail($id);
 
         // Check permission
         if (!$this->canCompleteInspection($user, $inspection)) {
@@ -556,10 +557,11 @@ class QualityInspectionController extends Controller
     public function certificate(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
-        $inspection = QualityInspection::with('style.purchaseOrder')->findOrFail($id);
+        $inspection = QualityInspection::with('style')->findOrFail($id);
+        $po = \App\Models\PurchaseOrder::findOrFail($poId);
 
         // Check access permission
-        if (!$this->permissionService->canAccessPurchaseOrder($user, $inspection->style->purchaseOrder)) {
+        if (!$this->permissionService->canAccessPurchaseOrder($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to download this certificate',
             ], 403);
@@ -586,7 +588,7 @@ class QualityInspectionController extends Controller
                 'description' => $inspection->style->description,
             ],
             'po' => [
-                'po_number' => $inspection->style->purchaseOrder->po_number,
+                'po_number' => $inspection->style->getEffectivePurchaseOrder()?->po_number,
             ],
             'aql' => [
                 'lot_size' => $inspection->lot_size,
@@ -779,7 +781,10 @@ class QualityInspectionController extends Controller
     private function sendInspectionCompletedNotification(QualityInspection $inspection): void
     {
         try {
-            $po = $inspection->style->purchaseOrder;
+            $po = $inspection->style->getEffectivePurchaseOrder();
+            if (!$po) {
+                return;
+            }
 
             // Notify importer
             $this->emailService->sendTemplatedEmail(
