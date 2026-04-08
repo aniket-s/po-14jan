@@ -37,10 +37,11 @@ class QualityInspectionController extends Controller
     public function index(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
+        $po = \App\Models\PurchaseOrder::findOrFail($poId);
 
         // Check access permission
-        if (!$this->permissionService->canAccessPurchaseOrder($user, $style->purchaseOrder)) {
+        if (!$this->permissionService->canAccessPurchaseOrder($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to view quality inspections',
             ], 403);
@@ -90,10 +91,11 @@ class QualityInspectionController extends Controller
     public function calculateAql(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
+        $po = \App\Models\PurchaseOrder::findOrFail($poId);
 
         // Check access permission
-        if (!$this->permissionService->canAccessPurchaseOrder($user, $style->purchaseOrder)) {
+        if (!$this->permissionService->canAccessPurchaseOrder($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to calculate AQL',
             ], 403);
@@ -158,10 +160,11 @@ class QualityInspectionController extends Controller
     public function store(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
+        $po = \App\Models\PurchaseOrder::findOrFail($poId);
 
         // Check permission
-        if (!$this->canCreateInspection($user, $style)) {
+        if (!$this->canCreateInspection($user, $style, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to create quality inspections',
             ], 403);
@@ -602,10 +605,11 @@ class QualityInspectionController extends Controller
     public function statistics(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
+        $po = \App\Models\PurchaseOrder::findOrFail($poId);
 
         // Check access permission
-        if (!$this->permissionService->canAccessPurchaseOrder($user, $style->purchaseOrder)) {
+        if (!$this->permissionService->canAccessPurchaseOrder($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to view inspection statistics',
             ], 403);
@@ -707,7 +711,7 @@ class QualityInspectionController extends Controller
     /**
      * Check if user can create inspection
      */
-    private function canCreateInspection(object $user, Style $style): bool
+    private function canCreateInspection(object $user, Style $style, ?\App\Models\PurchaseOrder $po = null): bool
     {
         // Admin and QC inspectors can create
         if ($user->hasRole(['admin', 'qc_inspector'])) {
@@ -715,7 +719,8 @@ class QualityInspectionController extends Controller
         }
 
         // Check PO access
-        return $this->permissionService->canAccessPurchaseOrder($user, $style->purchaseOrder);
+        $effectivePo = $po ?? $style->getEffectivePurchaseOrder();
+        return $effectivePo && $this->permissionService->canAccessPurchaseOrder($user, $effectivePo);
     }
 
     /**
@@ -820,8 +825,8 @@ class QualityInspectionController extends Controller
         $user = $request->user();
 
         $query = \App\Models\QualityInspection::with([
-            'style.purchaseOrder:id,po_number',
-            'style:id,purchase_order_id,style_number',
+            'style.purchaseOrders:id,po_number',
+            'style:id,style_number',
             'inspectionType:id,name,code',
             'aqlLevel:id,name,code'
         ]);
@@ -832,8 +837,8 @@ class QualityInspectionController extends Controller
                 $q->where('assigned_factory_id', $user->id);
             });
         } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrder', function($q) use ($user) {
-                $q->where('created_by', $user->id);
+            $query->whereHas('style.purchaseOrders', function($q) use ($user) {
+                $q->where('importer_id', $user->id);
             });
         }
 
@@ -849,7 +854,7 @@ class QualityInspectionController extends Controller
                 $q->where('certificate_number', 'like', "%{$search}%")
                   ->orWhereHas('style', function($sq) use ($search) {
                     $sq->where('style_number', 'like', "%{$search}%");
-                  })->orWhereHas('style.purchaseOrder', function($pq) use ($search) {
+                  })->orWhereHas('style.purchaseOrders', function($pq) use ($search) {
                     $pq->where('po_number', 'like', "%{$search}%");
                   });
             });

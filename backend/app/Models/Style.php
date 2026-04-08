@@ -332,6 +332,35 @@ class Style extends Model
     }
 
     /**
+     * Check if this style belongs to a given purchase order (via direct FK or pivot table)
+     */
+    public function belongsToPurchaseOrder($poId): bool
+    {
+        if ($this->po_id == $poId) {
+            return true;
+        }
+        return $this->purchaseOrders()->where('purchase_orders.id', $poId)->exists();
+    }
+
+    /**
+     * Get the effective purchase order (from po_id or first pivot entry)
+     * Use this instead of $style->purchaseOrder when styles may be linked via pivot only.
+     */
+    public function getEffectivePurchaseOrder()
+    {
+        if ($this->po_id && $this->relationLoaded('purchaseOrder')) {
+            return $this->purchaseOrder;
+        }
+        if ($this->po_id) {
+            return $this->purchaseOrder;
+        }
+        if ($this->relationLoaded('purchaseOrders') && $this->purchaseOrders->isNotEmpty()) {
+            return $this->purchaseOrders->first();
+        }
+        return $this->purchaseOrders()->first();
+    }
+
+    /**
      * Get the count of purchase orders using this style
      */
     public function getPurchaseOrdersCountAttribute(): int

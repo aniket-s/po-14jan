@@ -58,9 +58,10 @@ interface QualityInspection {
   created_at: string;
   style?: {
     style_number: string;
-    purchase_order?: {
+    purchase_orders?: Array<{
+      id: number;
       po_number: string;
-    };
+    }>;
   };
   inspector?: {
     name: string;
@@ -71,10 +72,10 @@ interface Style {
   id: number;
   style_number: string;
   quantity: number;
-  purchase_order_id: number;
-  purchase_order?: {
+  purchase_orders?: Array<{
+    id: number;
     po_number: string;
-  };
+  }>;
 }
 
 interface AQLCalculation {
@@ -370,7 +371,7 @@ export default function QualityInspectionsPage() {
                           <SelectContent>
                             {styles.map((style) => (
                               <SelectItem key={style.id} value={style.id.toString()}>
-                                {style.style_number} - {style.purchase_order?.po_number}
+                                {style.style_number} - {style.purchase_orders?.[0]?.po_number}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -683,7 +684,7 @@ export default function QualityInspectionsPage() {
                       <TableRow key={inspection.id}>
                         <TableCell>{formatDate(inspection.inspection_date)}</TableCell>
                         <TableCell className="font-medium">{inspection.style?.style_number}</TableCell>
-                        <TableCell>{inspection.style?.purchase_order?.po_number || 'N/A'}</TableCell>
+                        <TableCell>{inspection.style?.purchase_orders?.[0]?.po_number || 'N/A'}</TableCell>
                         <TableCell>{inspection.inspector?.name || 'N/A'}</TableCell>
                         <TableCell className="text-right">{inspection.lot_size.toLocaleString()}</TableCell>
                         <TableCell className="text-right">{inspection.sample_size}</TableCell>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ProductionTracking;
 use App\Models\ProductionStage;
+use App\Models\PurchaseOrder;
 use App\Models\Style;
 use App\Services\ActivityLogService;
 use App\Services\EmailService;
@@ -35,10 +36,11 @@ class ProductionTrackingController extends Controller
     public function index(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
+        $po = PurchaseOrder::findOrFail($poId);
 
         // Check access permission
-        if (!$this->permissionService->canAccessPurchaseOrder($user, $style->purchaseOrder)) {
+        if (!$this->permissionService->canAccessPurchaseOrder($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to view this production tracking',
             ], 403);
@@ -77,10 +79,11 @@ class ProductionTrackingController extends Controller
     public function store(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
+        $po = PurchaseOrder::findOrFail($poId);
 
         // Check if user is assigned factory
-        if (!$this->canSubmitProductionUpdate($user, $style)) {
+        if (!$this->canSubmitProductionUpdate($user, $style, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to submit production updates for this style',
             ], 403);
@@ -178,13 +181,14 @@ class ProductionTrackingController extends Controller
     {
         $user = $request->user();
         $tracking = ProductionTracking::with([
-            'style.purchaseOrder',
+            'style',
             'productionStage',
             'submittedBy:id,name,email',
         ])->findOrFail($id);
+        $po = PurchaseOrder::findOrFail($poId);
 
         // Check access permission
-        if (!$this->permissionService->canAccessPurchaseOrder($user, $tracking->style->purchaseOrder)) {
+        if (!$this->permissionService->canAccessPurchaseOrder($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to view this production tracking',
             ], 403);
@@ -199,10 +203,10 @@ class ProductionTrackingController extends Controller
     public function update(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
-        $tracking = ProductionTracking::with('style.purchaseOrder')->findOrFail($id);
+        $tracking = ProductionTracking::with('style')->findOrFail($id);
 
         // Check if user is assigned factory
-        if (!$this->canSubmitProductionUpdate($user, $tracking->style)) {
+        if (!$this->canSubmitProductionUpdate($user, $tracking->style, PurchaseOrder::findOrFail($poId))) {
             return response()->json([
                 'message' => 'You do not have permission to update this production tracking',
             ], 403);
@@ -275,7 +279,7 @@ class ProductionTrackingController extends Controller
     public function destroy(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
-        $tracking = ProductionTracking::with('style.purchaseOrder')->findOrFail($id);
+        $tracking = ProductionTracking::with('style')->findOrFail($id);
 
         // Only admin or the submitter can delete
         if (!$user->hasRole('Super Admin') && $tracking->submitted_by !== $user->id) {
@@ -309,10 +313,11 @@ class ProductionTrackingController extends Controller
     public function statistics(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
+        $po = PurchaseOrder::findOrFail($poId);
 
         // Check access permission
-        if (!$this->permissionService->canAccessPurchaseOrder($user, $style->purchaseOrder)) {
+        if (!$this->permissionService->canAccessPurchaseOrder($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to view production statistics',
             ], 403);
@@ -371,10 +376,11 @@ class ProductionTrackingController extends Controller
     public function timeline(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
+        $po = PurchaseOrder::findOrFail($poId);
 
         // Check access permission
-        if (!$this->permissionService->canAccessPurchaseOrder($user, $style->purchaseOrder)) {
+        if (!$this->permissionService->canAccessPurchaseOrder($user, $po)) {
             return response()->json([
                 'message' => 'You do not have permission to view production timeline',
             ], 403);
@@ -424,7 +430,7 @@ class ProductionTrackingController extends Controller
     /**
      * Check if user can submit production updates for a style
      */
-    private function canSubmitProductionUpdate(object $user, Style $style): bool
+    private function canSubmitProductionUpdate(object $user, Style $style, ?PurchaseOrder $po = null): bool
     {
         // Admin can always submit
         if ($user->hasRole('Super Admin')) {
@@ -437,9 +443,12 @@ class ProductionTrackingController extends Controller
         }
 
         // Check if factory is assigned to this style's PO
-        $po = $style->purchaseOrder;
+        $effectivePo = $po ?? $style->getEffectivePurchaseOrder();
+        if (!$effectivePo) {
+            return false;
+        }
 
-        return $po->factoryAssignments()
+        return $effectivePo->factoryAssignments()
             ->where('factory_id', $user->id)
             ->where('status', 'accepted')
             ->exists();
@@ -452,7 +461,7 @@ class ProductionTrackingController extends Controller
     {
         try {
             $style = $tracking->style;
-            $po = $style->purchaseOrder;
+            $po = $style->getEffectivePurchaseOrder();
             $stage = $tracking->productionStage;
 
             // Notify importer
@@ -499,8 +508,8 @@ class ProductionTrackingController extends Controller
         $user = $request->user();
 
         $query = \App\Models\ProductionTracking::with([
-            'style.purchaseOrder:id,po_number',
-            'style:id,purchase_order_id,style_number,quantity',
+            'style.purchaseOrders:id,po_number',
+            'style:id,style_number,total_quantity',
             'productionStage:id,name,sequence'
         ]);
 
@@ -510,8 +519,8 @@ class ProductionTrackingController extends Controller
                 $q->where('styles.assigned_factory_id', $user->id);
             });
         } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrder', function($q) use ($user) {
-                $q->where('created_by', $user->id);
+            $query->whereHas('style.purchaseOrders', function($q) use ($user) {
+                $q->where('importer_id', $user->id);
             });
         }
 
@@ -521,7 +530,7 @@ class ProductionTrackingController extends Controller
             $query->where(function($q) use ($search) {
                 $q->whereHas('style', function($sq) use ($search) {
                     $sq->where('style_number', 'like', "%{$search}%");
-                })->orWhereHas('style.purchaseOrder', function($pq) use ($search) {
+                })->orWhereHas('style.purchaseOrders', function($pq) use ($search) {
                     $pq->where('po_number', 'like', "%{$search}%");
                 });
             });

@@ -62,9 +62,10 @@ interface Sample {
   created_at: string;
   style?: {
     style_number: string;
-    purchase_order?: {
+    purchase_orders?: Array<{
+      id: number;
       po_number: string;
-    };
+    }>;
   };
   sample_type?: {
     name: string;
@@ -93,10 +94,10 @@ interface SampleType {
 interface Style {
   id: number;
   style_number: string;
-  purchase_order_id: number;
-  purchase_order?: {
+  purchase_orders?: Array<{
+    id: number;
     po_number: string;
-  };
+  }>;
 }
 
 const sampleSchema = z.object({
@@ -503,7 +504,7 @@ export default function SamplesPage() {
                         <SelectContent>
                           {styles.map((style) => (
                             <SelectItem key={style.id} value={style.id.toString()}>
-                              {style.style_number} - {style.purchase_order?.po_number}
+                              {style.style_number} - {style.purchase_orders?.[0]?.po_number}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -778,7 +779,7 @@ export default function SamplesPage() {
                           )}
                         </TableCell>
                         <TableCell>{sample.style?.style_number}</TableCell>
-                        <TableCell>{sample.style?.purchase_order?.po_number || 'N/A'}</TableCell>
+                        <TableCell>{sample.style?.purchase_orders?.[0]?.po_number || 'N/A'}</TableCell>
                         <TableCell>{sample.submitted_by?.name || 'N/A'}</TableCell>
                         <TableCell>
                           <Badge variant={getStatusColor(sample.agency_status) as any}>

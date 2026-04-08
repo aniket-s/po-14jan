@@ -38,9 +38,9 @@ class SampleController extends Controller
     public function index(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
 
-        if ($style->po_id != $poId) {
+        if (!$style->belongsToPurchaseOrder($poId)) {
             return response()->json([
                 'message' => 'Style does not belong to this purchase order',
             ], 404);
@@ -97,10 +97,10 @@ class SampleController extends Controller
     public function show(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
-        $sample = Sample::with(['style.purchaseOrder', 'sampleType', 'submittedBy', 'agencyApprovedBy', 'importerApprovedBy'])
+        $sample = Sample::with(['style', 'sampleType', 'submittedBy', 'agencyApprovedBy', 'importerApprovedBy'])
             ->findOrFail($id);
 
-        if ($sample->style_id != $styleId || $sample->style->po_id != $poId) {
+        if ($sample->style_id != $styleId || !$sample->style->belongsToPurchaseOrder($poId)) {
             return response()->json([
                 'message' => 'Sample does not belong to this style/purchase order',
             ], 404);
@@ -164,9 +164,9 @@ class SampleController extends Controller
     public function store(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
 
-        if ($style->po_id != $poId) {
+        if (!$style->belongsToPurchaseOrder($poId)) {
             return response()->json([
                 'message' => 'Style does not belong to this purchase order',
             ], 404);
@@ -517,7 +517,7 @@ class SampleController extends Controller
     public function availableSampleTypes(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
 
         if (!$this->permissionService->canAccessStyle($user, $style)) {
             return response()->json([
@@ -735,8 +735,8 @@ class SampleController extends Controller
         $user = $request->user();
 
         $query = Sample::with([
-            'style.purchaseOrder:id,po_number',
-            'style:id,po_id,style_number',
+            'style.purchaseOrders:id,po_number',
+            'style:id,style_number',
             'sampleType:id,name,display_name',
             'submittedBy:id,name,email',
             'agencyApprovedBy:id,name',
@@ -752,11 +752,11 @@ class SampleController extends Controller
                   });
             });
         } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrder', function($q) use ($user) {
-                $q->where('created_by', $user->id);
+            $query->whereHas('style.purchaseOrders', function($q) use ($user) {
+                $q->where('importer_id', $user->id);
             });
         } elseif ($user->hasRole('Agency')) {
-            $query->whereHas('style.purchaseOrder', function($q) use ($user) {
+            $query->whereHas('style.purchaseOrders', function($q) use ($user) {
                 $q->where('agency_id', $user->id);
             });
         }
@@ -772,7 +772,7 @@ class SampleController extends Controller
             $query->where(function($q) use ($search) {
                 $q->whereHas('style', function($sq) use ($search) {
                     $sq->where('style_number', 'like', "%{$search}%");
-                })->orWhereHas('style.purchaseOrder', function($pq) use ($search) {
+                })->orWhereHas('style.purchaseOrders', function($pq) use ($search) {
                     $pq->where('po_number', 'like', "%{$search}%");
                 });
             });
@@ -808,7 +808,7 @@ class SampleController extends Controller
             ], 422);
         }
 
-        $style = Style::with('purchaseOrder')->findOrFail($request->style_id);
+        $style = Style::findOrFail($request->style_id);
 
         if (!$user->hasAnyPermission(['sample.create', 'sample.submit'])) {
             return response()->json([
