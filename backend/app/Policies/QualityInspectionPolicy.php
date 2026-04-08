@@ -41,7 +41,7 @@ class QualityInspectionPolicy
             // Importer can view inspections for their POs
             if ($user->hasRole('Importer')) {
                 $po = $qualityInspection->style->getEffectivePurchaseOrder();
-                return $po && $po->created_by === $user->id;
+                return $po && $po->importer_id === $user->id;
             }
 
             // Inspector can view their own inspections

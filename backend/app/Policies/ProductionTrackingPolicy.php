@@ -41,7 +41,7 @@ class ProductionTrackingPolicy
             // Importer can view production for their POs
             if ($user->hasRole('Importer')) {
                 $po = $productionTracking->style->getEffectivePurchaseOrder();
-                return $po && $po->created_by === $user->id;
+                return $po && $po->importer_id === $user->id;
             }
         }
 
