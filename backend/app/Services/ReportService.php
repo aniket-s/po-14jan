@@ -101,7 +101,7 @@ class ReportService
 
         // Apply user-based access control
         if ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrder', function ($q) use ($user) {
+            $query->whereHas('style.purchaseOrders', function ($q) use ($user) {
                 $q->where('importer_id', $user->id);
             });
         } elseif ($user->hasRole('Factory')) {
@@ -156,7 +156,7 @@ class ReportService
         if ($user->hasRole('Factory')) {
             $query->where('submitted_by', $user->id);
         } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrder', function ($q) use ($user) {
+            $query->whereHas('style.purchaseOrders', function ($q) use ($user) {
                 $q->where('importer_id', $user->id);
             });
         }
@@ -211,7 +211,7 @@ class ReportService
         if ($user->hasRole('qc_inspector')) {
             $query->where('inspector_id', $user->id);
         } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrder', function ($q) use ($user) {
+            $query->whereHas('style.purchaseOrders', function ($q) use ($user) {
                 $q->where('importer_id', $user->id);
             });
         }

@@ -42,14 +42,15 @@ class QualityInspectionNotification extends Notification implements ShouldQueue
             ->greeting('Hello ' . $notifiable->name . ',');
 
         // Load relationships if needed
-        $this->inspection->load('style.purchaseOrder');
+        $this->inspection->load('style.purchaseOrders:id,po_number');
+        $poNumber = $this->inspection->style->getEffectivePurchaseOrder()?->po_number ?? 'N/A';
 
         switch ($this->action) {
             case 'created':
                 $mail->line('A new quality inspection has been scheduled.')
                     ->line('**Inspection Date:** ' . $this->inspection->inspected_at->format('M d, Y'))
                     ->line('**Style:** ' . $this->inspection->style->style_number)
-                    ->line('**PO Number:** ' . $this->inspection->style->purchaseOrder->po_number);
+                    ->line('**PO Number:** ' . $poNumber);
                 break;
 
             case 'completed':

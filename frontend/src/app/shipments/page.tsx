@@ -57,9 +57,10 @@ interface Shipment {
   created_at: string;
   style?: {
     style_number: string;
-    purchase_order?: {
+    purchase_orders?: Array<{
+      id: number;
       po_number: string;
-    };
+    }>;
   };
 }
 
@@ -67,10 +68,10 @@ interface Style {
   id: number;
   style_number: string;
   quantity: number;
-  purchase_order_id: number;
-  purchase_order?: {
+  purchase_orders?: Array<{
+    id: number;
     po_number: string;
-  };
+  }>;
 }
 
 const shipmentSchema = z.object({
@@ -250,7 +251,7 @@ export default function ShipmentsPage() {
                       <SelectContent>
                         {styles.map((style) => (
                           <SelectItem key={style.id} value={style.id.toString()}>
-                            {style.style_number} - {style.purchase_order?.po_number} ({style.quantity} pcs)
+                            {style.style_number} - {style.purchase_orders?.[0]?.po_number} ({style.quantity} pcs)
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -531,7 +532,7 @@ export default function ShipmentsPage() {
                         <TableRow key={shipment.id}>
                           <TableCell className="font-medium">{shipment.tracking_number}</TableCell>
                           <TableCell>{shipment.style?.style_number}</TableCell>
-                          <TableCell>{shipment.style?.purchase_order?.po_number || 'N/A'}</TableCell>
+                          <TableCell>{shipment.style?.purchase_orders?.[0]?.po_number || 'N/A'}</TableCell>
                           <TableCell>
                             <Badge variant="outline">{shipment.carrier}</Badge>
                           </TableCell>

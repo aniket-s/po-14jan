@@ -43,14 +43,15 @@ class SampleNotification extends Notification implements ShouldQueue
             ->greeting('Hello ' . $notifiable->name . ',');
 
         // Load relationships if needed
-        $this->sample->load('style.purchaseOrder', 'sampleType');
+        $this->sample->load('style.purchaseOrders:id,po_number', 'sampleType');
+        $poNumber = $this->sample->style->getEffectivePurchaseOrder()?->po_number ?? 'N/A';
 
         switch ($this->action) {
             case 'submitted':
                 $mail->line('A new sample has been submitted for review.')
                     ->line('**Sample Type:** ' . $this->sample->sampleType->name)
                     ->line('**Style:** ' . $this->sample->style->style_number)
-                    ->line('**PO Number:** ' . $this->sample->style->purchaseOrder->po_number);
+                    ->line('**PO Number:** ' . $poNumber);
                 break;
 
             case 'approved':

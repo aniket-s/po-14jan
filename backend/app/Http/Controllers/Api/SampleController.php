@@ -38,9 +38,9 @@ class SampleController extends Controller
     public function index(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
 
-        if ($style->po_id != $poId) {
+        if (!$style->belongsToPurchaseOrder($poId)) {
             return response()->json([
                 'message' => 'Style does not belong to this purchase order',
             ], 404);
@@ -97,10 +97,10 @@ class SampleController extends Controller
     public function show(Request $request, $poId, $styleId, $id)
     {
         $user = $request->user();
-        $sample = Sample::with(['style.purchaseOrder', 'sampleType', 'submittedBy', 'agencyApprovedBy', 'importerApprovedBy'])
+        $sample = Sample::with(['style', 'sampleType', 'submittedBy', 'agencyApprovedBy', 'importerApprovedBy'])
             ->findOrFail($id);
 
-        if ($sample->style_id != $styleId || $sample->style->po_id != $poId) {
+        if ($sample->style_id != $styleId || !$sample->style->belongsToPurchaseOrder($poId)) {
             return response()->json([
                 'message' => 'Sample does not belong to this style/purchase order',
             ], 404);
@@ -164,9 +164,9 @@ class SampleController extends Controller
     public function store(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
 
-        if ($style->po_id != $poId) {
+        if (!$style->belongsToPurchaseOrder($poId)) {
             return response()->json([
                 'message' => 'Style does not belong to this purchase order',
             ], 404);
@@ -262,7 +262,7 @@ class SampleController extends Controller
     public function agencyApprove(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
-        $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
+        $sample = Sample::with(['style'])->findOrFail($id);
 
         if (!$this->canAgencyApprove($user, $sample)) {
             return response()->json([
@@ -307,7 +307,7 @@ class SampleController extends Controller
     public function agencyReject(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
-        $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
+        $sample = Sample::with(['style'])->findOrFail($id);
 
         if (!$this->canAgencyApprove($user, $sample)) {
             return response()->json([
@@ -363,7 +363,7 @@ class SampleController extends Controller
     public function importerApprove(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
-        $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
+        $sample = Sample::with(['style'])->findOrFail($id);
 
         if (!$this->canImporterApprove($user, $sample)) {
             return response()->json([
@@ -414,7 +414,7 @@ class SampleController extends Controller
     public function importerReject(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
-        $sample = Sample::with(['style.purchaseOrder'])->findOrFail($id);
+        $sample = Sample::with(['style'])->findOrFail($id);
 
         if (!$this->canImporterApprove($user, $sample)) {
             return response()->json([
@@ -517,7 +517,7 @@ class SampleController extends Controller
     public function availableSampleTypes(Request $request, $poId, $styleId)
     {
         $user = $request->user();
-        $style = Style::with('purchaseOrder')->findOrFail($styleId);
+        $style = Style::findOrFail($styleId);
 
         if (!$this->permissionService->canAccessStyle($user, $style)) {
             return response()->json([
@@ -568,7 +568,7 @@ class SampleController extends Controller
             return false;
         }
 
-        $po = $sample->style->purchaseOrder;
+        $po = $sample->style->getEffectivePurchaseOrder();
         if (!$po) {
             return false;
         }
@@ -582,7 +582,8 @@ class SampleController extends Controller
      */
     private function canImporterApprove(User $user, Sample $sample): bool
     {
-        return $sample->style->purchaseOrder->importer_id === $user->id &&
+        $po = $sample->style->getEffectivePurchaseOrder();
+        return $po && $po->importer_id === $user->id &&
                $user->hasPermissionTo('sample.approve_final');
     }
 
@@ -591,7 +592,7 @@ class SampleController extends Controller
      */
     private function sendSampleSubmittedNotifications(Sample $sample, Style $style): void
     {
-        $po = $style->purchaseOrder;
+        $po = $style->getEffectivePurchaseOrder();
         if (!$po) {
             return;
         }
@@ -637,7 +638,7 @@ class SampleController extends Controller
      */
     private function sendAgencyApprovedNotification(Sample $sample): void
     {
-        $po = $sample->style->purchaseOrder;
+        $po = $sample->style->getEffectivePurchaseOrder();
         if (!$po || !$po->importer) {
             return;
         }
@@ -664,12 +665,13 @@ class SampleController extends Controller
         if ($sample->submittedBy) {
             SendSampleNotification::dispatch($sample, $sample->submittedBy, 'rejected', $sample->agency_rejection_reason);
         }
+        $po = $sample->style->getEffectivePurchaseOrder();
         $this->emailService->sendFromTemplate(
             'sample_factory_rejected',
             $sample->submittedBy->email,
             [
                 'factory_name' => $sample->submittedBy->name,
-                'po_number' => $sample->style->purchaseOrder->po_number,
+                'po_number' => $po?->po_number,
                 'sample_type' => $sample->sampleType->name,
                 'rejection_reason' => $sample->agency_rejection_reason,
             ]
@@ -681,7 +683,7 @@ class SampleController extends Controller
      */
     private function sendImporterApprovedNotification(Sample $sample): void
     {
-        $po = $sample->style->purchaseOrder;
+        $po = $sample->style->getEffectivePurchaseOrder();
         if (!$po) {
             return;
         }
@@ -707,7 +709,7 @@ class SampleController extends Controller
      */
     private function sendImporterRejectedNotification(Sample $sample): void
     {
-        $po = $sample->style->purchaseOrder;
+        $po = $sample->style->getEffectivePurchaseOrder();
         if (!$po) {
             return;
         }
@@ -735,8 +737,8 @@ class SampleController extends Controller
         $user = $request->user();
 
         $query = Sample::with([
-            'style.purchaseOrder:id,po_number',
-            'style:id,po_id,style_number',
+            'style.purchaseOrders:id,po_number',
+            'style:id,style_number',
             'sampleType:id,name,display_name',
             'submittedBy:id,name,email',
             'agencyApprovedBy:id,name',
@@ -752,11 +754,11 @@ class SampleController extends Controller
                   });
             });
         } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrder', function($q) use ($user) {
-                $q->where('created_by', $user->id);
+            $query->whereHas('style.purchaseOrders', function($q) use ($user) {
+                $q->where('importer_id', $user->id);
             });
         } elseif ($user->hasRole('Agency')) {
-            $query->whereHas('style.purchaseOrder', function($q) use ($user) {
+            $query->whereHas('style.purchaseOrders', function($q) use ($user) {
                 $q->where('agency_id', $user->id);
             });
         }
@@ -772,7 +774,7 @@ class SampleController extends Controller
             $query->where(function($q) use ($search) {
                 $q->whereHas('style', function($sq) use ($search) {
                     $sq->where('style_number', 'like', "%{$search}%");
-                })->orWhereHas('style.purchaseOrder', function($pq) use ($search) {
+                })->orWhereHas('style.purchaseOrders', function($pq) use ($search) {
                     $pq->where('po_number', 'like', "%{$search}%");
                 });
             });
@@ -808,7 +810,7 @@ class SampleController extends Controller
             ], 422);
         }
 
-        $style = Style::with('purchaseOrder')->findOrFail($request->style_id);
+        $style = Style::findOrFail($request->style_id);
 
         if (!$user->hasAnyPermission(['sample.create', 'sample.submit'])) {
             return response()->json([
@@ -895,7 +897,7 @@ class SampleController extends Controller
     {
         $user = $request->user();
         $sample = Sample::with([
-            'style.purchaseOrder',
+            'style.purchaseOrders:id,po_number',
             'sampleType',
             'submittedBy',
             'agencyApprovedBy',
@@ -920,7 +922,7 @@ class SampleController extends Controller
             return response()->json(['message' => 'You do not have permission to resubmit samples'], 403);
         }
 
-        $sample = Sample::with(['style.purchaseOrder', 'sampleType'])->findOrFail($id);
+        $sample = Sample::with(['style', 'sampleType'])->findOrFail($id);
 
         if (!$this->permissionService->canAccessStyle($user, $sample->style)) {
             return response()->json(['message' => 'You do not have permission to resubmit this sample'], 403);

@@ -66,10 +66,7 @@ class StylePolicy
                 if ($style->purchaseOrders()->where('purchase_order_style.assigned_agency_id', $user->id)->exists()) {
                     return true;
                 }
-                // Check via PO agency_id
-                if ($style->purchaseOrder && $style->purchaseOrder->agency_id === $user->id) {
-                    return true;
-                }
+                // Check via PO agency_id (pivot)
                 if ($style->purchaseOrders()->where('agency_id', $user->id)->exists()) {
                     return true;
                 }
@@ -78,9 +75,6 @@ class StylePolicy
 
             // Importer can view styles from their POs
             if ($user->hasRole('Importer')) {
-                if ($style->purchaseOrder && $style->purchaseOrder->importer_id === $user->id) {
-                    return true;
-                }
                 if ($style->purchaseOrders()->where('importer_id', $user->id)->exists()) {
                     return true;
                 }
@@ -110,9 +104,6 @@ class StylePolicy
 
         // Importer can edit styles from their POs
         if ($user->hasRole('Importer')) {
-            if ($style->purchaseOrder && $style->purchaseOrder->importer_id === $user->id) {
-                return true;
-            }
             return $style->purchaseOrders()->where('importer_id', $user->id)->exists();
         }
 
@@ -130,12 +121,7 @@ class StylePolicy
 
         // Importer can delete styles from their POs (if not yet assigned)
         if ($user->hasRole('Importer')) {
-            $isOwnStyle = false;
-            if ($style->purchaseOrder && $style->purchaseOrder->importer_id === $user->id) {
-                $isOwnStyle = true;
-            } elseif ($style->purchaseOrders()->where('importer_id', $user->id)->exists()) {
-                $isOwnStyle = true;
-            }
+            $isOwnStyle = $style->purchaseOrders()->where('importer_id', $user->id)->exists();
             return $isOwnStyle && !$style->isAssigned();
         }
 
@@ -153,14 +139,6 @@ class StylePolicy
 
         // Importer or agency can assign factory
         if ($user->hasRole(['Importer', 'Agency'])) {
-            // Check via direct PO relationship
-            if ($style->purchaseOrder) {
-                if ($style->purchaseOrder->importer_id === $user->id ||
-                    $style->purchaseOrder->agency_id === $user->id) {
-                    return true;
-                }
-            }
-            // Check via many-to-many PO relationship
             return $style->purchaseOrders()
                 ->where(function ($q) use ($user) {
                     $q->where('importer_id', $user->id)

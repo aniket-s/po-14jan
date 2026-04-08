@@ -40,7 +40,8 @@ class SamplePolicy
 
             // Importer can view samples for their POs
             if ($user->hasRole('Importer')) {
-                return $sample->style->purchaseOrder->created_by === $user->id;
+                $po = $sample->style->getEffectivePurchaseOrder();
+                return $po && $po->importer_id === $user->id;
             }
         }
 
@@ -83,7 +84,7 @@ class SamplePolicy
 
         // Agency can only approve samples for POs where they are the assigned agency
         if ($user->hasRole('Agency')) {
-            $po = $sample->style->purchaseOrder;
+            $po = $sample->style->getEffectivePurchaseOrder();
             return $po && $po->agency_id === $user->id;
         }
 
@@ -100,8 +101,11 @@ class SamplePolicy
         }
 
         // Importer can approve samples for their POs
-        return $user->hasRole('Importer') &&
-               $sample->style->purchaseOrder->created_by === $user->id;
+        if (!$user->hasRole('Importer')) {
+            return false;
+        }
+        $po = $sample->style->getEffectivePurchaseOrder();
+        return $po && $po->importer_id === $user->id;
     }
 
     /**
@@ -115,7 +119,8 @@ class SamplePolicy
 
         // Importer can reject any sample for their POs
         if ($user->hasRole('Importer')) {
-            return $sample->style->purchaseOrder->created_by === $user->id;
+            $po = $sample->style->getEffectivePurchaseOrder();
+            return $po && $po->importer_id === $user->id;
         }
 
         // Agency can reject samples for styles they manage
