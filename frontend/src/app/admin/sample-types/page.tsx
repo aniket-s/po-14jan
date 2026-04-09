@@ -113,9 +113,9 @@ export default function SampleTypesManagementPage() {
   const fetchSampleTypes = async () => {
     try {
       setLoading(true);
-      const response = await api.get<{ data: SampleType[] }>('/admin/sample-types');
+      const response = await api.get<{ sample_types: SampleType[] }>('/admin/sample-types');
       // Sort by display order
-      const sorted = response.data.data.sort((a, b) => a.display_order - b.display_order);
+      const sorted = response.data.sample_types.sort((a, b) => a.display_order - b.display_order);
       setSampleTypes(sorted);
     } catch (error) {
       console.error('Failed to fetch sample types:', error);

@@ -130,8 +130,8 @@ export default function EmailTemplatesPage() {
   const fetchTemplates = async () => {
     try {
       setLoading(true);
-      const response = await api.get<{ data: EmailTemplate[] }>('/admin/email-templates');
-      setTemplates(response.data.data || response.data);
+      const response = await api.get<{ templates: EmailTemplate[] }>('/admin/email-templates');
+      setTemplates(response.data.templates);
     } catch (error) {
       console.error('Failed to fetch templates:', error);
     } finally {
@@ -141,8 +141,8 @@ export default function EmailTemplatesPage() {
 
   const fetchCategories = async () => {
     try {
-      const response = await api.get<{ data: string[] }>('/admin/email-templates/categories/all');
-      setCategories(response.data.data || response.data);
+      const response = await api.get<{ categories: { value: string; label: string; count: number }[] }>('/admin/email-templates/categories/all');
+      setCategories(response.data.categories.map((c) => c.value));
     } catch (error) {
       console.error('Failed to fetch categories:', error);
     }
