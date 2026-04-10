@@ -492,16 +492,26 @@ class PurchaseOrderController extends Controller
             }
         }
 
-        // Use provided importer_id if specified (e.g. Super Admin assigning to an importer),
-        // otherwise default to the authenticated user
-        $importerId = $request->importer_id ?? $request->user()->id;
+        // Determine importer_id and agency_id based on the creator's role
+        $user = $request->user();
+        $importerId = $request->importer_id;
+        $agencyId = $request->agency_id;
+
+        if ($user->hasRole('Agency')) {
+            // Agency creating a PO: set themselves as the agency, importer is optional
+            $agencyId = $agencyId ?? $user->id;
+            // importer_id stays as provided (nullable)
+        } else {
+            // Importer or Super Admin: default importer to self if not specified
+            $importerId = $importerId ?? $user->id;
+        }
 
         $po = PurchaseOrder::create([
             'po_number' => $request->po_number,
             'headline' => $request->headline,
             'importer_id' => $importerId,
-            'creator_id' => $request->user()->id,
-            'agency_id' => $request->agency_id,
+            'creator_id' => $user->id,
+            'agency_id' => $agencyId,
             'buyer_id' => $request->buyer_id,
             'po_date' => $request->po_date,
             'currency_id' => $request->currency_id,
