@@ -356,15 +356,18 @@ class FactoryAssignmentController extends Controller
             'assignedBy:id,name'
         ]);
 
-        // Role-based filtering
-        if ($user->hasRole('Factory')) {
-            $query->where('factory_id', $user->id);
-        } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('purchaseOrder', function ($q) use ($user) {
-                $q->where('creator_id', $user->id);
-            });
-        } elseif ($user->hasRole('Agency')) {
-            $query->where('assigned_by', $user->id);
+        // Role-based filtering (Super Admin sees all)
+        if (!$user->hasRole('Super Admin')) {
+            if ($user->hasRole('Factory')) {
+                $query->where('factory_id', $user->id);
+            } elseif ($user->hasRole('Importer')) {
+                $query->whereHas('purchaseOrder', function ($q) use ($user) {
+                    $q->where('creator_id', $user->id)
+                      ->orWhere('importer_id', $user->id);
+                });
+            } elseif ($user->hasRole('Agency')) {
+                $query->where('assigned_by', $user->id);
+            }
         }
 
         // Factory filter
