@@ -127,13 +127,13 @@ export default function ProductionStagesManagementPage() {
   // Calculate total weight percentage
   const totalWeightPercentage = stages
     .filter((s) => s.is_active)
-    .reduce((sum, s) => sum + s.weight_percentage, 0);
+    .reduce((sum, s) => sum + Number(s.weight_percentage), 0);
 
   // Calculate total weight excluding selected stage (for edit validation)
   const getTotalWeightExcludingStage = (stageId: number): number => {
     return stages
       .filter((s) => s.is_active && s.id !== stageId)
-      .reduce((sum, s) => sum + s.weight_percentage, 0);
+      .reduce((sum, s) => sum + Number(s.weight_percentage), 0);
   };
 
   // Handle create production stage
