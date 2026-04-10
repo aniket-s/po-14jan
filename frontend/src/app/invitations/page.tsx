@@ -197,9 +197,11 @@ export default function InvitationsPage() {
     }
     setPOStylesLoading(true);
     try {
-      const response = await api.get(`/purchase-orders/${poId}/styles`);
-      const styles = response.data.data || response.data || [];
-      setPOStyles(styles);
+      const response = await api.get(`/purchase-orders/${poId}/styles`, {
+        params: { per_page: 200 },
+      });
+      const styles = response.data.styles || response.data.data || [];
+      setPOStyles(Array.isArray(styles) ? styles : []);
     } catch (error) {
       console.error('Failed to fetch PO styles:', error);
       setPOStyles([]);
