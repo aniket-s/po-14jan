@@ -180,6 +180,7 @@ class PurchaseOrder extends Model
                 'unit_price_in_po',
                 'assigned_factory_id',
                 'assigned_agency_id',
+                'assigned_importer_id',
                 'assignment_type',
                 'assigned_at',
                 'target_production_date',

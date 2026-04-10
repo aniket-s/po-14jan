@@ -468,6 +468,11 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::middleware('permission:po.assign_factory')->group(function () {
                 Route::post('/{styleId}/assign-factory', [PurchaseOrderStyleController::class, 'assignFactory']);
             });
+
+            // Bulk assign importer to styles within this PO
+            Route::middleware('permission:po.edit')->group(function () {
+                Route::post('/bulk-assign-importer', [PurchaseOrderStyleController::class, 'bulkAssignImporter']);
+            });
         });
 
         // Excel Import

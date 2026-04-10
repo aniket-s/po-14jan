@@ -370,6 +370,67 @@ class PurchaseOrderStyleController extends Controller
     }
 
     /**
+     * Bulk assign importer to styles within a PO
+     *
+     * POST /api/purchase-orders/{poId}/styles/bulk-assign-importer
+     */
+    public function bulkAssignImporter(Request $request, $poId)
+    {
+        $user = $request->user();
+        $po = PurchaseOrder::findOrFail($poId);
+
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'style_ids' => 'required|array|min:1',
+            'style_ids.*' => 'exists:styles,id',
+            'importer_id' => 'required|exists:users,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $importerUser = User::find($request->importer_id);
+        if (!$importerUser || !$importerUser->hasRole('Importer')) {
+            return response()->json(['message' => 'Selected user is not an importer'], 422);
+        }
+
+        $updated = 0;
+        foreach ($request->style_ids as $styleId) {
+            if ($po->styles()->where('style_id', $styleId)->exists()) {
+                $po->styles()->updateExistingPivot($styleId, [
+                    'assigned_importer_id' => $request->importer_id,
+                ]);
+                $updated++;
+            }
+        }
+
+        // Also set the PO-level importer_id if not already set
+        if (!$po->importer_id) {
+            $po->update(['importer_id' => $request->importer_id]);
+        }
+
+        // Send notification to the importer
+        SendPurchaseOrderNotification::dispatch(
+            $po,
+            $importerUser,
+            'created',
+            [
+                'assigned_by' => $user->name,
+                'styles_count' => $updated,
+            ]
+        );
+
+        return response()->json([
+            'message' => "{$updated} style(s) assigned to importer successfully",
+            'updated' => $updated,
+        ]);
+    }
+
+    /**
      * Bulk attach styles to a purchase order
      *
      * POST /api/purchase-orders/{poId}/styles/attach-bulk
