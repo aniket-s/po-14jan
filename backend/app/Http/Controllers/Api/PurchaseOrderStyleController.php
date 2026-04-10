@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendPurchaseOrderNotification;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderStyle;
 use App\Models\SampleType;
 use App\Models\Style;
 use App\Models\StyleSampleProcess;
 use App\Models\User;
 use App\Services\PermissionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 
@@ -431,6 +433,67 @@ class PurchaseOrderStyleController extends Controller
     }
 
     /**
+     * Bulk assign agency to styles within a PO
+     *
+     * POST /api/purchase-orders/{poId}/styles/bulk-assign-agency
+     */
+    public function bulkAssignAgency(Request $request, $poId)
+    {
+        $user = $request->user();
+        $po = PurchaseOrder::findOrFail($poId);
+
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'style_ids' => 'required|array|min:1',
+            'style_ids.*' => 'exists:styles,id',
+            'agency_id' => 'required|exists:users,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $agencyUser = User::find($request->agency_id);
+        if (!$agencyUser || !$agencyUser->hasRole('Agency')) {
+            return response()->json(['message' => 'Selected user is not an agency'], 422);
+        }
+
+        $updated = 0;
+        foreach ($request->style_ids as $styleId) {
+            if ($po->styles()->where('style_id', $styleId)->exists()) {
+                $po->styles()->updateExistingPivot($styleId, [
+                    'assigned_agency_id' => $request->agency_id,
+                ]);
+                $updated++;
+            }
+        }
+
+        // Also set PO-level agency_id if not already set
+        if (!$po->agency_id) {
+            $po->update(['agency_id' => $request->agency_id]);
+        }
+
+        // Send notification
+        SendPurchaseOrderNotification::dispatch(
+            $po,
+            $agencyUser,
+            'agency_assigned',
+            [
+                'assigned_by' => $user->name,
+                'styles_count' => $updated,
+            ]
+        );
+
+        return response()->json([
+            'message' => "{$updated} style(s) assigned to agency successfully",
+            'updated' => $updated,
+        ]);
+    }
+
+    /**
      * Bulk attach styles to a purchase order
      *
      * POST /api/purchase-orders/{poId}/styles/attach-bulk
@@ -487,5 +550,59 @@ class PurchaseOrderStyleController extends Controller
                 'total_styles' => $po->total_styles,
             ],
         ]);
+    }
+
+    /**
+     * Get styles assigned to the current user (as importer or agency).
+     *
+     * GET /api/my-style-assignments
+     */
+    public function myStyleAssignments(Request $request)
+    {
+        $user = $request->user();
+
+        $query = DB::table('purchase_order_style')
+            ->join('styles', 'purchase_order_style.style_id', '=', 'styles.id')
+            ->join('purchase_orders', 'purchase_order_style.purchase_order_id', '=', 'purchase_orders.id')
+            ->select(
+                'purchase_order_style.style_id',
+                'purchase_order_style.purchase_order_id',
+                'purchase_order_style.assigned_importer_id',
+                'purchase_order_style.assigned_agency_id',
+                'purchase_order_style.assigned_factory_id',
+                'purchase_order_style.quantity_in_po',
+                'purchase_order_style.unit_price_in_po',
+                'purchase_order_style.status',
+                'purchase_order_style.created_at',
+                'styles.style_number',
+                'styles.description as style_description',
+                'purchase_orders.po_number'
+            );
+
+        if ($user->hasRole('Importer')) {
+            $query->where('purchase_order_style.assigned_importer_id', $user->id);
+        } elseif ($user->hasRole('Agency')) {
+            $query->where('purchase_order_style.assigned_agency_id', $user->id);
+        } else {
+            return response()->json(['data' => []]);
+        }
+
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('styles.style_number', 'like', "%{$search}%")
+                  ->orWhere('purchase_orders.po_number', 'like', "%{$search}%");
+            });
+        }
+
+        $results = $query->orderBy('purchase_order_style.created_at', 'desc')
+            ->paginate($request->input('per_page', 15));
+
+        // Fetch assigned_by names
+        $assignerIds = collect($results->items())->pluck('assigned_importer_id')
+            ->merge(collect($results->items())->pluck('assigned_agency_id'))
+            ->filter()->unique();
+
+        return response()->json($results);
     }
 }
