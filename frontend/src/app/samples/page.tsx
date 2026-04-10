@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Loader2, CheckCircle, XCircle, Clock, PackageCheck, AlertCircle, Upload, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus, Search, Loader2, CheckCircle, XCircle, Clock, PackageCheck, AlertCircle, Upload, RefreshCw, Trash2, FileText, Image, ExternalLink } from 'lucide-react';
 import api from '@/lib/api';
 import { ListPageSkeleton, TableSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
@@ -48,6 +48,7 @@ interface Sample {
   id: number;
   style_id: number;
   sample_type_id: number;
+  sample_reference: string | null;
   submission_date: string;
   agency_status: string;
   agency_approved_by: number | null;
@@ -59,6 +60,8 @@ interface Sample {
   importer_rejection_reason: string | null;
   final_status: string;
   notes: string | null;
+  images: string[] | null;
+  attachment_paths: string[] | null;
   created_at: string;
   style?: {
     style_number: string;
@@ -130,6 +133,11 @@ export default function SamplesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imageFiles, setImageFiles] = useState<UploadedFile[]>([]);
   const [documentFiles, setDocumentFiles] = useState<UploadedFile[]>([]);
+  const [isResubmitDialogOpen, setIsResubmitDialogOpen] = useState(false);
+  const [resubmitSample, setResubmitSample] = useState<Sample | null>(null);
+  const [resubmitNotes, setResubmitNotes] = useState('');
+  const [resubmitImageFiles, setResubmitImageFiles] = useState<UploadedFile[]>([]);
+  const [resubmitDocumentFiles, setResubmitDocumentFiles] = useState<UploadedFile[]>([]);
   const [isUploadingExcel, setIsUploadingExcel] = useState(false);
   const [excelResult, setExcelResult] = useState<any>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
@@ -392,14 +400,38 @@ export default function SamplesPage() {
     return (hasRole('Factory') || sample.submitted_by?.id === user?.id) && sample.agency_status === 'pending';
   };
 
-  const handleResubmit = async (sample: Sample) => {
-    if (!confirm('Resubmit this sample? It will be sent for approval again.')) return;
+  const openResubmitDialog = (sample: Sample) => {
+    setResubmitSample(sample);
+    setResubmitNotes(sample.notes || '');
+    setResubmitImageFiles([]);
+    setResubmitDocumentFiles([]);
+    setIsResubmitDialogOpen(true);
+  };
+
+  const handleResubmit = async () => {
+    if (!resubmitSample) return;
+    setIsSubmitting(true);
     try {
-      await api.post(`/samples/${sample.id}/resubmit`);
+      const imageUrls = resubmitImageFiles
+        .filter(f => f.url)
+        .map(f => f.url as string);
+      const docUrls = resubmitDocumentFiles
+        .filter(f => f.url)
+        .map(f => f.url as string);
+
+      await api.post(`/samples/${resubmitSample.id}/resubmit`, {
+        notes: resubmitNotes || null,
+        ...(imageUrls.length > 0 ? { images: imageUrls } : {}),
+        ...(docUrls.length > 0 ? { attachment_paths: docUrls } : {}),
+      });
+      setIsResubmitDialogOpen(false);
+      setResubmitSample(null);
       fetchSamples();
     } catch (error: any) {
       console.error('Failed to resubmit:', error);
       alert(error.response?.data?.message || 'Failed to resubmit sample');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -850,7 +882,7 @@ export default function SamplesPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleResubmit(sample)}
+                                onClick={() => openResubmitDialog(sample)}
                                 className="text-blue-600 hover:text-blue-700"
                               >
                                 <RefreshCw className="mr-1 h-4 w-4" />
@@ -881,7 +913,7 @@ export default function SamplesPage() {
 
         {/* Approval Dialog */}
         <Dialog open={isApprovalDialogOpen} onOpenChange={setIsApprovalDialogOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleSubmitApproval(onSubmitApproval)}>
               <DialogHeader>
                 <DialogTitle>
@@ -889,18 +921,68 @@ export default function SamplesPage() {
                   {approvalType === 'agency' ? 'Agency' : 'Importer'}
                 </DialogTitle>
                 <DialogDescription>
-                  Provide comments for this {approvalAction === 'approve' ? 'approval' : 'rejection'}
+                  Review sample details and {approvalAction === 'approve' ? 'approve' : 'reject'}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
+                {/* Sample Details */}
+                {selectedSample && (
+                  <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                    <h4 className="text-sm font-semibold">Sample Details</h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div><span className="text-muted-foreground">Type:</span> {selectedSample.sample_type?.display_name || selectedSample.sample_type?.name}</div>
+                      <div><span className="text-muted-foreground">Style:</span> {selectedSample.style?.style_number}</div>
+                      <div><span className="text-muted-foreground">Submitted by:</span> {selectedSample.submitted_by?.name || 'N/A'}</div>
+                      <div><span className="text-muted-foreground">Date:</span> {selectedSample.submission_date ? new Date(selectedSample.submission_date).toLocaleDateString() : 'N/A'}</div>
+                    </div>
+
+                    {/* Notes from Factory */}
+                    {selectedSample.notes && (
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">Notes from Factory:</p>
+                        <p className="text-sm bg-background rounded p-2 border">{selectedSample.notes}</p>
+                      </div>
+                    )}
+
+                    {/* Uploaded Images */}
+                    {selectedSample.images && selectedSample.images.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium flex items-center gap-1"><Image className="h-4 w-4" /> Images ({selectedSample.images.length})</p>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedSample.images.map((url, idx) => (
+                            <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                              <img src={url} alt={`Sample image ${idx + 1}`} className="h-20 w-20 object-cover rounded border hover:opacity-80 transition" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Uploaded Documents */}
+                    {selectedSample.attachment_paths && selectedSample.attachment_paths.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium flex items-center gap-1"><FileText className="h-4 w-4" /> Documents ({selectedSample.attachment_paths.length})</p>
+                        <div className="space-y-1">
+                          {selectedSample.attachment_paths.map((url, idx) => (
+                            <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
+                              <ExternalLink className="h-3 w-3" />
+                              Document {idx + 1}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="comments">
-                    {approvalAction === 'reject' ? 'Reason (Required)' : 'Comments (Optional)'}
+                    {approvalAction === 'reject' ? 'Reason for Rejection (Required)' : 'Comments (Optional)'}
                   </Label>
                   <textarea
                     id="comments"
                     className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    placeholder="Add your comments..."
+                    placeholder={approvalAction === 'reject' ? 'Provide reason for rejection...' : 'Add your comments...'}
                     {...registerApproval('comments')}
                   />
                 </div>
@@ -936,6 +1018,124 @@ export default function SamplesPage() {
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+        {/* Resubmit Dialog */}
+        <Dialog open={isResubmitDialogOpen} onOpenChange={(open) => {
+          setIsResubmitDialogOpen(open);
+          if (!open) setResubmitSample(null);
+        }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Resubmit Sample</DialogTitle>
+              <DialogDescription>
+                Review the rejection reason and upload updated files
+              </DialogDescription>
+            </DialogHeader>
+
+            {resubmitSample && (
+              <div className="space-y-4">
+                {/* Sample Info */}
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-muted-foreground">Type:</span> {resubmitSample.sample_type?.display_name || resubmitSample.sample_type?.name}</div>
+                  <div><span className="text-muted-foreground">Style:</span> {resubmitSample.style?.style_number}</div>
+                </div>
+
+                {/* Rejection Reason */}
+                {(resubmitSample.agency_rejection_reason || resubmitSample.importer_rejection_reason) && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-1">
+                    <p className="text-sm font-semibold text-red-800">Rejection Reason:</p>
+                    <p className="text-sm text-red-700">
+                      {resubmitSample.importer_rejection_reason || resubmitSample.agency_rejection_reason}
+                    </p>
+                    <p className="text-xs text-red-500">
+                      Rejected by {resubmitSample.importer_rejection_reason ? 'Importer' : 'Agency'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Existing Images */}
+                {resubmitSample.images && resubmitSample.images.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Previous Images</p>
+                    <div className="flex flex-wrap gap-2">
+                      {resubmitSample.images.map((url, idx) => (
+                        <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                          <img src={url} alt={`Previous image ${idx + 1}`} className="h-16 w-16 object-cover rounded border opacity-60" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Existing Documents */}
+                {resubmitSample.attachment_paths && resubmitSample.attachment_paths.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Previous Documents</p>
+                    {resubmitSample.attachment_paths.map((url, idx) => (
+                      <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
+                        <ExternalLink className="h-3 w-3" />
+                        Document {idx + 1}
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {/* New Images Upload */}
+                <div className="space-y-2">
+                  <Label>Upload New Images (optional)</Label>
+                  <MultiFileUpload
+                    files={resubmitImageFiles}
+                    onChange={setResubmitImageFiles}
+                    accept="image/*"
+                    maxFiles={10}
+                    label="Drop images here"
+                  />
+                </div>
+
+                {/* New Documents Upload */}
+                <div className="space-y-2">
+                  <Label>Upload New Documents (optional)</Label>
+                  <MultiFileUpload
+                    files={resubmitDocumentFiles}
+                    onChange={setResubmitDocumentFiles}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx"
+                    maxFiles={5}
+                    label="Drop documents here"
+                  />
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <textarea
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={resubmitNotes}
+                    onChange={(e) => setResubmitNotes(e.target.value)}
+                    placeholder="Add notes for the resubmission..."
+                  />
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsResubmitDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleResubmit} disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Resubmitting...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Resubmit Sample
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
