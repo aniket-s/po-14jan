@@ -42,6 +42,11 @@ class PurchaseOrderStyleController extends Controller
 
         $query = $po->styles();
 
+        // Factory users only see styles assigned to them
+        if ($user->hasRole('Factory')) {
+            $query->wherePivot('assigned_factory_id', $user->id);
+        }
+
         // Apply filters
         if ($request->has('search')) {
             $search = $request->search;

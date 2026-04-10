@@ -144,6 +144,18 @@ class PurchaseOrderController extends Controller
         $perPage = min((int) $request->get('per_page', $isExcelView ? 50 : 15), $isExcelView ? 100 : 50);
         $pos = $query->paginate($perPage);
 
+        // For Factory users, filter styles to only those assigned to them
+        $isFactory = $user->hasRole('Factory');
+        $factoryUserId = $user->id;
+        $getVisibleStyles = function ($po) use ($isFactory, $factoryUserId) {
+            if (!$isFactory) {
+                return $po->styles;
+            }
+            return $po->styles->filter(function ($style) use ($factoryUserId) {
+                return (int) $style->pivot->assigned_factory_id === $factoryUserId;
+            })->values();
+        };
+
         // Return enriched data for Excel view
         if ($isExcelView) {
             // Batch-load factory names from pivot assigned_factory_id to avoid N+1
@@ -155,7 +167,8 @@ class PurchaseOrderController extends Controller
                 : collect();
 
             return response()->json([
-                'data' => $pos->map(function ($po) use ($factoryNames) {
+                'data' => $pos->map(function ($po) use ($factoryNames, $getVisibleStyles) {
+                    $visibleStyles = $getVisibleStyles($po);
                     return [
                         'id' => $po->id,
                         'po_number' => $po->po_number,
@@ -170,7 +183,7 @@ class PurchaseOrderController extends Controller
                         'in_warehouse_date' => $po->in_warehouse_date?->format('Y-m-d'),
                         'total_quantity' => $po->total_quantity,
                         'total_value' => $po->total_value,
-                        'styles_count' => $po->styles->count(),
+                        'styles_count' => $visibleStyles->count(),
                         'payment_terms' => $po->payment_term,
                         'ship_to' => $po->ship_to,
                         'importer' => $po->importer_id ? [
@@ -204,7 +217,7 @@ class PurchaseOrderController extends Controller
                             'code' => $po->getRelation('currency')?->code,
                             'symbol' => $po->getRelation('currency')?->symbol ?? '',
                         ] : null,
-                        'styles' => $po->styles->map(function ($style) use ($factoryNames) {
+                        'styles' => $visibleStyles->map(function ($style) use ($factoryNames) {
                             $pivotFactoryId = $style->pivot->assigned_factory_id;
                             return [
                                 'id' => $style->id,
@@ -233,7 +246,7 @@ class PurchaseOrderController extends Controller
         }
 
         return response()->json([
-            'data' => $pos->map(function ($po) {
+            'data' => $pos->map(function ($po) use ($getVisibleStyles) {
                 $importerRel = $po->getRelation('importer');
                 $agencyRel   = $po->getRelation('agency');
                 return [
@@ -255,7 +268,7 @@ class PurchaseOrderController extends Controller
                     'total_value' => $po->total_value,
                     'currency' => ($po->relationLoaded('currency') ? $po->getRelation('currency')?->code : null) ?? $po->getAttributes()['currency'] ?? 'USD',
                     'status' => $po->status,
-                    'styles_count' => $po->styles->count(),
+                    'styles_count' => $getVisibleStyles($po)->count(),
                     'created_at' => $po->created_at,
                 ];
             }),
@@ -333,7 +346,13 @@ class PurchaseOrderController extends Controller
                 'other_terms' => $po->other_terms,
                 'shipping_method' => $po->metadata['shipping_method'] ?? null,
                 'terms_of_delivery' => $po->terms_of_delivery,
-                'styles' => $po->styles->map(function ($style) {
+                'styles' => $po->styles
+                    ->when($user->hasRole('Factory'), function ($styles) use ($user) {
+                        return $styles->filter(function ($style) use ($user) {
+                            return (int) $style->pivot->assigned_factory_id === $user->id;
+                        })->values();
+                    })
+                    ->map(function ($style) {
                     return [
                         'id' => $style->id,
                         'style_number' => $style->style_number,
