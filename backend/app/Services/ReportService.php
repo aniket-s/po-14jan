@@ -30,6 +30,44 @@ class ReportService
     }
 
     /**
+     * Apply user-based PO access filter to a query.
+     * Reused across PO stats and related entity queries.
+     */
+    private function applyPOAccessFilter($query, User $user)
+    {
+        if ($user->hasRole('Super Admin') || $user->hasPermissionTo('po.view_all')) {
+            return;
+        }
+
+        if ($user->hasRole('Importer')) {
+            $query->where('importer_id', $user->id);
+        } elseif ($user->hasRole('Agency')) {
+            $query->where(function ($q) use ($user) {
+                $q->where('agency_id', $user->id)
+                  ->orWhere('creator_id', $user->id);
+            });
+        } elseif ($user->hasRole('Factory')) {
+            $query->whereHas('factoryAssignments', function ($q) use ($user) {
+                $q->where('factory_id', $user->id);
+            });
+        }
+    }
+
+    /**
+     * Get accessible PO IDs for a user (for filtering related entities).
+     */
+    private function getAccessiblePOIds(User $user): ?array
+    {
+        if ($user->hasRole('Super Admin') || $user->hasPermissionTo('po.view_all')) {
+            return null; // No filter needed
+        }
+
+        $query = PurchaseOrder::query();
+        $this->applyPOAccessFilter($query, $user);
+        return $query->pluck('id')->toArray();
+    }
+
+    /**
      * Get purchase order statistics
      */
     public function getPurchaseOrderStats(User $user, ?string $startDate = null, ?string $endDate = null): array
@@ -42,15 +80,7 @@ class ReportService
         }
 
         // Apply user-based access control
-        if ($user->hasRole('Importer')) {
-            $query->where('importer_id', $user->id);
-        } elseif ($user->hasRole('Agency')) {
-            $query->where('agency_id', $user->id);
-        } elseif ($user->hasRole('Factory')) {
-            $query->whereHas('factoryAssignments', function ($q) use ($user) {
-                $q->where('factory_id', $user->id);
-            });
-        }
+        $this->applyPOAccessFilter($query, $user);
 
         $totalCount = $query->count();
         $totalValue = $query->sum('total_value');
@@ -63,7 +93,7 @@ class ReportService
             ->toArray();
 
         $recentOrders = (clone $query)
-            ->with('importer:id,name')
+            ->with(['importer:id,name', 'agency:id,name'])
             ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
@@ -71,7 +101,7 @@ class ReportService
                 return [
                     'id' => $po->id,
                     'po_number' => $po->po_number,
-                    'importer' => $po->importer->name,
+                    'importer' => $po->importer?->name ?? $po->agency?->name ?? '-',
                     'total_value' => $po->total_value,
                     'status' => $po->status,
                     'order_date' => $po->po_date ? $po->po_date->format('Y-m-d') : null,
@@ -100,18 +130,21 @@ class ReportService
         }
 
         // Apply user-based access control
-        if ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrders', function ($q) use ($user) {
-                $q->where('importer_id', $user->id);
-            });
-        } elseif ($user->hasRole('Factory')) {
+        if ($user->hasRole('Factory')) {
             $query->where('submitted_by', $user->id);
+        } else {
+            $poIds = $this->getAccessiblePOIds($user);
+            if ($poIds !== null) {
+                $query->whereHas('style.purchaseOrders', function ($q) use ($poIds) {
+                    $q->whereIn('purchase_orders.id', $poIds);
+                });
+            }
         }
 
         $totalCount = $query->count();
-        $approvedCount = $query->where('final_status', 'approved')->count();
-        $rejectedCount = $query->where('final_status', 'rejected')->count();
-        $pendingCount = $query->where('final_status', 'pending')->count();
+        $approvedCount = (clone $query)->where('final_status', 'approved')->count();
+        $rejectedCount = (clone $query)->where('final_status', 'rejected')->count();
+        $pendingCount = (clone $query)->where('final_status', 'pending')->count();
 
         $approvalRate = $totalCount > 0 ? round(($approvedCount / $totalCount) * 100, 2) : 0;
 
@@ -155,10 +188,13 @@ class ReportService
         // Apply user-based access control
         if ($user->hasRole('Factory')) {
             $query->where('submitted_by', $user->id);
-        } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrders', function ($q) use ($user) {
-                $q->where('importer_id', $user->id);
-            });
+        } else {
+            $poIds = $this->getAccessiblePOIds($user);
+            if ($poIds !== null) {
+                $query->whereHas('style.purchaseOrders', function ($q) use ($poIds) {
+                    $q->whereIn('purchase_orders.id', $poIds);
+                });
+            }
         }
 
         $totalQuantityProduced = $query->sum('quantity_produced');
@@ -210,10 +246,13 @@ class ReportService
         // Apply user-based access control
         if ($user->hasRole('qc_inspector')) {
             $query->where('inspector_id', $user->id);
-        } elseif ($user->hasRole('Importer')) {
-            $query->whereHas('style.purchaseOrders', function ($q) use ($user) {
-                $q->where('importer_id', $user->id);
-            });
+        } else {
+            $poIds = $this->getAccessiblePOIds($user);
+            if ($poIds !== null) {
+                $query->whereHas('style.purchaseOrders', function ($q) use ($poIds) {
+                    $q->whereIn('purchase_orders.id', $poIds);
+                });
+            }
         }
 
         $totalCount = $query->count();
@@ -273,16 +312,17 @@ class ReportService
         }
 
         // Apply user-based access control
-        if ($user->hasRole('Importer')) {
-            $query->whereHas('purchaseOrder', function ($q) use ($user) {
-                $q->where('importer_id', $user->id);
+        $poIds = $this->getAccessiblePOIds($user);
+        if ($poIds !== null) {
+            $query->whereHas('purchaseOrder', function ($q) use ($poIds) {
+                $q->whereIn('purchase_orders.id', $poIds);
             });
         }
 
         $totalCount = $query->count();
-        $deliveredCount = $query->where('status', 'delivered')->count();
-        $inTransitCount = $query->where('status', 'in_transit')->count();
-        $delayedCount = $query->whereNotIn('status', ['delivered', 'cancelled'])
+        $deliveredCount = (clone $query)->where('status', 'delivered')->count();
+        $inTransitCount = (clone $query)->where('status', 'in_transit')->count();
+        $delayedCount = (clone $query)->whereNotIn('status', ['delivered', 'cancelled'])
             ->where('estimated_delivery_date', '<', now())
             ->count();
 
@@ -332,16 +372,12 @@ class ReportService
         }
 
         // Apply user-based access control
-        if ($user->hasRole('Importer')) {
-            $query->where('importer_id', $user->id);
-        } elseif ($user->hasRole('Agency')) {
-            $query->where('agency_id', $user->id);
-        }
+        $this->applyPOAccessFilter($query, $user);
 
         $orders = $query->get()->map(function ($po) {
             return [
                 'po_number' => $po->po_number,
-                'importer' => $po->importer->name,
+                'importer' => $po->importer?->name ?? $po->agency?->name ?? '-',
                 'agency' => $po->agency?->name,
                 'order_date' => $po->po_date ? $po->po_date->format('Y-m-d') : null,
                 'delivery_date' => $po->delivery_date?->format('Y-m-d'),
