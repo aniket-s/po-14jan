@@ -116,7 +116,7 @@ export default function ProductionStagesManagementPage() {
   useEffect(() => {
     if (authLoading) return;
     fetchStages();
-  }, []);
+  }, [authLoading]);
 
   // Filter stages based on search
   const filteredStages = stages.filter((stage) =>
