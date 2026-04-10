@@ -89,6 +89,24 @@ interface FactoryOption {
   company?: string;
 }
 
+interface FactoryAssignment {
+  id: number;
+  purchase_order_id: number;
+  style_id: number;
+  factory_id: number;
+  assignment_type: string;
+  status: string;
+  notes: string | null;
+  created_at: string;
+  accepted_at: string | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
+  purchase_order?: { id: number; po_number: string };
+  style?: { id: number; style_number: string; description: string | null };
+  factory?: { id: number; name: string; email: string; company: string | null };
+  assigned_by?: { id: number; name: string } | number;
+}
+
 const invitationSchema = z.object({
   invitation_type: z.string().min(1, 'Invitation type is required'),
   purchase_order_id: z.coerce.number().min(1, 'Purchase order is required'),
@@ -104,6 +122,7 @@ export default function InvitationsPage() {
   const { user, can } = useAuth();
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [factoryAssignments, setFactoryAssignments] = useState<FactoryAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -142,6 +161,7 @@ export default function InvitationsPage() {
 
   useEffect(() => {
     fetchInvitations();
+    fetchFactoryAssignments();
     fetchPurchaseOrders();
   }, [searchTerm, statusFilter]);
 
@@ -175,6 +195,19 @@ export default function InvitationsPage() {
       console.error('Failed to fetch invitations:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchFactoryAssignments = async () => {
+    try {
+      const params: any = { per_page: 100 };
+      if (searchTerm) params.search = searchTerm;
+      if (statusFilter !== 'all') params.status = statusFilter;
+
+      const response = await api.get('/factory-assignments', { params });
+      setFactoryAssignments(response.data.data || []);
+    } catch (error) {
+      console.error('Failed to fetch factory assignments:', error);
     }
   };
 
@@ -261,6 +294,7 @@ export default function InvitationsPage() {
       });
       setShowAssignDialog(false);
       resetAssignForm();
+      fetchFactoryAssignments();
     } catch (error: any) {
       console.error('Failed to assign styles:', error);
       alert(error.response?.data?.message || 'Failed to assign styles to factory');
@@ -916,6 +950,92 @@ export default function InvitationsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Factory Assignments Table */}
+        {canAssignFactory && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Factory Assignments</CardTitle>
+              <CardDescription>Styles assigned to factories</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loading ? (
+                <TableSkeleton columns={7} rows={3} hasHeader />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Style</TableHead>
+                      <TableHead>Purchase Order</TableHead>
+                      <TableHead>Factory</TableHead>
+                      <TableHead>Assigned By</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {factoryAssignments.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                          No factory assignments found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      factoryAssignments.map((assignment) => (
+                        <TableRow key={assignment.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{assignment.style?.style_number || '-'}</p>
+                              {assignment.style?.description && (
+                                <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                  {assignment.style.description}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>{assignment.purchase_order?.po_number || '-'}</TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{assignment.factory?.name || '-'}</p>
+                              {assignment.factory?.company && (
+                                <p className="text-xs text-muted-foreground">{assignment.factory.company}</p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {typeof assignment.assigned_by === 'object'
+                              ? assignment.assigned_by?.name
+                              : '-'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {assignment.assignment_type === 'via_agency' ? 'Via Agency' : 'Direct'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                assignment.status === 'accepted'
+                                  ? 'default'
+                                  : assignment.status === 'rejected'
+                                  ? 'destructive'
+                                  : 'secondary'
+                              }
+                            >
+                              {assignment.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{formatDate(assignment.created_at)}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );
