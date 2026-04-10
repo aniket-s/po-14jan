@@ -98,13 +98,13 @@ export default function ProductionStagesManagementPage() {
   const fetchStages = async () => {
     try {
       setLoading(true);
-      const response = await api.get<{ data: ProductionStage[] }>('/admin/production-stages', {
+      const response = await api.get<{ production_stages: ProductionStage[] }>('/admin/production-stages', {
         params: {
           include: 'tracking_records_count',
         },
       });
       // Sort by display order
-      const sorted = response.data.data.sort((a, b) => a.display_order - b.display_order);
+      const sorted = response.data.production_stages.sort((a, b) => a.display_order - b.display_order);
       setStages(sorted);
     } catch (error) {
       console.error('Failed to fetch production stages:', error);
