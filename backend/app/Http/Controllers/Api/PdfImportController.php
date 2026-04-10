@@ -132,6 +132,7 @@ class PdfImportController extends Controller
             'po_header.ex_factory_date' => 'nullable|date',
             'po_header.eta_date' => 'nullable|date',
             'po_header.in_warehouse_date' => 'nullable|date',
+            'po_header.importer_id' => 'nullable|exists:users,id',
             'po_header.agency_id' => 'nullable|exists:users,id',
             'po_header.buyer_id' => 'nullable|exists:buyers,id',
             'po_header.packing_method' => 'nullable|string',
@@ -208,11 +209,14 @@ class PdfImportController extends Controller
 
         try {
             return DB::transaction(function () use ($headerData, $stylesData, $user) {
+                // Use provided importer_id if specified, otherwise default to authenticated user
+                $importerId = $headerData['importer_id'] ?? $user->id;
+
                 // Create the Purchase Order
                 $po = PurchaseOrder::create([
                     'po_number' => $headerData['po_number'],
                     'headline' => $headerData['headline'] ?? null,
-                    'importer_id' => $user->id,
+                    'importer_id' => $importerId,
                     'creator_id' => $user->id,
                     'agency_id' => $headerData['agency_id'] ?? null,
                     'buyer_id' => $headerData['buyer_id'] ?? null,

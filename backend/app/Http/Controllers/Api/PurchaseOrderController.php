@@ -371,6 +371,7 @@ class PurchaseOrderController extends Controller
             'payment_terms_structured.term' => 'nullable|string',
             'payment_terms_structured.percentage' => 'nullable|numeric|min:0|max:100',
             'additional_notes' => 'nullable|string',
+            'importer_id' => 'nullable|exists:users,id',
             'agency_id' => 'nullable|exists:users,id',
             'buyer_id' => 'nullable|exists:buyers,id',
             'revision_date' => 'nullable|date',
@@ -464,6 +465,16 @@ class PurchaseOrderController extends Controller
             }
         }
 
+        // Verify importer has Importer role if provided
+        if ($request->filled('importer_id')) {
+            $importer = User::find($request->importer_id);
+            if (!$importer->hasRole('Importer')) {
+                return response()->json([
+                    'message' => 'The selected user is not an importer',
+                ], 422);
+            }
+        }
+
         // Verify agency has Agency role if provided
         if ($request->filled('agency_id')) {
             $agency = User::find($request->agency_id);
@@ -474,10 +485,14 @@ class PurchaseOrderController extends Controller
             }
         }
 
+        // Use provided importer_id if specified (e.g. Super Admin assigning to an importer),
+        // otherwise default to the authenticated user
+        $importerId = $request->importer_id ?? $request->user()->id;
+
         $po = PurchaseOrder::create([
             'po_number' => $request->po_number,
             'headline' => $request->headline,
-            'importer_id' => $request->user()->id,
+            'importer_id' => $importerId,
             'creator_id' => $request->user()->id,
             'agency_id' => $request->agency_id,
             'buyer_id' => $request->buyer_id,
@@ -572,6 +587,7 @@ class PurchaseOrderController extends Controller
             'payment_terms_structured.term' => 'nullable|string',
             'payment_terms_structured.percentage' => 'nullable|numeric|min:0|max:100',
             'additional_notes' => 'nullable|string',
+            'importer_id' => 'nullable|exists:users,id',
             'agency_id' => 'nullable|exists:users,id',
             'buyer_id' => 'nullable|exists:buyers,id',
             'revision_date' => 'nullable|date',
@@ -600,6 +616,16 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
+        // Verify importer has Importer role if provided
+        if ($request->filled('importer_id')) {
+            $importer = User::find($request->importer_id);
+            if (!$importer->hasRole('Importer')) {
+                return response()->json([
+                    'message' => 'The selected user is not an importer',
+                ], 422);
+            }
+        }
+
         // Verify agency has Agency role if provided
         if ($request->filled('agency_id')) {
             $agency = User::find($request->agency_id);
@@ -613,12 +639,14 @@ class PurchaseOrderController extends Controller
         $oldData = [
             'po_number' => $po->po_number,
             'status' => $po->status,
+            'importer_id' => $po->importer_id,
             'agency_id' => $po->agency_id,
         ];
 
         $po->update([
             'po_number' => $request->po_number,
             'headline' => $request->headline,
+            'importer_id' => $request->importer_id ?? $po->importer_id,
             'po_date' => $request->po_date,
             'currency_id' => $request->currency_id ?? $po->currency_id,
             'exchange_rate' => $request->exchange_rate ?? $po->exchange_rate,
