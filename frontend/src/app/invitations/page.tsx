@@ -142,6 +142,24 @@ export default function InvitationsPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingAssignment, setDeletingAssignment] = useState<FactoryAssignment | null>(null);
   const isFactory = user?.roles?.some((r: any) => (typeof r === 'string' ? r : r.name) === 'Factory');
+  const isImporter = user?.roles?.some((r: any) => (typeof r === 'string' ? r : r.name) === 'Importer');
+  const canAssignAgency = can('po.assign_agency');
+
+  // My Style Assignments (styles assigned to me as Importer or Agency)
+  const [myStyleAssignments, setMyStyleAssignments] = useState<any[]>([]);
+  const [msaPagination, setMsaPagination] = useState({ currentPage: 1, lastPage: 1, perPage: 15, total: 0 });
+
+  // Agency assignment state
+  const [showAssignAgencyDialog, setShowAssignAgencyDialog] = useState(false);
+  const [agcAssignPOId, setAgcAssignPOId] = useState<string>('');
+  const [agcAssignStyles, setAgcAssignStyles] = useState<POStyle[]>([]);
+  const [agcAssignStylesLoading, setAgcAssignStylesLoading] = useState(false);
+  const [agcStyleSearch, setAgcStyleSearch] = useState('');
+  const [agcSelectedStyleIds, setAgcSelectedStyleIds] = useState<number[]>([]);
+  const [agencies, setAgencies] = useState<FactoryOption[]>([]);
+  const [selectedAgencyId, setSelectedAgencyId] = useState<string>('');
+  const [assignAgencyLoading, setAssignAgencyLoading] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -216,6 +234,40 @@ export default function InvitationsPage() {
       })
       .catch(() => setImporters([]));
   }, [isAgency]);
+
+  // Fetch agencies for agency assignment dialog (Importer users)
+  useEffect(() => {
+    if (!canAssignAgency) return;
+    api.get('/agencies')
+      .then((res) => {
+        const data = Array.isArray(res.data) ? res.data : res.data.data || [];
+        setAgencies(data);
+      })
+      .catch(() => setAgencies([]));
+  }, [canAssignAgency]);
+
+  // Fetch my style assignments (Importer/Agency see styles assigned to them)
+  const fetchMyStyleAssignments = useCallback(async () => {
+    if (!isImporter && !isAgency) return;
+    try {
+      const response = await api.get('/my-style-assignments', {
+        params: { page: msaPagination.currentPage, per_page: msaPagination.perPage },
+      });
+      setMyStyleAssignments(response.data.data || []);
+      setMsaPagination({
+        currentPage: response.data.current_page || 1,
+        lastPage: response.data.last_page || 1,
+        perPage: response.data.per_page || 15,
+        total: response.data.total || 0,
+      });
+    } catch {
+      setMyStyleAssignments([]);
+    }
+  }, [isImporter, isAgency, msaPagination.currentPage, msaPagination.perPage]);
+
+  useEffect(() => {
+    fetchMyStyleAssignments();
+  }, [fetchMyStyleAssignments]);
 
   const fetchInvitations = async () => {
     try {
@@ -494,6 +546,74 @@ export default function InvitationsPage() {
     }
   };
 
+  // --- Agency Assignment functions ---
+  const fetchAgcAssignStyles = async (poId: string) => {
+    if (!poId) { setAgcAssignStyles([]); return; }
+    setAgcAssignStylesLoading(true);
+    try {
+      const response = await api.get(`/purchase-orders/${poId}/styles`, { params: { per_page: 200 } });
+      const styles = response.data.styles || response.data.data || [];
+      setAgcAssignStyles(Array.isArray(styles) ? styles : []);
+    } catch { setAgcAssignStyles([]); }
+    finally { setAgcAssignStylesLoading(false); }
+  };
+
+  const handleAgcAssignPOChange = (poId: string) => {
+    setAgcAssignPOId(poId);
+    setAgcSelectedStyleIds([]);
+    setAgcStyleSearch('');
+    fetchAgcAssignStyles(poId);
+  };
+
+  const filteredAgcStyles = agcAssignStyles.filter((style) => {
+    if (!agcStyleSearch) return true;
+    const s = agcStyleSearch.toLowerCase();
+    return style.style_number.toLowerCase().includes(s) || (style.description || '').toLowerCase().includes(s);
+  });
+
+  const toggleAgcStyleSelection = (styleId: number) => {
+    setAgcSelectedStyleIds((prev) =>
+      prev.includes(styleId) ? prev.filter((id) => id !== styleId) : [...prev, styleId]
+    );
+  };
+
+  const toggleAgcSelectAll = () => {
+    const visibleIds = filteredAgcStyles.map((s) => s.id);
+    const allSelected = visibleIds.every((id) => agcSelectedStyleIds.includes(id));
+    if (allSelected) {
+      setAgcSelectedStyleIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setAgcSelectedStyleIds((prev) => [...new Set([...prev, ...visibleIds])]);
+    }
+  };
+
+  const resetAgcAssignForm = () => {
+    setAgcAssignPOId('');
+    setAgcAssignStyles([]);
+    setAgcStyleSearch('');
+    setAgcSelectedStyleIds([]);
+    setSelectedAgencyId('');
+  };
+
+  const handleAssignAgency = async () => {
+    if (!agcAssignPOId || agcSelectedStyleIds.length === 0 || !selectedAgencyId) return;
+    setAssignAgencyLoading(true);
+    try {
+      await api.post(`/purchase-orders/${agcAssignPOId}/styles/bulk-assign-agency`, {
+        style_ids: agcSelectedStyleIds,
+        agency_id: parseInt(selectedAgencyId),
+      });
+      setShowAssignAgencyDialog(false);
+      resetAgcAssignForm();
+      fetchPurchaseOrders();
+    } catch (error: any) {
+      console.error('Failed to assign agency:', error);
+      alert(error.response?.data?.message || 'Failed to assign agency');
+    } finally {
+      setAssignAgencyLoading(false);
+    }
+  };
+
   const onSubmit = async (data: InvitationFormData) => {
     setIsSubmitting(true);
     try {
@@ -659,6 +779,16 @@ export default function InvitationsPage() {
               >
                 <UserPlus className="mr-2 h-4 w-4" />
                 Assign Importer
+              </Button>
+            )}
+            {canAssignAgency && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowAssignAgencyDialog(true)}
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Assign Agency
               </Button>
             )}
             {canAssignFactory && (
@@ -1636,6 +1766,161 @@ export default function InvitationsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Assign Agency Dialog */}
+        <Dialog
+          open={showAssignAgencyDialog}
+          onOpenChange={(open) => {
+            setShowAssignAgencyDialog(open);
+            if (!open) resetAgcAssignForm();
+          }}
+        >
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Assign Agency to Styles</DialogTitle>
+              <DialogDescription>
+                Select a purchase order, pick styles, and assign them to an agency
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label>Purchase Order *</Label>
+                <Select value={agcAssignPOId} onValueChange={handleAgcAssignPOChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a purchase order..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {purchaseOrders.map((po) => (
+                      <SelectItem key={po.id} value={po.id.toString()}>{po.po_number}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {agcAssignPOId && (
+                <div className="space-y-3">
+                  <Label>Styles ({agcSelectedStyleIds.length} of {filteredAgcStyles.length} selected)</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input placeholder="Search styles..." value={agcStyleSearch} onChange={(e) => setAgcStyleSearch(e.target.value)} className="pl-8" />
+                  </div>
+                  {agcAssignStylesLoading ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">Loading styles...</div>
+                  ) : filteredAgcStyles.length === 0 ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">
+                      {agcAssignStyles.length === 0 ? 'No styles found in this PO' : 'No styles match your search'}
+                    </div>
+                  ) : (
+                    <div className="border rounded-md max-h-[300px] overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox checked={filteredAgcStyles.length > 0 && filteredAgcStyles.every((s) => agcSelectedStyleIds.includes(s.id))} onCheckedChange={toggleAgcSelectAll} />
+                            </TableHead>
+                            <TableHead>Style #</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Qty</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredAgcStyles.map((style) => (
+                            <TableRow key={style.id} className="cursor-pointer hover:bg-muted/50" onClick={() => toggleAgcStyleSelection(style.id)}>
+                              <TableCell><Checkbox checked={agcSelectedStyleIds.includes(style.id)} onCheckedChange={() => toggleAgcStyleSelection(style.id)} /></TableCell>
+                              <TableCell className="font-medium">{style.style_number}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{style.description || '-'}</TableCell>
+                              <TableCell className="text-sm">{style.pivot?.quantity_in_po || style.total_quantity || '-'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              )}
+              {agcSelectedStyleIds.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Agency *</Label>
+                  <Select value={selectedAgencyId} onValueChange={setSelectedAgencyId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an agency..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {agencies.map((agency) => (
+                        <SelectItem key={agency.id} value={agency.id.toString()}>
+                          {agency.name}{agency.company ? ` - ${agency.company}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setShowAssignAgencyDialog(false); resetAgcAssignForm(); }}>Cancel</Button>
+              <Button onClick={handleAssignAgency} disabled={agcSelectedStyleIds.length === 0 || !selectedAgencyId || assignAgencyLoading}>
+                {assignAgencyLoading ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />Assigning...</>) : `Assign ${agcSelectedStyleIds.length} Style${agcSelectedStyleIds.length !== 1 ? 's' : ''}`}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* My Style Assignments (for Importer/Agency to see styles assigned to them) */}
+        {(isImporter || isAgency) && myStyleAssignments.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Styles Assigned to You</CardTitle>
+              <CardDescription>
+                Styles that have been assigned to you across purchase orders
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Style</TableHead>
+                    <TableHead>PO Number</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Unit Price</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {myStyleAssignments.map((item, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{item.style_number || '-'}</span>
+                          {item.style_description && (
+                            <span className="text-xs text-muted-foreground truncate max-w-[200px]">{item.style_description}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">{item.po_number || '-'}</TableCell>
+                      <TableCell>{item.quantity_in_po || '-'}</TableCell>
+                      <TableCell>{item.unit_price_in_po ? `$${item.unit_price_in_po}` : '-'}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{item.status || 'pending'}</Badge>
+                      </TableCell>
+                      <TableCell>{item.created_at ? formatDate(item.created_at) : '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {msaPagination.lastPage > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Page {msaPagination.currentPage} of {msaPagination.lastPage}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setMsaPagination({ ...msaPagination, currentPage: msaPagination.currentPage - 1 })} disabled={msaPagination.currentPage === 1}>Previous</Button>
+                    <Button variant="outline" size="sm" onClick={() => setMsaPagination({ ...msaPagination, currentPage: msaPagination.currentPage + 1 })} disabled={msaPagination.currentPage === msaPagination.lastPage}>Next</Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );
