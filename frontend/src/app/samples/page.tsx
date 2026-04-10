@@ -152,9 +152,12 @@ export default function SamplesPage() {
     formState: { errors: sampleErrors },
     reset: resetSample,
     setValue: setSampleValue,
+    watch: watchSample,
   } = useForm<SampleFormData>({
     resolver: zodResolver(sampleSchema),
   });
+
+  const watchedStyleId = watchSample('style_id');
 
   const {
     register: registerApproval,
@@ -490,6 +493,23 @@ export default function SamplesPage() {
     const sampleType = sampleTypes.find(st => st.id === sampleTypeId);
     if (!sampleType) return { canSubmit: true, reason: '' };
 
+    // Check if this sample type already exists for the selected style
+    // with a non-rejected status (pending or approved)
+    if (watchedStyleId) {
+      const existingSample = samples.find(
+        s => s.sample_type_id === sampleTypeId &&
+             s.style_id === watchedStyleId &&
+             s.final_status !== 'rejected'
+      );
+      if (existingSample) {
+        const statusLabel = existingSample.final_status === 'approved' ? 'Approved' : 'Pending';
+        return {
+          canSubmit: false,
+          reason: `Already ${statusLabel}`,
+        };
+      }
+    }
+
     if (sampleType.allows_parallel_submission) {
       return { canSubmit: true, reason: '' };
     }
@@ -500,13 +520,15 @@ export default function SamplesPage() {
         if (!prereqType) continue;
 
         const prerequisiteApproved = samples.some(
-          s => s.sample_type_id === prereqType.id && s.final_status === 'approved'
+          s => s.sample_type_id === prereqType.id &&
+               (!watchedStyleId || s.style_id === watchedStyleId) &&
+               s.final_status === 'approved'
         );
 
         if (!prerequisiteApproved) {
           return {
             canSubmit: false,
-            reason: `Prerequisite sample "${prereqType.display_name || prereqType.name}" must be approved first`,
+            reason: `Prerequisite "${prereqType.display_name || prereqType.name}" must be approved first`,
           };
         }
       }
