@@ -34,7 +34,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle, Factory } from 'lucide-react';
 import api from '@/lib/api';
 import { TableSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
@@ -71,6 +72,23 @@ interface PurchaseOrder {
   po_number: string;
 }
 
+interface POStyle {
+  id: number;
+  style_number: string;
+  description: string | null;
+  total_quantity?: number;
+  pivot?: {
+    quantity_in_po?: number;
+    assigned_factory_id?: number;
+  };
+}
+
+interface FactoryOption {
+  id: number;
+  name: string;
+  company?: string;
+}
+
 const invitationSchema = z.object({
   invitation_type: z.string().min(1, 'Invitation type is required'),
   purchase_order_id: z.coerce.number().min(1, 'Purchase order is required'),
@@ -83,7 +101,7 @@ const invitationSchema = z.object({
 type InvitationFormData = z.infer<typeof invitationSchema>;
 
 export default function InvitationsPage() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,6 +110,19 @@ export default function InvitationsPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  // Factory assignment state
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [assignSelectedPOId, setAssignSelectedPOId] = useState<string>('');
+  const [poStyles, setPOStyles] = useState<POStyle[]>([]);
+  const [poStylesLoading, setPOStylesLoading] = useState(false);
+  const [styleSearchFilter, setStyleSearchFilter] = useState('');
+  const [selectedStyleIds, setSelectedStyleIds] = useState<number[]>([]);
+  const [factories, setFactories] = useState<FactoryOption[]>([]);
+  const [selectedFactoryId, setSelectedFactoryId] = useState<string>('');
+  const [assignNotes, setAssignNotes] = useState('');
+  const [assignLoading, setAssignLoading] = useState(false);
+  const canAssignFactory = can('po.assign_factory');
 
   const {
     register,
@@ -113,6 +144,17 @@ export default function InvitationsPage() {
     fetchInvitations();
     fetchPurchaseOrders();
   }, [searchTerm, statusFilter]);
+
+  // Fetch factories for assignment dialog
+  useEffect(() => {
+    if (!canAssignFactory) return;
+    api.get('/factories', { params: { per_page: 100 } })
+      .then((res) => {
+        const data = Array.isArray(res.data) ? res.data : res.data.data || [];
+        setFactories(data);
+      })
+      .catch(() => setFactories([]));
+  }, [canAssignFactory]);
 
   const fetchInvitations = async () => {
     try {
@@ -145,6 +187,93 @@ export default function InvitationsPage() {
     } catch (error) {
       console.error('Failed to fetch purchase orders:', error);
     }
+  };
+
+  // Fetch styles for a specific PO
+  const fetchPOStyles = async (poId: string) => {
+    if (!poId) {
+      setPOStyles([]);
+      return;
+    }
+    setPOStylesLoading(true);
+    try {
+      const response = await api.get(`/purchase-orders/${poId}/styles`);
+      const styles = response.data.data || response.data || [];
+      setPOStyles(styles);
+    } catch (error) {
+      console.error('Failed to fetch PO styles:', error);
+      setPOStyles([]);
+    } finally {
+      setPOStylesLoading(false);
+    }
+  };
+
+  // Handle PO selection in assign dialog
+  const handleAssignPOChange = (poId: string) => {
+    setAssignSelectedPOId(poId);
+    setSelectedStyleIds([]);
+    setStyleSearchFilter('');
+    fetchPOStyles(poId);
+  };
+
+  // Filter styles by search term
+  const filteredPOStyles = poStyles.filter((style) => {
+    if (!styleSearchFilter) return true;
+    const search = styleSearchFilter.toLowerCase();
+    return (
+      style.style_number.toLowerCase().includes(search) ||
+      (style.description || '').toLowerCase().includes(search)
+    );
+  });
+
+  // Toggle single style selection
+  const toggleStyleSelection = (styleId: number) => {
+    setSelectedStyleIds((prev) =>
+      prev.includes(styleId)
+        ? prev.filter((id) => id !== styleId)
+        : [...prev, styleId]
+    );
+  };
+
+  // Toggle all visible styles
+  const toggleSelectAll = () => {
+    const visibleIds = filteredPOStyles.map((s) => s.id);
+    const allSelected = visibleIds.every((id) => selectedStyleIds.includes(id));
+    if (allSelected) {
+      setSelectedStyleIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedStyleIds((prev) => [...new Set([...prev, ...visibleIds])]);
+    }
+  };
+
+  // Submit factory assignment
+  const handleAssignFactory = async () => {
+    if (selectedStyleIds.length === 0 || !selectedFactoryId) return;
+    setAssignLoading(true);
+    try {
+      await api.post('/factory-assignments/bulk-assign', {
+        style_ids: selectedStyleIds,
+        factory_id: parseInt(selectedFactoryId),
+        assignment_type: 'via_agency',
+        notes: assignNotes || null,
+      });
+      setShowAssignDialog(false);
+      resetAssignForm();
+    } catch (error: any) {
+      console.error('Failed to assign styles:', error);
+      alert(error.response?.data?.message || 'Failed to assign styles to factory');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const resetAssignForm = () => {
+    setAssignSelectedPOId('');
+    setPOStyles([]);
+    setStyleSearchFilter('');
+    setSelectedStyleIds([]);
+    setSelectedFactoryId('');
+    setAssignNotes('');
   };
 
   const onSubmit = async (data: InvitationFormData) => {
@@ -303,6 +432,17 @@ export default function InvitationsPage() {
             <h1 className="text-3xl font-bold tracking-tight">Invitations</h1>
             <p className="text-muted-foreground">Send and manage invitations to partners</p>
           </div>
+          <div className="flex gap-2">
+            {canAssignFactory && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowAssignDialog(true)}
+              >
+                <Factory className="mr-2 h-4 w-4" />
+                Assign Factory
+              </Button>
+            )}
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm">
@@ -444,7 +584,187 @@ export default function InvitationsPage() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
+
+        {/* Assign Factory Dialog */}
+        <Dialog
+          open={showAssignDialog}
+          onOpenChange={(open) => {
+            setShowAssignDialog(open);
+            if (!open) resetAssignForm();
+          }}
+        >
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Assign Styles to Factory</DialogTitle>
+              <DialogDescription>
+                Select a purchase order, pick styles, and assign them to a factory
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6">
+              {/* PO Selection */}
+              <div className="space-y-2">
+                <Label>Purchase Order *</Label>
+                <Select value={assignSelectedPOId} onValueChange={handleAssignPOChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a purchase order..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {purchaseOrders.map((po) => (
+                      <SelectItem key={po.id} value={po.id.toString()}>
+                        {po.po_number}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Styles Table */}
+              {assignSelectedPOId && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Styles ({selectedStyleIds.length} of {filteredPOStyles.length} selected)</Label>
+                  </div>
+
+                  {/* Style Search */}
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search styles by number or description..."
+                      value={styleSearchFilter}
+                      onChange={(e) => setStyleSearchFilter(e.target.value)}
+                      className="pl-8"
+                    />
+                  </div>
+
+                  {poStylesLoading ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">Loading styles...</div>
+                  ) : filteredPOStyles.length === 0 ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">
+                      {poStyles.length === 0 ? 'No styles found in this PO' : 'No styles match your search'}
+                    </div>
+                  ) : (
+                    <div className="border rounded-md max-h-[300px] overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox
+                                checked={
+                                  filteredPOStyles.length > 0 &&
+                                  filteredPOStyles.every((s) => selectedStyleIds.includes(s.id))
+                                }
+                                onCheckedChange={toggleSelectAll}
+                              />
+                            </TableHead>
+                            <TableHead>Style #</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Qty</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredPOStyles.map((style) => {
+                            const isSelected = selectedStyleIds.includes(style.id);
+                            const isAssigned = !!style.pivot?.assigned_factory_id;
+                            return (
+                              <TableRow
+                                key={style.id}
+                                className={`cursor-pointer hover:bg-muted/50 ${isAssigned ? 'opacity-60' : ''}`}
+                                onClick={() => toggleStyleSelection(style.id)}
+                              >
+                                <TableCell>
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleStyleSelection(style.id)}
+                                  />
+                                </TableCell>
+                                <TableCell className="font-medium">{style.style_number}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">
+                                  {style.description || '-'}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {style.pivot?.quantity_in_po || style.total_quantity || '-'}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {isAssigned ? (
+                                    <Badge variant="secondary">Assigned</Badge>
+                                  ) : (
+                                    <Badge variant="outline">Unassigned</Badge>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Factory Selection */}
+              {selectedStyleIds.length > 0 && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Factory *</Label>
+                    <Select value={selectedFactoryId} onValueChange={setSelectedFactoryId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a factory..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {factories.map((factory) => (
+                          <SelectItem key={factory.id} value={factory.id.toString()}>
+                            {factory.name}
+                            {factory.company && ` - ${factory.company}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Notes (optional)</Label>
+                    <textarea
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={assignNotes}
+                      onChange={(e) => setAssignNotes(e.target.value)}
+                      placeholder="Add any special instructions..."
+                      rows={3}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAssignDialog(false);
+                  resetAssignForm();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAssignFactory}
+                disabled={selectedStyleIds.length === 0 || !selectedFactoryId || assignLoading}
+              >
+                {assignLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  `Assign ${selectedStyleIds.length} Style${selectedStyleIds.length !== 1 ? 's' : ''}`
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Filters */}
         <Card>
