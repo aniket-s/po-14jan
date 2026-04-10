@@ -822,6 +822,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/quality-inspections', [ReportController::class, 'qualityInspections']);
         Route::get('/shipments', [ReportController::class, 'shipments']);
 
+        // Factory-focused reports (Agency & Importer)
+        Route::get('/factory-wise', [ReportController::class, 'factoryWise']);
+        Route::get('/pending-shipments', [ReportController::class, 'pendingShipments']);
+        Route::get('/pending-samples', [ReportController::class, 'pendingSamples']);
+        Route::get('/delays', [ReportController::class, 'delays']);
+
         // Statistics endpoints
         Route::get('/stats/purchase-orders', [ReportController::class, 'purchaseOrderStats']);
         Route::get('/stats/samples', [ReportController::class, 'sampleStats']);
