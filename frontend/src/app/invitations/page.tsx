@@ -3,7 +3,7 @@
 // Disable static generation for this authenticated page
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle, Factory, UserPlus } from 'lucide-react';
+import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle, Factory, UserPlus, Trash2, Clock } from 'lucide-react';
 import api from '@/lib/api';
 import { TableSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
@@ -105,6 +105,7 @@ interface FactoryAssignment {
   assignment_type: string;
   status: string;
   notes: string | null;
+  assigned_at: string | null;
   created_at: string;
   accepted_at: string | null;
   rejected_at: string | null;
@@ -131,6 +132,15 @@ export default function InvitationsPage() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [factoryAssignments, setFactoryAssignments] = useState<FactoryAssignment[]>([]);
+  const [faPagination, setFaPagination] = useState({ currentPage: 1, lastPage: 1, perPage: 15, total: 0 });
+  const [faSearchQuery, setFaSearchQuery] = useState('');
+  const [faStatusFilter, setFaStatusFilter] = useState<string>('all');
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectingAssignment, setRejectingAssignment] = useState<FactoryAssignment | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletingAssignment, setDeletingAssignment] = useState<FactoryAssignment | null>(null);
+  const isFactory = user?.roles?.some((r: any) => (typeof r === 'string' ? r : r.name) === 'Factory');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -177,7 +187,6 @@ export default function InvitationsPage() {
 
   useEffect(() => {
     fetchInvitations();
-    fetchFactoryAssignments();
     fetchPurchaseOrders();
   }, [searchTerm, statusFilter]);
 
@@ -225,16 +234,88 @@ export default function InvitationsPage() {
     }
   };
 
-  const fetchFactoryAssignments = async () => {
+  const fetchFactoryAssignments = useCallback(async () => {
     try {
-      const params: any = { per_page: 100 };
-      if (searchTerm) params.search = searchTerm;
-      if (statusFilter !== 'all') params.status = statusFilter;
+      const params: any = {
+        page: faPagination.currentPage,
+        per_page: faPagination.perPage,
+      };
+      if (faSearchQuery) params.search = faSearchQuery;
+      if (faStatusFilter !== 'all') params.status = faStatusFilter;
 
       const response = await api.get('/factory-assignments', { params });
       setFactoryAssignments(response.data.data || []);
+      setFaPagination({
+        currentPage: response.data.current_page || 1,
+        lastPage: response.data.last_page || 1,
+        perPage: response.data.per_page || 15,
+        total: response.data.total || 0,
+      });
     } catch (error) {
       console.error('Failed to fetch factory assignments:', error);
+    }
+  }, [faPagination.currentPage, faPagination.perPage, faSearchQuery, faStatusFilter]);
+
+  // Refresh factory assignments when filters change
+  useEffect(() => {
+    fetchFactoryAssignments();
+  }, [fetchFactoryAssignments]);
+
+  // Accept factory assignment (Factory role)
+  const handleAcceptAssignment = async (assignment: FactoryAssignment) => {
+    try {
+      await api.post(`/factory-assignments/${assignment.id}/accept`);
+      fetchFactoryAssignments();
+    } catch (error: any) {
+      console.error('Failed to accept:', error);
+      alert(error.response?.data?.message || 'Failed to accept assignment');
+    }
+  };
+
+  // Reject factory assignment (Factory role)
+  const handleRejectAssignment = async () => {
+    if (!rejectingAssignment) return;
+    try {
+      await api.post(`/factory-assignments/${rejectingAssignment.id}/reject`, {
+        rejection_reason: rejectionReason || null,
+      });
+      setShowRejectDialog(false);
+      setRejectingAssignment(null);
+      setRejectionReason('');
+      fetchFactoryAssignments();
+    } catch (error: any) {
+      console.error('Failed to reject:', error);
+      alert(error.response?.data?.message || 'Failed to reject assignment');
+    }
+  };
+
+  // Delete factory assignment (Importer/Agency)
+  const handleDeleteAssignment = async () => {
+    if (!deletingAssignment) return;
+    try {
+      const poId = deletingAssignment.purchase_order_id || deletingAssignment.purchase_order?.id;
+      if (poId) {
+        await api.delete(`/purchase-orders/${poId}/factory-assignments/${deletingAssignment.id}`);
+      }
+      setShowDeleteDialog(false);
+      setDeletingAssignment(null);
+      fetchFactoryAssignments();
+    } catch (error: any) {
+      console.error('Failed to delete:', error);
+      alert(error.response?.data?.message || 'Failed to delete assignment');
+    }
+  };
+
+  const getAssignmentStatusBadge = (status: string) => {
+    switch (status) {
+      case 'invited':
+        return <Badge variant="outline" className="gap-1"><Clock className="h-3 w-3" />Invited</Badge>;
+      case 'accepted':
+        return <Badge variant="default" className="gap-1 bg-green-600"><CheckCircle className="h-3 w-3" />Accepted</Badge>;
+      case 'rejected':
+        return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" />Rejected</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
@@ -1102,91 +1183,339 @@ export default function InvitationsPage() {
           </CardContent>
         </Card>
 
-        {/* Factory Assignments Table */}
-        {canAssignFactory && (
+        {/* Factory Assignments Section */}
+        {/* Stat Cards */}
+        <div className="grid gap-4 md:grid-cols-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Factory Assignments</CardTitle>
-              <CardDescription>Styles assigned to factories</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Assignments</CardTitle>
+              <Factory className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
-            <CardContent className="p-0">
-              {loading ? (
-                <TableSkeleton columns={7} rows={3} hasHeader />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Style</TableHead>
-                      <TableHead>Purchase Order</TableHead>
-                      <TableHead>Factory</TableHead>
-                      <TableHead>Assigned By</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {factoryAssignments.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground">
-                          No factory assignments found
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      factoryAssignments.map((assignment) => (
-                        <TableRow key={assignment.id}>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">{assignment.style?.style_number || '-'}</p>
-                              {assignment.style?.description && (
-                                <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                                  {assignment.style.description}
-                                </p>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>{assignment.purchase_order?.po_number || '-'}</TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">{assignment.factory?.name || '-'}</p>
-                              {assignment.factory?.company && (
-                                <p className="text-xs text-muted-foreground">{assignment.factory.company}</p>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {typeof assignment.assigned_by === 'object'
-                              ? assignment.assigned_by?.name
-                              : '-'}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {assignment.assignment_type === 'via_agency' ? 'Via Agency' : 'Direct'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                assignment.status === 'accepted'
-                                  ? 'default'
-                                  : assignment.status === 'rejected'
-                                  ? 'destructive'
-                                  : 'secondary'
-                              }
-                            >
-                              {assignment.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{formatDate(assignment.created_at)}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              )}
+            <CardContent>
+              <div className="text-2xl font-bold">{faPagination.total}</div>
             </CardContent>
           </Card>
-        )}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {factoryAssignments.filter((a) => a.status === 'invited').length}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Accepted</CardTitle>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {factoryAssignments.filter((a) => a.status === 'accepted').length}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Rejected</CardTitle>
+              <XCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {factoryAssignments.filter((a) => a.status === 'rejected').length}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Factory Assignments Filters */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Factory Assignments</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Search</Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by style, PO, or factory..."
+                    value={faSearchQuery}
+                    onChange={(e) => {
+                      setFaSearchQuery(e.target.value);
+                      setFaPagination((p) => ({ ...p, currentPage: 1 }));
+                    }}
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={faStatusFilter}
+                  onValueChange={(v) => {
+                    setFaStatusFilter(v);
+                    setFaPagination((p) => ({ ...p, currentPage: 1 }));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="invited">Invited (Pending)</SelectItem>
+                    <SelectItem value="accepted">Accepted</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>&nbsp;</Label>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setFaSearchQuery('');
+                    setFaStatusFilter('all');
+                    setFaPagination((p) => ({ ...p, currentPage: 1 }));
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Factory Assignments Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Style Assignments</CardTitle>
+            <CardDescription>
+              Showing {factoryAssignments.length} of {faPagination.total} assignments
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Style</TableHead>
+                  <TableHead>PO Number</TableHead>
+                  <TableHead>Factory</TableHead>
+                  <TableHead>Assigned Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Notes</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {factoryAssignments.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      No factory assignments found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  factoryAssignments.map((assignment) => (
+                    <TableRow key={assignment.id}>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{assignment.style?.style_number || '-'}</span>
+                          {assignment.style?.description && (
+                            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                              {assignment.style.description}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-medium">{assignment.purchase_order?.po_number || '-'}</span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{assignment.factory?.name || '-'}</span>
+                          {assignment.factory?.company && (
+                            <span className="text-xs text-muted-foreground">{assignment.factory.company}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>{formatDate(assignment.assigned_at || assignment.created_at)}</TableCell>
+                      <TableCell>
+                        {getAssignmentStatusBadge(assignment.status)}
+                        {assignment.rejection_reason && (
+                          <p className="text-xs text-red-500 mt-1 max-w-[150px] truncate" title={assignment.rejection_reason}>
+                            {assignment.rejection_reason}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate">{assignment.notes || '-'}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          {isFactory && assignment.status === 'invited' && (
+                            <>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700"
+                                onClick={() => handleAcceptAssignment(assignment)}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Accept
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => {
+                                  setRejectingAssignment(assignment);
+                                  setShowRejectDialog(true);
+                                }}
+                              >
+                                <XCircle className="h-4 w-4 mr-1" />
+                                Reject
+                              </Button>
+                            </>
+                          )}
+                          {canAssignFactory && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setDeletingAssignment(assignment);
+                                setShowDeleteDialog(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+
+            {/* Pagination */}
+            {faPagination.lastPage > 1 && (
+              <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-muted-foreground">
+                  Page {faPagination.currentPage} of {faPagination.lastPage}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFaPagination({ ...faPagination, currentPage: faPagination.currentPage - 1 })}
+                    disabled={faPagination.currentPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFaPagination({ ...faPagination, currentPage: faPagination.currentPage + 1 })}
+                    disabled={faPagination.currentPage === faPagination.lastPage}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Reject Assignment Dialog */}
+        <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reject Assignment</DialogTitle>
+              <DialogDescription>
+                Provide a reason for rejecting this style assignment.
+              </DialogDescription>
+            </DialogHeader>
+            {rejectingAssignment && (
+              <div className="py-2 space-y-2">
+                <p className="text-sm">
+                  <span className="font-medium">Style:</span>{' '}
+                  {rejectingAssignment.style?.style_number || '-'}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">PO:</span>{' '}
+                  {rejectingAssignment.purchase_order?.po_number || '-'}
+                </p>
+                <div className="space-y-2 mt-3">
+                  <Label>Reason (optional)</Label>
+                  <textarea
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Reason for rejecting this assignment..."
+                    rows={3}
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowRejectDialog(false);
+                  setRejectingAssignment(null);
+                  setRejectionReason('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleRejectAssignment}>
+                Reject Assignment
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Assignment Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Assignment</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this assignment? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            {deletingAssignment && (
+              <div className="py-2">
+                <p className="text-sm">
+                  <span className="font-medium">Style:</span>{' '}
+                  {deletingAssignment.style?.style_number || '-'}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">Factory:</span>{' '}
+                  {deletingAssignment.factory?.name || '-'}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">Status:</span> {deletingAssignment.status}
+                </p>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDeleteDialog(false);
+                  setDeletingAssignment(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteAssignment}>
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
