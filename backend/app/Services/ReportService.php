@@ -3,12 +3,14 @@
 namespace App\Services;
 
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderStyle;
 use App\Models\Sample;
 use App\Models\ProductionTracking;
 use App\Models\QualityInspection;
 use App\Models\Shipment;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class ReportService
 {
@@ -575,6 +577,455 @@ class ReportService
         return [
             'summary' => $summary,
             'shipments' => $shipments,
+        ];
+    }
+
+    /**
+     * Get factory-wise report: all orders grouped by factory with summary and row-level detail.
+     */
+    public function getFactoryWiseReport(User $user, array $filters): array
+    {
+        $query = PurchaseOrderStyle::query()
+            ->whereNotNull('assigned_factory_id')
+            ->with([
+                'purchaseOrder:id,po_number,po_date,status,total_value,ex_factory_date,importer_id,agency_id',
+                'purchaseOrder.importer:id,name',
+                'purchaseOrder.agency:id,name',
+                'style:id,style_number,description,total_quantity,unit_price',
+                'assignedFactory:id,name,company',
+            ]);
+
+        // Apply PO-level access control
+        $poIds = $this->getAccessiblePOIds($user);
+        if ($poIds !== null) {
+            $query->whereIn('purchase_order_id', $poIds);
+        }
+
+        // Filter by factory
+        if (!empty($filters['factory_id'])) {
+            $query->where('assigned_factory_id', $filters['factory_id']);
+        }
+
+        // Filter by date range on PO date
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $query->whereHas('purchaseOrder', function ($q) use ($filters) {
+                $q->whereBetween('po_date', [$filters['start_date'], $filters['end_date']]);
+            });
+        }
+
+        $rows = $query->get();
+
+        // Build row-level data
+        $items = $rows->map(function ($pos) {
+            $po = $pos->purchaseOrder;
+            return [
+                'id' => $pos->id,
+                'po_number' => $po->po_number ?? '-',
+                'po_date' => $po->po_date?->format('Y-m-d'),
+                'style_number' => $pos->style->style_number ?? '-',
+                'style_description' => $pos->style->description ?? '-',
+                'factory_id' => $pos->assigned_factory_id,
+                'factory_name' => $pos->assignedFactory->name ?? '-',
+                'factory_company' => $pos->assignedFactory->company ?? '-',
+                'quantity' => $pos->quantity_in_po ?? $pos->style->total_quantity ?? 0,
+                'unit_price' => $pos->unit_price_in_po ?? $pos->style->unit_price ?? 0,
+                'total_value' => ($pos->quantity_in_po ?? 0) * ($pos->unit_price_in_po ?? $pos->style->unit_price ?? 0),
+                'ex_factory_date' => $pos->ex_factory_date?->format('Y-m-d') ?? $po->ex_factory_date?->format('Y-m-d'),
+                'estimated_ex_factory_date' => $pos->estimated_ex_factory_date?->format('Y-m-d'),
+                'production_status' => $pos->production_status ?? 'pending',
+                'shipping_approval_status' => $pos->shipping_approval_status ?? 'pending',
+                'po_status' => $po->status ?? '-',
+            ];
+        });
+
+        // Build factory-level summary
+        $factorySummary = $rows->groupBy('assigned_factory_id')->map(function ($group) {
+            $factory = $group->first()->assignedFactory;
+            $totalQty = $group->sum(fn($pos) => $pos->quantity_in_po ?? $pos->style->total_quantity ?? 0);
+            $totalValue = $group->sum(fn($pos) => ($pos->quantity_in_po ?? 0) * ($pos->unit_price_in_po ?? $pos->style->unit_price ?? 0));
+            $statusCounts = $group->groupBy(fn($pos) => $pos->production_status ?? 'pending')
+                ->map->count()
+                ->toArray();
+
+            return [
+                'factory_id' => $factory->id ?? null,
+                'factory_name' => $factory->name ?? '-',
+                'factory_company' => $factory->company ?? '-',
+                'total_styles' => $group->count(),
+                'total_quantity' => $totalQty,
+                'total_value' => round($totalValue, 2),
+                'status_breakdown' => $statusCounts,
+                'po_count' => $group->pluck('purchase_order_id')->unique()->count(),
+            ];
+        })->values();
+
+        // List of factories for the filter dropdown
+        $factories = $rows->pluck('assignedFactory')
+            ->filter()
+            ->unique('id')
+            ->map(fn($f) => ['id' => $f->id, 'name' => $f->name, 'company' => $f->company])
+            ->values();
+
+        return [
+            'summary' => [
+                'total_factories' => $factorySummary->count(),
+                'total_styles' => $items->count(),
+                'total_quantity' => $items->sum('quantity'),
+                'total_value' => round($items->sum('total_value'), 2),
+            ],
+            'factory_summary' => $factorySummary,
+            'items' => $items,
+            'factories' => $factories,
+        ];
+    }
+
+    /**
+     * Get pending-to-ship report: factory orders that haven't shipped yet.
+     */
+    public function getPendingShipmentsReport(User $user, array $filters): array
+    {
+        $query = PurchaseOrderStyle::query()
+            ->whereNotNull('assigned_factory_id')
+            ->where(function ($q) {
+                $q->whereNull('production_status')
+                  ->orWhereIn('production_status', ['pending', 'in_production']);
+            })
+            ->where(function ($q) {
+                $q->whereNull('shipping_approval_status')
+                  ->orWhereIn('shipping_approval_status', ['pending', 'requested', 'agency_approved']);
+            })
+            ->with([
+                'purchaseOrder:id,po_number,po_date,status,ex_factory_date,importer_id,agency_id',
+                'purchaseOrder.importer:id,name',
+                'style:id,style_number,description,total_quantity,unit_price',
+                'assignedFactory:id,name,company',
+            ]);
+
+        // Apply PO-level access control
+        $poIds = $this->getAccessiblePOIds($user);
+        if ($poIds !== null) {
+            $query->whereIn('purchase_order_id', $poIds);
+        }
+
+        if (!empty($filters['factory_id'])) {
+            $query->where('assigned_factory_id', $filters['factory_id']);
+        }
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $query->whereHas('purchaseOrder', function ($q) use ($filters) {
+                $q->whereBetween('po_date', [$filters['start_date'], $filters['end_date']]);
+            });
+        }
+
+        $rows = $query->get();
+        $now = Carbon::today();
+
+        $items = $rows->map(function ($pos) use ($now) {
+            $po = $pos->purchaseOrder;
+            $exFactory = $pos->ex_factory_date ?? $po->ex_factory_date;
+            $daysRemaining = $exFactory ? $now->diffInDays(Carbon::parse($exFactory), false) : null;
+
+            return [
+                'id' => $pos->id,
+                'po_number' => $po->po_number ?? '-',
+                'po_date' => $po->po_date?->format('Y-m-d'),
+                'style_number' => $pos->style->style_number ?? '-',
+                'style_description' => $pos->style->description ?? '-',
+                'factory_id' => $pos->assigned_factory_id,
+                'factory_name' => $pos->assignedFactory->name ?? '-',
+                'quantity' => $pos->quantity_in_po ?? $pos->style->total_quantity ?? 0,
+                'ex_factory_date' => $exFactory?->format('Y-m-d'),
+                'estimated_ex_factory_date' => $pos->estimated_ex_factory_date?->format('Y-m-d'),
+                'days_remaining' => $daysRemaining,
+                'is_overdue' => $daysRemaining !== null && $daysRemaining < 0,
+                'production_status' => $pos->production_status ?? 'pending',
+                'shipping_approval_status' => $pos->shipping_approval_status ?? 'pending',
+            ];
+        })->sortBy('days_remaining')->values();
+
+        $factories = $rows->pluck('assignedFactory')
+            ->filter()
+            ->unique('id')
+            ->map(fn($f) => ['id' => $f->id, 'name' => $f->name, 'company' => $f->company])
+            ->values();
+
+        return [
+            'summary' => [
+                'total_pending' => $items->count(),
+                'overdue' => $items->where('is_overdue', true)->count(),
+                'on_track' => $items->where('is_overdue', false)->count(),
+                'total_quantity' => $items->sum('quantity'),
+            ],
+            'items' => $items,
+            'factories' => $factories,
+        ];
+    }
+
+    /**
+     * Get pending samples report: samples awaiting approval, grouped by factory.
+     */
+    public function getPendingSamplesReport(User $user, array $filters): array
+    {
+        $query = Sample::query()
+            ->where(function ($q) {
+                $q->where('final_status', 'pending')
+                  ->orWhere('agency_status', 'pending')
+                  ->orWhere('importer_status', 'pending');
+            })
+            ->with([
+                'style:id,style_number,description,assigned_factory_id',
+                'style.assignedFactory:id,name,company',
+                'style.purchaseOrders:id,po_number',
+                'sampleType:id,name,display_name,typical_days',
+                'submittedBy:id,name',
+            ]);
+
+        // Apply PO-level access control
+        $poIds = $this->getAccessiblePOIds($user);
+        if ($poIds !== null) {
+            $query->whereHas('style.purchaseOrders', function ($q) use ($poIds) {
+                $q->whereIn('purchase_orders.id', $poIds);
+            });
+        }
+
+        if (!empty($filters['factory_id'])) {
+            $query->whereHas('style', function ($q) use ($filters) {
+                $q->where('assigned_factory_id', $filters['factory_id']);
+            });
+        }
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $query->whereBetween('submission_date', [$filters['start_date'], $filters['end_date']]);
+        }
+
+        if (!empty($filters['sample_type'])) {
+            $query->where('sample_type_id', $filters['sample_type']);
+        }
+
+        $rows = $query->get();
+        $now = Carbon::today();
+
+        $items = $rows->map(function ($sample) use ($now) {
+            $style = $sample->style;
+            $factory = $style?->assignedFactory;
+            $poNumber = $style?->purchaseOrders?->first()?->po_number ?? '-';
+            $submissionDate = $sample->submission_date ? Carbon::parse($sample->submission_date) : null;
+            $daysPending = $submissionDate ? $submissionDate->diffInDays($now) : null;
+
+            return [
+                'id' => $sample->id,
+                'po_number' => $poNumber,
+                'style_number' => $style->style_number ?? '-',
+                'factory_id' => $factory->id ?? null,
+                'factory_name' => $factory->name ?? '-',
+                'sample_type' => $sample->sampleType->display_name ?? $sample->sampleType->name ?? '-',
+                'sample_reference' => $sample->sample_reference,
+                'submission_date' => $sample->submission_date,
+                'days_pending' => $daysPending,
+                'typical_days' => $sample->sampleType->typical_days ?? null,
+                'is_overdue' => ($daysPending !== null && $sample->sampleType?->typical_days)
+                    ? $daysPending > $sample->sampleType->typical_days
+                    : false,
+                'agency_status' => $sample->agency_status,
+                'importer_status' => $sample->importer_status,
+                'final_status' => $sample->final_status,
+                'submitted_by' => $sample->submittedBy->name ?? '-',
+                'notes' => $sample->notes,
+            ];
+        })->sortByDesc('days_pending')->values();
+
+        // Get factory list from the styles
+        $factories = $rows->map(fn($s) => $s->style?->assignedFactory)
+            ->filter()
+            ->unique('id')
+            ->map(fn($f) => ['id' => $f->id, 'name' => $f->name, 'company' => $f->company])
+            ->values();
+
+        return [
+            'summary' => [
+                'total_pending' => $items->count(),
+                'pending_agency' => $items->where('agency_status', 'pending')->count(),
+                'pending_importer' => $items->where('importer_status', 'pending')->count(),
+                'overdue' => $items->where('is_overdue', true)->count(),
+            ],
+            'items' => $items,
+            'factories' => $factories,
+        ];
+    }
+
+    /**
+     * Get delay report: all delayed items across shipments, ex-factory dates, and samples.
+     */
+    public function getDelayReport(User $user, array $filters): array
+    {
+        $now = Carbon::today();
+        $delays = collect();
+
+        // Apply PO-level access control
+        $poIds = $this->getAccessiblePOIds($user);
+
+        // --- 1. Shipment Delays ---
+        $shipmentQuery = Shipment::query()
+            ->whereNotIn('status', ['delivered', 'cancelled'])
+            ->where('estimated_delivery_date', '<', $now)
+            ->with([
+                'purchaseOrder:id,po_number,agency_id,importer_id',
+                'purchaseOrder.importer:id,name',
+            ]);
+
+        if ($poIds !== null) {
+            $shipmentQuery->whereIn('purchase_order_id', $poIds);
+        }
+
+        if (!empty($filters['factory_id'])) {
+            $shipmentQuery->whereHas('purchaseOrder.styles', function ($q) use ($filters) {
+                $q->where('purchase_order_style.assigned_factory_id', $filters['factory_id']);
+            });
+        }
+
+        $shipmentQuery->get()->each(function ($shipment) use ($delays, $now) {
+            $daysDelayed = Carbon::parse($shipment->estimated_delivery_date)->diffInDays($now);
+            $delays->push([
+                'delay_type' => 'shipment',
+                'po_number' => $shipment->purchaseOrder->po_number ?? '-',
+                'style_number' => '-',
+                'factory_name' => '-',
+                'reference' => $shipment->shipment_reference ?? $shipment->tracking_number ?? '-',
+                'expected_date' => $shipment->estimated_delivery_date?->format('Y-m-d'),
+                'actual_date' => null,
+                'days_delayed' => $daysDelayed,
+                'status' => $shipment->status,
+                'severity' => $daysDelayed > 7 ? 'critical' : 'warning',
+                'details' => "Shipment {$shipment->shipment_reference} delayed - expected delivery was " . $shipment->estimated_delivery_date?->format('Y-m-d'),
+            ]);
+        });
+
+        // --- 2. Ex-Factory Delays ---
+        $exFactoryQuery = PurchaseOrderStyle::query()
+            ->whereNotNull('assigned_factory_id')
+            ->where(function ($q) {
+                $q->whereNull('production_status')
+                  ->orWhereIn('production_status', ['pending', 'in_production']);
+            })
+            ->where(function ($q) use ($now) {
+                $q->where('ex_factory_date', '<', $now)
+                  ->orWhereHas('purchaseOrder', function ($pq) use ($now) {
+                      $pq->where('ex_factory_date', '<', $now);
+                  });
+            })
+            ->with([
+                'purchaseOrder:id,po_number,ex_factory_date',
+                'style:id,style_number',
+                'assignedFactory:id,name',
+            ]);
+
+        if ($poIds !== null) {
+            $exFactoryQuery->whereIn('purchase_order_id', $poIds);
+        }
+
+        if (!empty($filters['factory_id'])) {
+            $exFactoryQuery->where('assigned_factory_id', $filters['factory_id']);
+        }
+
+        $exFactoryQuery->get()->each(function ($pos) use ($delays, $now) {
+            $exFactory = $pos->ex_factory_date ?? $pos->purchaseOrder->ex_factory_date;
+            if (!$exFactory) return;
+            $daysDelayed = Carbon::parse($exFactory)->diffInDays($now);
+
+            $delays->push([
+                'delay_type' => 'ex_factory',
+                'po_number' => $pos->purchaseOrder->po_number ?? '-',
+                'style_number' => $pos->style->style_number ?? '-',
+                'factory_name' => $pos->assignedFactory->name ?? '-',
+                'reference' => $pos->purchaseOrder->po_number ?? '-',
+                'expected_date' => Carbon::parse($exFactory)->format('Y-m-d'),
+                'actual_date' => null,
+                'days_delayed' => $daysDelayed,
+                'status' => $pos->production_status ?? 'pending',
+                'severity' => $daysDelayed > 7 ? 'critical' : 'warning',
+                'details' => "Ex-factory date passed for {$pos->style->style_number} at {$pos->assignedFactory->name}",
+            ]);
+        });
+
+        // --- 3. Sample Delays ---
+        $sampleQuery = Sample::query()
+            ->where('final_status', 'pending')
+            ->whereNotNull('submission_date')
+            ->with([
+                'style:id,style_number,assigned_factory_id',
+                'style.assignedFactory:id,name',
+                'style.purchaseOrders:id,po_number',
+                'sampleType:id,name,display_name,typical_days',
+            ]);
+
+        if ($poIds !== null) {
+            $sampleQuery->whereHas('style.purchaseOrders', function ($q) use ($poIds) {
+                $q->whereIn('purchase_orders.id', $poIds);
+            });
+        }
+
+        if (!empty($filters['factory_id'])) {
+            $sampleQuery->whereHas('style', function ($q) use ($filters) {
+                $q->where('assigned_factory_id', $filters['factory_id']);
+            });
+        }
+
+        $sampleQuery->get()->each(function ($sample) use ($delays, $now) {
+            $typicalDays = $sample->sampleType->typical_days ?? null;
+            if (!$typicalDays) return;
+
+            $daysPending = Carbon::parse($sample->submission_date)->diffInDays($now);
+            if ($daysPending <= $typicalDays) return;
+
+            $daysOverdue = $daysPending - $typicalDays;
+            $factory = $sample->style?->assignedFactory;
+            $poNumber = $sample->style?->purchaseOrders?->first()?->po_number ?? '-';
+
+            $delays->push([
+                'delay_type' => 'sample',
+                'po_number' => $poNumber,
+                'style_number' => $sample->style->style_number ?? '-',
+                'factory_name' => $factory->name ?? '-',
+                'reference' => $sample->sample_reference ?? $sample->sampleType->display_name ?? '-',
+                'expected_date' => Carbon::parse($sample->submission_date)->addDays($typicalDays)->format('Y-m-d'),
+                'actual_date' => null,
+                'days_delayed' => $daysOverdue,
+                'status' => $sample->final_status,
+                'severity' => $daysOverdue > 7 ? 'critical' : 'warning',
+                'details' => "{$sample->sampleType->display_name} for {$sample->style->style_number} overdue by {$daysOverdue} days",
+            ]);
+        });
+
+        // Sort by days delayed desc
+        $sorted = $delays->sortByDesc('days_delayed')->values();
+
+        // Factory list for filter
+        $factories = collect();
+        if ($poIds !== null) {
+            $factories = PurchaseOrderStyle::whereIn('purchase_order_id', $poIds)
+                ->whereNotNull('assigned_factory_id')
+                ->with('assignedFactory:id,name,company')
+                ->get()
+                ->pluck('assignedFactory')
+                ->filter()
+                ->unique('id')
+                ->map(fn($f) => ['id' => $f->id, 'name' => $f->name, 'company' => $f->company])
+                ->values();
+        } else {
+            $factories = User::role('Factory')->select('id', 'name', 'company')->get()
+                ->map(fn($f) => ['id' => $f->id, 'name' => $f->name, 'company' => $f->company]);
+        }
+
+        return [
+            'summary' => [
+                'total_delays' => $sorted->count(),
+                'shipment_delays' => $sorted->where('delay_type', 'shipment')->count(),
+                'ex_factory_delays' => $sorted->where('delay_type', 'ex_factory')->count(),
+                'sample_delays' => $sorted->where('delay_type', 'sample')->count(),
+                'critical_count' => $sorted->where('severity', 'critical')->count(),
+            ],
+            'items' => $sorted,
+            'factories' => $factories,
         ];
     }
 }

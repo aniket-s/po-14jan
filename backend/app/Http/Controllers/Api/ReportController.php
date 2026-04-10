@@ -339,6 +339,129 @@ class ReportController extends Controller
     }
 
     /**
+     * Get factory-wise report
+     */
+    public function factoryWise(Request $request)
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'factory_id' => 'nullable|exists:users,id',
+            'format' => 'nullable|string|in:json,csv',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $filters = $request->only(['start_date', 'end_date', 'factory_id']);
+        $report = $this->reportService->getFactoryWiseReport($user, $filters);
+
+        if ($request->input('format') === 'csv') {
+            return $this->exportToCsv(collect($report['items']), 'factory_wise_report.csv');
+        }
+
+        return response()->json($report);
+    }
+
+    /**
+     * Get pending shipments report
+     */
+    public function pendingShipments(Request $request)
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'factory_id' => 'nullable|exists:users,id',
+            'format' => 'nullable|string|in:json,csv',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $filters = $request->only(['start_date', 'end_date', 'factory_id']);
+        $report = $this->reportService->getPendingShipmentsReport($user, $filters);
+
+        if ($request->input('format') === 'csv') {
+            return $this->exportToCsv(collect($report['items']), 'pending_shipments_report.csv');
+        }
+
+        return response()->json($report);
+    }
+
+    /**
+     * Get pending samples report
+     */
+    public function pendingSamples(Request $request)
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'factory_id' => 'nullable|exists:users,id',
+            'sample_type' => 'nullable|exists:sample_types,id',
+            'format' => 'nullable|string|in:json,csv',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $filters = $request->only(['start_date', 'end_date', 'factory_id', 'sample_type']);
+        $report = $this->reportService->getPendingSamplesReport($user, $filters);
+
+        if ($request->input('format') === 'csv') {
+            return $this->exportToCsv(collect($report['items']), 'pending_samples_report.csv');
+        }
+
+        return response()->json($report);
+    }
+
+    /**
+     * Get delay report
+     */
+    public function delays(Request $request)
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'factory_id' => 'nullable|exists:users,id',
+            'format' => 'nullable|string|in:json,csv',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $filters = $request->only(['factory_id']);
+        $report = $this->reportService->getDelayReport($user, $filters);
+
+        if ($request->input('format') === 'csv') {
+            return $this->exportToCsv(collect($report['items']), 'delay_report.csv');
+        }
+
+        return response()->json($report);
+    }
+
+    /**
      * Export data to CSV
      */
     private function exportToCsv($data, string $filename)
