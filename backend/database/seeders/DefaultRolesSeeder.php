@@ -91,6 +91,7 @@ class DefaultRolesSeeder extends Seeder
             'invitation.cancel',
             // Sample Permissions
             'sample.view_own',
+            'sample.agency_approve',
             'sample.approve_agency',
             'sample.reject',
             // Production Permissions
