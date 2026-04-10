@@ -43,17 +43,12 @@ export function AssignmentSelector({
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      // Fetch factories
-      const factoriesResponse = await api.get('/admin/users', {
-        params: { role: 'factory' },
-      });
-      setFactories(factoriesResponse.data.users || factoriesResponse.data);
-
-      // Fetch agencies
-      const agenciesResponse = await api.get('/admin/users', {
-        params: { role: 'agency' },
-      });
-      setAgencies(agenciesResponse.data.users || agenciesResponse.data);
+      const [factoriesResponse, agenciesResponse] = await Promise.all([
+        api.get('/factories'),
+        api.get('/agencies'),
+      ]);
+      setFactories(factoriesResponse.data);
+      setAgencies(agenciesResponse.data);
     } catch (error) {
       console.error('Failed to fetch users:', error);
     } finally {
