@@ -88,6 +88,7 @@ interface POStyle {
   pivot?: {
     quantity_in_po?: number;
     assigned_factory_id?: number;
+    assigned_importer_id?: number;
   };
 }
 
@@ -163,7 +164,11 @@ export default function InvitationsPage() {
 
   // Importer assignment state
   const [showAssignImporterDialog, setShowAssignImporterDialog] = useState(false);
-  const [assignImporterPOId, setAssignImporterPOId] = useState<string>('');
+  const [impAssignPOId, setImpAssignPOId] = useState<string>('');
+  const [impAssignStyles, setImpAssignStyles] = useState<POStyle[]>([]);
+  const [impAssignStylesLoading, setImpAssignStylesLoading] = useState(false);
+  const [impStyleSearch, setImpStyleSearch] = useState('');
+  const [impSelectedStyleIds, setImpSelectedStyleIds] = useState<number[]>([]);
   const [importers, setImporters] = useState<ImporterOption[]>([]);
   const [selectedImporterId, setSelectedImporterId] = useState<string>('');
   const [assignImporterLoading, setAssignImporterLoading] = useState(false);
@@ -420,25 +425,67 @@ export default function InvitationsPage() {
     setAssignNotes('');
   };
 
-  // POs that don't have an importer assigned yet
-  const posWithoutImporter = purchaseOrders.filter((po) => !po.importer_id);
+  // Fetch styles for importer assignment PO
+  const fetchImpAssignStyles = async (poId: string) => {
+    if (!poId) { setImpAssignStyles([]); return; }
+    setImpAssignStylesLoading(true);
+    try {
+      const response = await api.get(`/purchase-orders/${poId}/styles`, { params: { per_page: 200 } });
+      const styles = response.data.styles || response.data.data || [];
+      setImpAssignStyles(Array.isArray(styles) ? styles : []);
+    } catch { setImpAssignStyles([]); }
+    finally { setImpAssignStylesLoading(false); }
+  };
+
+  const handleImpAssignPOChange = (poId: string) => {
+    setImpAssignPOId(poId);
+    setImpSelectedStyleIds([]);
+    setImpStyleSearch('');
+    fetchImpAssignStyles(poId);
+  };
+
+  const filteredImpStyles = impAssignStyles.filter((style) => {
+    if (!impStyleSearch) return true;
+    const s = impStyleSearch.toLowerCase();
+    return style.style_number.toLowerCase().includes(s) || (style.description || '').toLowerCase().includes(s);
+  });
+
+  const toggleImpStyleSelection = (styleId: number) => {
+    setImpSelectedStyleIds((prev) =>
+      prev.includes(styleId) ? prev.filter((id) => id !== styleId) : [...prev, styleId]
+    );
+  };
+
+  const toggleImpSelectAll = () => {
+    const visibleIds = filteredImpStyles.map((s) => s.id);
+    const allSelected = visibleIds.every((id) => impSelectedStyleIds.includes(id));
+    if (allSelected) {
+      setImpSelectedStyleIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setImpSelectedStyleIds((prev) => [...new Set([...prev, ...visibleIds])]);
+    }
+  };
+
+  const resetImpAssignForm = () => {
+    setImpAssignPOId('');
+    setImpAssignStyles([]);
+    setImpStyleSearch('');
+    setImpSelectedStyleIds([]);
+    setSelectedImporterId('');
+  };
 
   const handleAssignImporter = async () => {
-    if (!assignImporterPOId || !selectedImporterId) return;
+    if (!impAssignPOId || impSelectedStyleIds.length === 0 || !selectedImporterId) return;
     setAssignImporterLoading(true);
     try {
-      // Fetch current PO data first, then update with importer_id
-      const poRes = await api.get(`/purchase-orders/${assignImporterPOId}`);
-      const po = poRes.data.purchase_order || poRes.data;
-      await api.put(`/purchase-orders/${assignImporterPOId}`, {
-        po_number: po.po_number,
-        po_date: po.po_date,
+      await api.post(`/purchase-orders/${impAssignPOId}/styles/bulk-assign-importer`, {
+        style_ids: impSelectedStyleIds,
         importer_id: parseInt(selectedImporterId),
       });
       setShowAssignImporterDialog(false);
-      setAssignImporterPOId('');
-      setSelectedImporterId('');
+      resetImpAssignForm();
       fetchPurchaseOrders();
+      fetchFactoryAssignments();
     } catch (error: any) {
       console.error('Failed to assign importer:', error);
       alert(error.response?.data?.message || 'Failed to assign importer');
@@ -952,58 +999,132 @@ export default function InvitationsPage() {
           open={showAssignImporterDialog}
           onOpenChange={(open) => {
             setShowAssignImporterDialog(open);
-            if (!open) {
-              setAssignImporterPOId('');
-              setSelectedImporterId('');
-            }
+            if (!open) resetImpAssignForm();
           }}
         >
-          <DialogContent>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Assign Importer to Purchase Order</DialogTitle>
+              <DialogTitle>Assign Importer to Styles</DialogTitle>
               <DialogDescription>
-                Select a purchase order and assign an importer
+                Select a purchase order, pick styles, and assign them to an importer
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
+              {/* PO Selection */}
               <div className="space-y-2">
                 <Label>Purchase Order *</Label>
-                <Select value={assignImporterPOId} onValueChange={setAssignImporterPOId}>
+                <Select value={impAssignPOId} onValueChange={handleImpAssignPOChange}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a PO without importer..." />
+                    <SelectValue placeholder="Select a purchase order..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {posWithoutImporter.length === 0 ? (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                        All POs already have an importer assigned
-                      </div>
-                    ) : (
-                      posWithoutImporter.map((po) => (
-                        <SelectItem key={po.id} value={po.id.toString()}>
-                          {po.po_number}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Importer *</Label>
-                <Select value={selectedImporterId} onValueChange={setSelectedImporterId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select an importer..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {importers.map((importer) => (
-                      <SelectItem key={importer.id} value={importer.id.toString()}>
-                        {importer.name}{importer.company ? ` - ${importer.company}` : ''}
+                    {purchaseOrders.map((po) => (
+                      <SelectItem key={po.id} value={po.id.toString()}>
+                        {po.po_number}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Styles Table */}
+              {impAssignPOId && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Styles ({impSelectedStyleIds.length} of {filteredImpStyles.length} selected)</Label>
+                  </div>
+
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search styles by number or description..."
+                      value={impStyleSearch}
+                      onChange={(e) => setImpStyleSearch(e.target.value)}
+                      className="pl-8"
+                    />
+                  </div>
+
+                  {impAssignStylesLoading ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">Loading styles...</div>
+                  ) : filteredImpStyles.length === 0 ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">
+                      {impAssignStyles.length === 0 ? 'No styles found in this PO' : 'No styles match your search'}
+                    </div>
+                  ) : (
+                    <div className="border rounded-md max-h-[300px] overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox
+                                checked={filteredImpStyles.length > 0 && filteredImpStyles.every((s) => impSelectedStyleIds.includes(s.id))}
+                                onCheckedChange={toggleImpSelectAll}
+                              />
+                            </TableHead>
+                            <TableHead>Style #</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Qty</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredImpStyles.map((style) => {
+                            const isSelected = impSelectedStyleIds.includes(style.id);
+                            return (
+                              <TableRow
+                                key={style.id}
+                                className="cursor-pointer hover:bg-muted/50"
+                                onClick={() => toggleImpStyleSelection(style.id)}
+                              >
+                                <TableCell>
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleImpStyleSelection(style.id)}
+                                  />
+                                </TableCell>
+                                <TableCell className="font-medium">{style.style_number}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">
+                                  {style.description || '-'}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {style.pivot?.quantity_in_po || style.total_quantity || '-'}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {style.pivot?.assigned_importer_id ? (
+                                    <Badge variant="secondary">Assigned</Badge>
+                                  ) : (
+                                    <Badge variant="outline">Unassigned</Badge>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Importer Selection */}
+              {impSelectedStyleIds.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Importer *</Label>
+                  <Select value={selectedImporterId} onValueChange={setSelectedImporterId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an importer..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {importers.map((importer) => (
+                        <SelectItem key={importer.id} value={importer.id.toString()}>
+                          {importer.name}{importer.company ? ` - ${importer.company}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             <DialogFooter>
@@ -1011,15 +1132,14 @@ export default function InvitationsPage() {
                 variant="outline"
                 onClick={() => {
                   setShowAssignImporterDialog(false);
-                  setAssignImporterPOId('');
-                  setSelectedImporterId('');
+                  resetImpAssignForm();
                 }}
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleAssignImporter}
-                disabled={!assignImporterPOId || !selectedImporterId || assignImporterLoading}
+                disabled={impSelectedStyleIds.length === 0 || !selectedImporterId || assignImporterLoading}
               >
                 {assignImporterLoading ? (
                   <>
@@ -1027,7 +1147,7 @@ export default function InvitationsPage() {
                     Assigning...
                   </>
                 ) : (
-                  'Assign Importer'
+                  `Assign ${impSelectedStyleIds.length} Style${impSelectedStyleIds.length !== 1 ? 's' : ''}`
                 )}
               </Button>
             </DialogFooter>
