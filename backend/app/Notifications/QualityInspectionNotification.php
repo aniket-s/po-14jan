@@ -3,14 +3,11 @@
 namespace App\Notifications;
 
 use App\Models\QualityInspection;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class QualityInspectionNotification extends Notification implements ShouldQueue
+class QualityInspectionNotification extends Notification
 {
-    use Queueable;
 
     /**
      * Create a new notification instance.
@@ -29,7 +26,7 @@ class QualityInspectionNotification extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return ['database'];
     }
 
     /**
@@ -99,13 +96,26 @@ class QualityInspectionNotification extends Notification implements ShouldQueue
     public function toArray(object $notifiable): array
     {
         return [
+            'title' => $this->getSubject(),
+            'message' => $this->getMessage(),
             'inspection_id' => $this->inspection->id,
             'style_id' => $this->inspection->style_id,
             'action' => $this->action,
             'result' => $this->inspection->result,
             'defects_found' => $this->inspection->defects_found,
-            'inspected_at' => $this->inspection->inspected_at->toDateString(),
+            'inspected_at' => $this->inspection->inspected_at?->toDateString(),
         ];
+    }
+
+    private function getMessage(): string
+    {
+        $styleName = $this->inspection->style?->style_number ?? '';
+        return match ($this->action) {
+            'created' => 'Quality inspection scheduled for style ' . $styleName . '.',
+            'completed' => 'Quality inspection for style ' . $styleName . ' completed: ' . strtoupper($this->inspection->result ?? '') . '.',
+            'failed' => 'Quality inspection FAILED for style ' . $styleName . '. Immediate action required.',
+            default => 'Quality inspection notification for style ' . $styleName . '.',
+        };
     }
 
     /**

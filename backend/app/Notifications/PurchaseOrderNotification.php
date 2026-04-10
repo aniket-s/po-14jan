@@ -3,14 +3,11 @@
 namespace App\Notifications;
 
 use App\Models\PurchaseOrder;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class PurchaseOrderNotification extends Notification implements ShouldQueue
+class PurchaseOrderNotification extends Notification
 {
-    use Queueable;
 
     /**
      * Create a new notification instance.
@@ -30,7 +27,7 @@ class PurchaseOrderNotification extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return ['database'];
     }
 
     /**
@@ -108,6 +105,8 @@ class PurchaseOrderNotification extends Notification implements ShouldQueue
     public function toArray(object $notifiable): array
     {
         return [
+            'title' => $this->getSubject(),
+            'message' => $this->getMessage(),
             'purchase_order_id' => $this->purchaseOrder->id,
             'po_number' => $this->purchaseOrder->po_number,
             'action' => $this->action,
@@ -115,6 +114,19 @@ class PurchaseOrderNotification extends Notification implements ShouldQueue
             'total_value' => $this->purchaseOrder->total_value,
             'currency' => $this->purchaseOrder->currency,
         ];
+    }
+
+    private function getMessage(): string
+    {
+        return match ($this->action) {
+            'created' => 'New purchase order ' . $this->purchaseOrder->po_number . ' has been created.',
+            'updated' => 'Purchase order ' . $this->purchaseOrder->po_number . ' has been updated.',
+            'status_changed' => 'PO ' . $this->purchaseOrder->po_number . ' status changed to ' . $this->purchaseOrder->status . '.',
+            'cancelled' => 'Purchase order ' . $this->purchaseOrder->po_number . ' has been cancelled.',
+            'factory_assigned' => 'You have been assigned to a style in PO ' . $this->purchaseOrder->po_number . '.',
+            'agency_assigned' => 'You have been assigned as agency for PO ' . $this->purchaseOrder->po_number . '.',
+            default => 'Purchase order ' . $this->purchaseOrder->po_number . ' notification.',
+        };
     }
 
     /**

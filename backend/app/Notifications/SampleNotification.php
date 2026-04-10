@@ -3,14 +3,11 @@
 namespace App\Notifications;
 
 use App\Models\Sample;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class SampleNotification extends Notification implements ShouldQueue
+class SampleNotification extends Notification
 {
-    use Queueable;
 
     /**
      * Create a new notification instance.
@@ -30,7 +27,7 @@ class SampleNotification extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return ['database'];
     }
 
     /**
@@ -96,6 +93,8 @@ class SampleNotification extends Notification implements ShouldQueue
     public function toArray(object $notifiable): array
     {
         return [
+            'title' => $this->getSubject(),
+            'message' => $this->getMessage(),
             'sample_id' => $this->sample->id,
             'style_id' => $this->sample->style_id,
             'sample_type_id' => $this->sample->sample_type_id,
@@ -103,6 +102,18 @@ class SampleNotification extends Notification implements ShouldQueue
             'comments' => $this->comments,
             'status' => $this->sample->status,
         ];
+    }
+
+    private function getMessage(): string
+    {
+        $styleName = $this->sample->style?->style_number ?? '';
+        return match ($this->action) {
+            'submitted' => 'A new sample has been submitted for style ' . $styleName . '.',
+            'approved' => 'Sample for style ' . $styleName . ' has been approved.',
+            'rejected' => 'Sample for style ' . $styleName . ' has been rejected.',
+            'revision_requested' => 'Revision requested for sample of style ' . $styleName . '.',
+            default => 'Sample notification for style ' . $styleName . '.',
+        };
     }
 
     /**

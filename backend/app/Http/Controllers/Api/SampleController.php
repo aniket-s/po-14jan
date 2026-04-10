@@ -759,7 +759,8 @@ class SampleController extends Controller
             });
         } elseif ($user->hasRole('Agency')) {
             $query->whereHas('style.purchaseOrders', function($q) use ($user) {
-                $q->where('agency_id', $user->id);
+                $q->where('purchase_orders.agency_id', $user->id)
+                  ->orWhere('purchase_orders.creator_id', $user->id);
             });
         }
 

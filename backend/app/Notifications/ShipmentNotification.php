@@ -3,14 +3,11 @@
 namespace App\Notifications;
 
 use App\Models\Shipment;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class ShipmentNotification extends Notification implements ShouldQueue
+class ShipmentNotification extends Notification
 {
-    use Queueable;
 
     /**
      * Create a new notification instance.
@@ -30,7 +27,7 @@ class ShipmentNotification extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return ['database'];
     }
 
     /**
@@ -119,6 +116,8 @@ class ShipmentNotification extends Notification implements ShouldQueue
     public function toArray(object $notifiable): array
     {
         return [
+            'title' => $this->getSubject(),
+            'message' => $this->getMessage(),
             'shipment_id' => $this->shipment->id,
             'tracking_number' => $this->shipment->tracking_number,
             'purchase_order_id' => $this->shipment->purchase_order_id,
@@ -127,6 +126,17 @@ class ShipmentNotification extends Notification implements ShouldQueue
             'previous_status' => $this->previousStatus,
             'current_location' => $this->shipment->current_location,
         ];
+    }
+
+    private function getMessage(): string
+    {
+        $tracking = $this->shipment->tracking_number ?? '';
+        return match ($this->action) {
+            'created' => 'New shipment ' . $tracking . ' has been created.',
+            'status_updated' => 'Shipment ' . $tracking . ' status updated to ' . $this->getStatusLabel($this->shipment->status) . '.',
+            'delivered' => 'Shipment ' . $tracking . ' has been delivered.',
+            default => 'Shipment ' . $tracking . ' notification.',
+        };
     }
 
     /**
