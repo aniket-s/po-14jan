@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle, Factory } from 'lucide-react';
+import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle, Factory, UserPlus } from 'lucide-react';
 import api from '@/lib/api';
 import { TableSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
@@ -70,6 +70,14 @@ interface Invitation {
 interface PurchaseOrder {
   id: number;
   po_number: string;
+  importer_id?: number | null;
+  importer?: { id: number; name: string; company?: string } | null;
+}
+
+interface ImporterOption {
+  id: number;
+  name: string;
+  company?: string;
 }
 
 interface POStyle {
@@ -143,6 +151,14 @@ export default function InvitationsPage() {
   const [assignLoading, setAssignLoading] = useState(false);
   const canAssignFactory = can('po.assign_factory');
 
+  // Importer assignment state
+  const [showAssignImporterDialog, setShowAssignImporterDialog] = useState(false);
+  const [assignImporterPOId, setAssignImporterPOId] = useState<string>('');
+  const [importers, setImporters] = useState<ImporterOption[]>([]);
+  const [selectedImporterId, setSelectedImporterId] = useState<string>('');
+  const [assignImporterLoading, setAssignImporterLoading] = useState(false);
+  const isAgency = user?.roles?.some((r: any) => (typeof r === 'string' ? r : r.name) === 'Agency');
+
   const {
     register,
     handleSubmit,
@@ -175,6 +191,17 @@ export default function InvitationsPage() {
       })
       .catch(() => setFactories([]));
   }, [canAssignFactory]);
+
+  // Fetch importers for importer assignment dialog (Agency users)
+  useEffect(() => {
+    if (!isAgency) return;
+    api.get('/importers')
+      .then((res) => {
+        const data = Array.isArray(res.data) ? res.data : res.data.data || [];
+        setImporters(data);
+      })
+      .catch(() => setImporters([]));
+  }, [isAgency]);
 
   const fetchInvitations = async () => {
     try {
@@ -310,6 +337,33 @@ export default function InvitationsPage() {
     setSelectedStyleIds([]);
     setSelectedFactoryId('');
     setAssignNotes('');
+  };
+
+  // POs that don't have an importer assigned yet
+  const posWithoutImporter = purchaseOrders.filter((po) => !po.importer_id);
+
+  const handleAssignImporter = async () => {
+    if (!assignImporterPOId || !selectedImporterId) return;
+    setAssignImporterLoading(true);
+    try {
+      // Fetch current PO data first, then update with importer_id
+      const poRes = await api.get(`/purchase-orders/${assignImporterPOId}`);
+      const po = poRes.data.purchase_order || poRes.data;
+      await api.put(`/purchase-orders/${assignImporterPOId}`, {
+        po_number: po.po_number,
+        po_date: po.po_date,
+        importer_id: parseInt(selectedImporterId),
+      });
+      setShowAssignImporterDialog(false);
+      setAssignImporterPOId('');
+      setSelectedImporterId('');
+      fetchPurchaseOrders();
+    } catch (error: any) {
+      console.error('Failed to assign importer:', error);
+      alert(error.response?.data?.message || 'Failed to assign importer');
+    } finally {
+      setAssignImporterLoading(false);
+    }
   };
 
   const onSubmit = async (data: InvitationFormData) => {
@@ -469,6 +523,16 @@ export default function InvitationsPage() {
             <p className="text-muted-foreground">Send and manage invitations to partners</p>
           </div>
           <div className="flex gap-2">
+            {isAgency && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowAssignImporterDialog(true)}
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Assign Importer
+              </Button>
+            )}
             {canAssignFactory && (
               <Button
                 size="sm"
@@ -796,6 +860,93 @@ export default function InvitationsPage() {
                   </>
                 ) : (
                   `Assign ${selectedStyleIds.length} Style${selectedStyleIds.length !== 1 ? 's' : ''}`
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Assign Importer Dialog */}
+        <Dialog
+          open={showAssignImporterDialog}
+          onOpenChange={(open) => {
+            setShowAssignImporterDialog(open);
+            if (!open) {
+              setAssignImporterPOId('');
+              setSelectedImporterId('');
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Assign Importer to Purchase Order</DialogTitle>
+              <DialogDescription>
+                Select a purchase order and assign an importer
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Purchase Order *</Label>
+                <Select value={assignImporterPOId} onValueChange={setAssignImporterPOId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a PO without importer..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {posWithoutImporter.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        All POs already have an importer assigned
+                      </div>
+                    ) : (
+                      posWithoutImporter.map((po) => (
+                        <SelectItem key={po.id} value={po.id.toString()}>
+                          {po.po_number}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Importer *</Label>
+                <Select value={selectedImporterId} onValueChange={setSelectedImporterId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an importer..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {importers.map((importer) => (
+                      <SelectItem key={importer.id} value={importer.id.toString()}>
+                        {importer.name}{importer.company ? ` - ${importer.company}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAssignImporterDialog(false);
+                  setAssignImporterPOId('');
+                  setSelectedImporterId('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAssignImporter}
+                disabled={!assignImporterPOId || !selectedImporterId || assignImporterLoading}
+              >
+                {assignImporterLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  'Assign Importer'
                 )}
               </Button>
             </DialogFooter>
