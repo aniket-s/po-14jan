@@ -8,6 +8,7 @@ use App\Models\InspectionDefect;
 use App\Models\InspectionType;
 use App\Models\DefectType;
 use App\Models\Style;
+use App\Jobs\SendQualityInspectionNotification;
 use App\Services\ActivityLogService;
 use App\Services\EmailService;
 use App\Services\PermissionService;
@@ -771,7 +772,14 @@ class QualityInspectionController extends Controller
                 ]
             );
         } catch (\Exception $e) {
-            \Log::error('Failed to send inspection created notification: ' . $e->getMessage());
+            \Log::error('Failed to send inspection created email: ' . $e->getMessage());
+        }
+
+        // Send in-app notification to inspector
+        try {
+            SendQualityInspectionNotification::dispatch($inspection, $inspection->inspector, 'created');
+        } catch (\Exception $e) {
+            \Log::error('Failed to dispatch inspection created in-app notification: ' . $e->getMessage());
         }
     }
 
@@ -780,12 +788,13 @@ class QualityInspectionController extends Controller
      */
     private function sendInspectionCompletedNotification(QualityInspection $inspection): void
     {
-        try {
-            $po = $inspection->style->getEffectivePurchaseOrder();
-            if (!$po) {
-                return;
-            }
+        $po = $inspection->style->getEffectivePurchaseOrder();
+        if (!$po) {
+            return;
+        }
 
+        // Send emails
+        try {
             // Notify importer
             $this->emailService->sendTemplatedEmail(
                 'quality_inspection_completed',
@@ -818,7 +827,18 @@ class QualityInspectionController extends Controller
                 );
             }
         } catch (\Exception $e) {
-            \Log::error('Failed to send inspection completed notification: ' . $e->getMessage());
+            \Log::error('Failed to send inspection completed email: ' . $e->getMessage());
+        }
+
+        // Send in-app notifications
+        try {
+            SendQualityInspectionNotification::dispatch($inspection, $po->importer, 'completed');
+
+            if ($po->agency_id && $po->agency) {
+                SendQualityInspectionNotification::dispatch($inspection, $po->agency, 'completed');
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to dispatch inspection completed in-app notification: ' . $e->getMessage());
         }
     }
 

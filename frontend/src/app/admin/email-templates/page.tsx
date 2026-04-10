@@ -130,8 +130,11 @@ export default function EmailTemplatesPage() {
   const fetchTemplates = async () => {
     try {
       setLoading(true);
-      const response = await api.get<{ templates: EmailTemplate[] }>('/admin/email-templates');
-      setTemplates(response.data.templates);
+      const response = await api.get<{ templates: Record<string, unknown>[] }>('/admin/email-templates');
+      setTemplates(response.data.templates.map((t) => ({
+        ...t,
+        variables: (t.available_variables as string[]) || [],
+      })) as EmailTemplate[]);
     } catch (error) {
       console.error('Failed to fetch templates:', error);
     } finally {

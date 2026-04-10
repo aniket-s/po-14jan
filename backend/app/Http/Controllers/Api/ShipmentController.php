@@ -7,6 +7,7 @@ use App\Models\Shipment;
 use App\Models\ShipmentItem;
 use App\Models\ShipmentUpdate;
 use App\Models\PurchaseOrder;
+use App\Jobs\SendShipmentNotification;
 use App\Services\ActivityLogService;
 use App\Services\EmailService;
 use App\Services\PermissionService;
@@ -653,9 +654,10 @@ class ShipmentController extends Controller
      */
     private function sendShipmentCreatedNotification(Shipment $shipment): void
     {
-        try {
-            $po = $shipment->purchaseOrder;
+        $po = $shipment->purchaseOrder;
 
+        // Send email
+        try {
             $this->emailService->sendTemplatedEmail(
                 'shipment_created',
                 $po->importer->email,
@@ -669,7 +671,18 @@ class ShipmentController extends Controller
                 ]
             );
         } catch (\Exception $e) {
-            \Log::error('Failed to send shipment created notification: ' . $e->getMessage());
+            \Log::error('Failed to send shipment created email: ' . $e->getMessage());
+        }
+
+        // Send in-app notifications
+        try {
+            SendShipmentNotification::dispatch($shipment, $po->importer, 'created');
+
+            if ($po->agency_id && $po->agency) {
+                SendShipmentNotification::dispatch($shipment, $po->agency, 'created');
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to dispatch shipment created in-app notification: ' . $e->getMessage());
         }
     }
 
@@ -678,9 +691,11 @@ class ShipmentController extends Controller
      */
     private function sendStatusChangeNotification(Shipment $shipment, string $oldStatus, string $newStatus): void
     {
-        try {
-            $po = $shipment->purchaseOrder;
+        $po = $shipment->purchaseOrder;
+        $action = $newStatus === 'delivered' ? 'delivered' : 'status_updated';
 
+        // Send emails
+        try {
             $this->emailService->sendTemplatedEmail(
                 'shipment_status_changed',
                 $po->importer->email,
@@ -710,7 +725,18 @@ class ShipmentController extends Controller
                 );
             }
         } catch (\Exception $e) {
-            \Log::error('Failed to send status change notification: ' . $e->getMessage());
+            \Log::error('Failed to send status change email: ' . $e->getMessage());
+        }
+
+        // Send in-app notifications
+        try {
+            SendShipmentNotification::dispatch($shipment, $po->importer, $action, $oldStatus);
+
+            if ($po->agency_id && $po->agency) {
+                SendShipmentNotification::dispatch($shipment, $po->agency, $action, $oldStatus);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to dispatch shipment status change in-app notification: ' . $e->getMessage());
         }
     }
 
