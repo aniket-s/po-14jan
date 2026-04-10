@@ -262,7 +262,8 @@ class SampleController extends Controller
     public function agencyApprove(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
-        $sample = Sample::with(['style'])->findOrFail($id);
+        $sampleId = $id ?? $poId; // flat route: {id} maps to $poId
+        $sample = Sample::with(['style'])->findOrFail($sampleId);
 
         if (!$this->canAgencyApprove($user, $sample)) {
             return response()->json([
@@ -307,7 +308,8 @@ class SampleController extends Controller
     public function agencyReject(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
-        $sample = Sample::with(['style'])->findOrFail($id);
+        $sampleId = $id ?? $poId;
+        $sample = Sample::with(['style'])->findOrFail($sampleId);
 
         if (!$this->canAgencyApprove($user, $sample)) {
             return response()->json([
@@ -363,7 +365,8 @@ class SampleController extends Controller
     public function importerApprove(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
-        $sample = Sample::with(['style'])->findOrFail($id);
+        $sampleId = $id ?? $poId;
+        $sample = Sample::with(['style'])->findOrFail($sampleId);
 
         if (!$this->canImporterApprove($user, $sample)) {
             return response()->json([
@@ -414,7 +417,8 @@ class SampleController extends Controller
     public function importerReject(Request $request, $poId = null, $styleId = null, $id = null)
     {
         $user = $request->user();
-        $sample = Sample::with(['style'])->findOrFail($id);
+        $sampleId = $id ?? $poId;
+        $sample = Sample::with(['style'])->findOrFail($sampleId);
 
         if (!$this->canImporterApprove($user, $sample)) {
             return response()->json([
