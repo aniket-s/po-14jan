@@ -586,9 +586,16 @@ class SampleController extends Controller
      */
     private function canImporterApprove(User $user, Sample $sample): bool
     {
+        if (!$user->hasPermissionTo('sample.approve_final')) {
+            return false;
+        }
+
         $po = $sample->style->getEffectivePurchaseOrder();
-        return $po && $po->importer_id === $user->id &&
-               $user->hasPermissionTo('sample.approve_final');
+        if (!$po) {
+            return false;
+        }
+
+        return $po->importer_id === $user->id || $user->hasRole('Super Admin');
     }
 
     /**
