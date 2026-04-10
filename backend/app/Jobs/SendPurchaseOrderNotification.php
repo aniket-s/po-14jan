@@ -5,30 +5,12 @@ namespace App\Jobs;
 use App\Models\PurchaseOrder;
 use App\Models\User;
 use App\Notifications\PurchaseOrderNotification;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class SendPurchaseOrderNotification implements ShouldQueue
+class SendPurchaseOrderNotification
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    /**
-     * The number of times the job may be attempted.
-     *
-     * @var int
-     */
-    public $tries = 3;
-
-    /**
-     * The number of seconds the job can run before timing out.
-     *
-     * @var int
-     */
-    public $timeout = 60;
+    use Dispatchable;
 
     /**
      * Create a new job instance.
