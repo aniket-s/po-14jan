@@ -30,6 +30,11 @@ class PermissionService
 
         // Check if user has permission to view own POs
         if ($user->hasPermissionTo('po.view_own')) {
+            // User is the importer
+            if ($po->importer_id === $user->id) {
+                return true;
+            }
+
             // User is the PO creator
             if ($po->creator_id === $user->id) {
                 return true;
@@ -209,6 +214,9 @@ class PermissionService
         $poIds = [];
 
         if ($user->hasPermissionTo('po.view_own')) {
+            // POs where user is importer
+            $importerPOs = \App\Models\PurchaseOrder::where('importer_id', $user->id)->pluck('id')->toArray();
+
             // POs where user is creator
             $creatorPOs = \App\Models\PurchaseOrder::where('creator_id', $user->id)->pluck('id')->toArray();
 
@@ -226,7 +234,7 @@ class PermissionService
                 ->pluck('purchase_order_id')
                 ->toArray();
 
-            $poIds = array_unique(array_merge($creatorPOs, $agencyPOs, $factoryPOs, $factoryAssignmentPOs));
+            $poIds = array_unique(array_merge($importerPOs, $creatorPOs, $agencyPOs, $factoryPOs, $factoryAssignmentPOs));
         }
 
         return $poIds;
