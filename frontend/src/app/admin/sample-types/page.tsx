@@ -127,7 +127,7 @@ export default function SampleTypesManagementPage() {
   useEffect(() => {
     if (authLoading) return;
     fetchSampleTypes();
-  }, []);
+  }, [authLoading]);
 
   // Filter sample types based on search
   const filteredSampleTypes = sampleTypes.filter((type) =>
