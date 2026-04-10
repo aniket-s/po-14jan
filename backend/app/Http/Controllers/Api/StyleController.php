@@ -451,13 +451,8 @@ class StyleController extends Controller
                            $poQuery->where('purchase_order_style.assigned_factory_id', $user->id);
                        });
                 } elseif ($user->hasRole('Importer')) {
-                    // Importers see styles from POs where they are the importer
-                    $q->orWhereHas('purchaseOrder', function($poQuery) use ($user) {
-                        $poQuery->where('importer_id', $user->id);
-                    })
-                    ->orWhereHas('purchaseOrders', function($poQuery) use ($user) {
-                        $poQuery->where('importer_id', $user->id);
-                    });
+                    // Importers see styles they created (standalone or PO-attached)
+                    $q->orWhere('created_by', $user->id);
                 } elseif ($user->hasRole('Agency')) {
                     // Agencies see styles from POs assigned to them, or styles directly assigned to them
                     $q->orWhere('styles.assigned_agency_id', $user->id)
