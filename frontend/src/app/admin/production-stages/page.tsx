@@ -103,8 +103,14 @@ export default function ProductionStagesManagementPage() {
           include: 'tracking_records_count',
         },
       });
-      // Sort by display order
-      const sorted = response.data.production_stages.sort((a, b) => a.display_order - b.display_order);
+      // Coerce numeric fields (DB may return strings for decimals) and sort
+      const sorted = response.data.production_stages
+        .map((s) => ({
+          ...s,
+          weight_percentage: Number(s.weight_percentage),
+          display_order: Number(s.display_order),
+        }))
+        .sort((a, b) => a.display_order - b.display_order);
       setStages(sorted);
     } catch (error) {
       console.error('Failed to fetch production stages:', error);
@@ -127,13 +133,13 @@ export default function ProductionStagesManagementPage() {
   // Calculate total weight percentage
   const totalWeightPercentage = stages
     .filter((s) => s.is_active)
-    .reduce((sum, s) => sum + Number(s.weight_percentage), 0);
+    .reduce((sum, s) => sum + s.weight_percentage, 0);
 
   // Calculate total weight excluding selected stage (for edit validation)
   const getTotalWeightExcludingStage = (stageId: number): number => {
     return stages
       .filter((s) => s.is_active && s.id !== stageId)
-      .reduce((sum, s) => sum + Number(s.weight_percentage), 0);
+      .reduce((sum, s) => sum + s.weight_percentage, 0);
   };
 
   // Handle create production stage
