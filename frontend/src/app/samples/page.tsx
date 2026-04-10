@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Loader2, CheckCircle, XCircle, Clock, PackageCheck, AlertCircle, Upload, RefreshCw, Trash2, FileText, Image, ExternalLink } from 'lucide-react';
+import { Plus, Search, Loader2, CheckCircle, XCircle, Clock, PackageCheck, AlertCircle, Upload, RefreshCw, Trash2, FileText, Image, ExternalLink, Eye } from 'lucide-react';
 import api from '@/lib/api';
 import { ListPageSkeleton, TableSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
@@ -138,6 +138,10 @@ export default function SamplesPage() {
   const [resubmitNotes, setResubmitNotes] = useState('');
   const [resubmitImageFiles, setResubmitImageFiles] = useState<UploadedFile[]>([]);
   const [resubmitDocumentFiles, setResubmitDocumentFiles] = useState<UploadedFile[]>([]);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [viewSampleData, setViewSampleData] = useState<any>(null);
+  const [viewTimeline, setViewTimeline] = useState<any[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
   const [isUploadingExcel, setIsUploadingExcel] = useState(false);
   const [excelResult, setExcelResult] = useState<any>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
@@ -433,6 +437,42 @@ export default function SamplesPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const openViewDialog = async (sample: Sample) => {
+    setIsViewDialogOpen(true);
+    setViewLoading(true);
+    setViewSampleData(null);
+    setViewTimeline([]);
+    try {
+      const response = await api.get(`/samples/${sample.id}/timeline`);
+      setViewSampleData(response.data.sample);
+      setViewTimeline(response.data.timeline || []);
+    } catch (error) {
+      console.error('Failed to fetch sample details:', error);
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  const getTimelineIcon = (action: string) => {
+    switch (action) {
+      case 'created': return <Plus className="h-4 w-4 text-blue-500" />;
+      case 'sample_agency_approved': return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'sample_agency_rejected': return <XCircle className="h-4 w-4 text-red-500" />;
+      case 'sample_importer_approved': return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'sample_importer_rejected': return <XCircle className="h-4 w-4 text-red-600" />;
+      case 'sample_resubmitted': return <RefreshCw className="h-4 w-4 text-blue-500" />;
+      default: return <Clock className="h-4 w-4 text-gray-400" />;
+    }
+  };
+
+  const getTimelineColor = (action: string) => {
+    if (action.includes('approved')) return 'border-green-500';
+    if (action.includes('rejected')) return 'border-red-500';
+    if (action.includes('resubmitted')) return 'border-blue-500';
+    if (action === 'created') return 'border-blue-500';
+    return 'border-gray-300';
   };
 
   const handleDeleteSample = async (sample: Sample) => {
@@ -834,6 +874,15 @@ export default function SamplesPage() {
                         <TableCell>{formatDate(sample.submission_date)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openViewDialog(sample)}
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              <Eye className="mr-1 h-4 w-4" />
+                              View
+                            </Button>
                             {canApproveAsAgency(sample) && (
                               <>
                                 <Button
@@ -1020,6 +1069,167 @@ export default function SamplesPage() {
             </form>
           </DialogContent>
         </Dialog>
+        {/* View Sample Detail Dialog */}
+        <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Sample Details</DialogTitle>
+              <DialogDescription>
+                Full sample information and approval timeline
+              </DialogDescription>
+            </DialogHeader>
+
+            {viewLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : viewSampleData ? (
+              <div className="space-y-6">
+                {/* Sample Info */}
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">Sample Information</h4>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div><span className="text-muted-foreground">Type:</span> {viewSampleData.sample_type?.display_name || viewSampleData.sample_type?.name}</div>
+                    <div><span className="text-muted-foreground">Style:</span> {viewSampleData.style?.style_number}</div>
+                    <div><span className="text-muted-foreground">PO Number:</span> {viewSampleData.po_number || 'N/A'}</div>
+                    <div><span className="text-muted-foreground">Reference:</span> {viewSampleData.sample_reference || 'N/A'}</div>
+                    <div><span className="text-muted-foreground">Submitted by:</span> {viewSampleData.submitted_by?.name || 'N/A'}</div>
+                    <div><span className="text-muted-foreground">Submission Date:</span> {viewSampleData.submission_date || 'N/A'}</div>
+                    {viewSampleData.quantity && (
+                      <div><span className="text-muted-foreground">Quantity:</span> {viewSampleData.quantity}</div>
+                    )}
+                    <div>
+                      <span className="text-muted-foreground">Status:</span>{' '}
+                      <Badge variant={viewSampleData.final_status === 'approved' ? 'default' : viewSampleData.final_status === 'rejected' ? 'destructive' : 'secondary'}>
+                        {viewSampleData.final_status}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Current Files & Notes */}
+                <div className="rounded-lg border p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">Files & Notes</h4>
+
+                  {viewSampleData.notes && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium">Notes:</p>
+                      <p className="text-sm bg-muted rounded p-2">{viewSampleData.notes}</p>
+                    </div>
+                  )}
+
+                  {viewSampleData.images && viewSampleData.images.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground font-medium flex items-center gap-1"><Image className="h-3 w-3" /> Images ({viewSampleData.images.length})</p>
+                      <div className="flex flex-wrap gap-2">
+                        {viewSampleData.images.map((url: string, idx: number) => (
+                          <a key={idx} href={url} target="_blank" rel="noopener noreferrer">
+                            <img src={url} alt={`Sample image ${idx + 1}`} className="h-20 w-20 object-cover rounded border hover:opacity-80 transition" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {viewSampleData.attachment_paths && viewSampleData.attachment_paths.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium flex items-center gap-1"><FileText className="h-3 w-3" /> Documents ({viewSampleData.attachment_paths.length})</p>
+                      <div className="space-y-1">
+                        {viewSampleData.attachment_paths.map((url: string, idx: number) => (
+                          <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
+                            <ExternalLink className="h-3 w-3" /> Document {idx + 1}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!viewSampleData.notes && (!viewSampleData.images || viewSampleData.images.length === 0) && (!viewSampleData.attachment_paths || viewSampleData.attachment_paths.length === 0) && (
+                    <p className="text-sm text-muted-foreground">No files or notes attached</p>
+                  )}
+                </div>
+
+                {/* Approval Status */}
+                <div className="rounded-lg border p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">Approval Status</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium">Agency Review</p>
+                      <Badge variant={viewSampleData.agency_status === 'approved' ? 'default' : viewSampleData.agency_status === 'rejected' ? 'destructive' : 'secondary'}>
+                        {viewSampleData.agency_status || 'pending'}
+                      </Badge>
+                      {viewSampleData.agency_approved_by && (
+                        <p className="text-xs text-muted-foreground">by {viewSampleData.agency_approved_by.name}</p>
+                      )}
+                      {viewSampleData.agency_rejection_reason && (
+                        <p className="text-xs text-red-600 mt-1">Reason: {viewSampleData.agency_rejection_reason}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium">Importer Review</p>
+                      <Badge variant={viewSampleData.importer_status === 'approved' ? 'default' : viewSampleData.importer_status === 'rejected' ? 'destructive' : 'secondary'}>
+                        {viewSampleData.importer_status || 'pending'}
+                      </Badge>
+                      {viewSampleData.importer_approved_by && (
+                        <p className="text-xs text-muted-foreground">by {viewSampleData.importer_approved_by.name}</p>
+                      )}
+                      {viewSampleData.importer_rejection_reason && (
+                        <p className="text-xs text-red-600 mt-1">Reason: {viewSampleData.importer_rejection_reason}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Timeline */}
+                {viewTimeline.length > 0 && (
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <h4 className="text-sm font-semibold">Timeline</h4>
+                    <div className="relative space-y-0">
+                      {viewTimeline.map((event, idx) => (
+                        <div key={event.id || idx} className="flex gap-3 pb-4 last:pb-0">
+                          {/* Vertical line + icon */}
+                          <div className="flex flex-col items-center">
+                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 bg-background ${getTimelineColor(event.action)}`}>
+                              {getTimelineIcon(event.action)}
+                            </div>
+                            {idx < viewTimeline.length - 1 && (
+                              <div className="w-px flex-1 bg-border min-h-[16px]" />
+                            )}
+                          </div>
+                          {/* Content */}
+                          <div className="flex-1 pt-1">
+                            <p className="text-sm font-medium">{event.description || event.action}</p>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                              {event.user_name && <span>by {event.user_name}</span>}
+                              {event.created_at && (
+                                <span>
+                                  {new Date(event.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                            </div>
+                            {/* Show metadata details */}
+                            {event.metadata?.rejection_reason && (
+                              <p className="text-xs text-red-600 mt-1">Reason: {event.metadata.rejection_reason}</p>
+                            )}
+                            {event.metadata?.reason && (
+                              <p className="text-xs text-red-600 mt-1">Reason: {event.metadata.reason}</p>
+                            )}
+                            {event.metadata?.comments && (
+                              <p className="text-xs text-muted-foreground mt-1">Comments: {event.metadata.comments}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-8">Failed to load sample details</p>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* Resubmit Dialog */}
         <Dialog open={isResubmitDialogOpen} onOpenChange={(open) => {
           setIsResubmitDialogOpen(open);

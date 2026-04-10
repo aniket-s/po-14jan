@@ -13,6 +13,7 @@ use App\Services\PermissionService;
 use App\Services\SampleExcelApprovalService;
 use App\Jobs\SendSampleNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
@@ -1029,5 +1030,93 @@ class SampleController extends Controller
         $sample->delete();
 
         return response()->json(['message' => 'Sample deleted successfully']);
+    }
+
+    /**
+     * Get full sample details with timeline
+     */
+    public function timeline(Request $request, $id)
+    {
+        $user = $request->user();
+        $sample = Sample::with([
+            'style.purchaseOrders:id,po_number',
+            'sampleType',
+            'submittedBy:id,name,email',
+            'agencyApprovedBy:id,name',
+            'importerApprovedBy:id,name',
+        ])->findOrFail($id);
+
+        // Permission check via style access
+        if (!$this->permissionService->canAccessStyle($user, $sample->style)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        // Fetch activity logs for this sample
+        $logs = DB::table('activity_logs')
+            ->leftJoin('users', 'activity_logs.user_id', '=', 'users.id')
+            ->select(
+                'activity_logs.id',
+                'activity_logs.action',
+                'activity_logs.description',
+                'activity_logs.metadata',
+                'activity_logs.created_at',
+                'users.name as user_name'
+            )
+            ->where('activity_logs.resource_type', 'Sample')
+            ->where('activity_logs.resource_id', $id)
+            ->orderBy('activity_logs.created_at', 'asc')
+            ->get()
+            ->map(function ($log) {
+                return [
+                    'id' => $log->id,
+                    'action' => $log->action,
+                    'description' => $log->description,
+                    'user_name' => $log->user_name,
+                    'metadata' => $log->metadata ? json_decode($log->metadata, true) : null,
+                    'created_at' => $log->created_at,
+                ];
+            });
+
+        return response()->json([
+            'sample' => [
+                'id' => $sample->id,
+                'sample_reference' => $sample->sample_reference,
+                'submission_date' => $sample->submission_date?->format('Y-m-d'),
+                'quantity' => $sample->quantity,
+                'notes' => $sample->notes,
+                'images' => $sample->images,
+                'attachment_paths' => $sample->attachment_paths,
+                'agency_status' => $sample->agency_status,
+                'agency_approved_by' => $sample->agencyApprovedBy ? [
+                    'id' => $sample->agencyApprovedBy->id,
+                    'name' => $sample->agencyApprovedBy->name,
+                ] : null,
+                'agency_approved_at' => $sample->agency_approved_at?->toISOString(),
+                'agency_rejection_reason' => $sample->agency_rejection_reason,
+                'importer_status' => $sample->importer_status,
+                'importer_approved_by' => $sample->importerApprovedBy ? [
+                    'id' => $sample->importerApprovedBy->id,
+                    'name' => $sample->importerApprovedBy->name,
+                ] : null,
+                'importer_approved_at' => $sample->importer_approved_at?->toISOString(),
+                'importer_rejection_reason' => $sample->importer_rejection_reason,
+                'final_status' => $sample->final_status,
+                'created_at' => $sample->created_at,
+                'style' => $sample->style ? [
+                    'style_number' => $sample->style->style_number,
+                    'description' => $sample->style->description,
+                ] : null,
+                'sample_type' => $sample->sampleType ? [
+                    'name' => $sample->sampleType->name,
+                    'display_name' => $sample->sampleType->display_name,
+                ] : null,
+                'submitted_by' => $sample->submittedBy ? [
+                    'id' => $sample->submittedBy->id,
+                    'name' => $sample->submittedBy->name,
+                ] : null,
+                'po_number' => $sample->style?->purchaseOrders?->first()?->po_number,
+            ],
+            'timeline' => $logs,
+        ]);
     }
 }
