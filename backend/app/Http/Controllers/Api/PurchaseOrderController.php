@@ -657,6 +657,17 @@ class PurchaseOrderController extends Controller
         // Log update
         $this->activityLog->logUpdated('PurchaseOrder', $po->id, $oldData, $newData);
 
+        // Send in-app notification to agency
+        if ($po->agency_id) {
+            $agency = User::find($po->agency_id);
+            if ($agency && $agency->id !== $user->id) {
+                SendPurchaseOrderNotification::dispatch($po, $agency, 'updated', [
+                    'updated_by' => $user->name,
+                    'changes' => array_keys(array_diff_assoc($newData, $oldData)),
+                ]);
+            }
+        }
+
         return response()->json([
             'message' => 'Purchase order updated successfully',
             'purchase_order' => [
@@ -745,6 +756,18 @@ class PurchaseOrderController extends Controller
                 'new_status' => $request->status,
             ]
         );
+
+        // Send in-app notification to agency
+        if ($po->agency_id) {
+            $agency = User::find($po->agency_id);
+            if ($agency && $agency->id !== $user->id) {
+                SendPurchaseOrderNotification::dispatch($po, $agency, 'status_changed', [
+                    'old_status' => $oldStatus,
+                    'new_status' => $request->status,
+                    'changed_by' => $user->name,
+                ]);
+            }
+        }
 
         return response()->json([
             'message' => 'Purchase order status updated successfully',
