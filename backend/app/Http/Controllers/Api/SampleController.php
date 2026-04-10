@@ -1039,7 +1039,7 @@ class SampleController extends Controller
     {
         $user = $request->user();
         $sample = Sample::with([
-            'style.purchaseOrders:id,po_number',
+            'style.purchaseOrders',
             'sampleType',
             'submittedBy:id,name,email',
             'agencyApprovedBy:id,name',
