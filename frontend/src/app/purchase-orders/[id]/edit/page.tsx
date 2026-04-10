@@ -280,7 +280,7 @@ export default function EditPurchaseOrderPage() {
     }
 
     try {
-      const exFactoryDate = getValues('ex_factory_date');
+      const exFactoryDate = purchaseOrder?.ex_factory_date;
       const response = await api.post('/purchase-orders/sample-schedule', {
         po_date: poDate,
         etd_date: etdDate,

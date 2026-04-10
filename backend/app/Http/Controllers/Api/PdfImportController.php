@@ -209,8 +209,17 @@ class PdfImportController extends Controller
 
         try {
             return DB::transaction(function () use ($headerData, $stylesData, $user) {
-                // Use provided importer_id if specified, otherwise default to authenticated user
-                $importerId = $headerData['importer_id'] ?? $user->id;
+                // Determine importer_id and agency_id based on the creator's role
+                $importerId = $headerData['importer_id'] ?? null;
+                $agencyId = $headerData['agency_id'] ?? null;
+
+                if ($user->hasRole('Agency')) {
+                    // Agency creating a PO: set themselves as the agency, importer is optional
+                    $agencyId = $agencyId ?? $user->id;
+                } else {
+                    // Importer or Super Admin: default importer to self if not specified
+                    $importerId = $importerId ?? $user->id;
+                }
 
                 // Create the Purchase Order
                 $po = PurchaseOrder::create([
@@ -218,7 +227,7 @@ class PdfImportController extends Controller
                     'headline' => $headerData['headline'] ?? null,
                     'importer_id' => $importerId,
                     'creator_id' => $user->id,
-                    'agency_id' => $headerData['agency_id'] ?? null,
+                    'agency_id' => $agencyId,
                     'buyer_id' => $headerData['buyer_id'] ?? null,
                     'po_date' => $headerData['po_date'],
                     'currency_id' => $headerData['currency_id'] ?? null,

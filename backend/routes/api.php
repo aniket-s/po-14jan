@@ -590,6 +590,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/factory-assignments/{id}/reject', [FactoryAssignmentController::class, 'reject']);
     Route::get('/factories', [\App\Http\Controllers\Api\FactoryController::class, 'index']);
     Route::get('/agencies', [\App\Http\Controllers\Api\AgencyController::class, 'index']);
+    Route::get('/importers', [\App\Http\Controllers\Api\ImporterController::class, 'index']);
 
     // Aggregate Shipping Approvals (cross-PO, with filters)
     Route::get('/shipping-approvals', [\App\Http\Controllers\Api\ShippingApprovalController::class, 'indexAll']);

@@ -72,9 +72,11 @@ class DefaultRolesSeeder extends Seeder
         $agency->syncPermissions([
             // PO Permissions
             'po.view_own',
+            'po.create',
             'po.edit',
             'po.assign_factory',
             'po.bulk_assign',
+            'po.import',
             'po.export',
             // Style Permissions
             'style.view_own',
