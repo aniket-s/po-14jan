@@ -577,8 +577,8 @@ class SampleController extends Controller
             return false;
         }
 
-        // Agency must be the agency assigned to the PO
-        return $po->agency_id === $user->id || $user->hasRole('Super Admin');
+        // Agency must be assigned to or creator of the PO
+        return $po->agency_id === $user->id || $po->creator_id === $user->id || $user->hasRole('Super Admin');
     }
 
     /**
