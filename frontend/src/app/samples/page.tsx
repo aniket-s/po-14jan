@@ -881,8 +881,8 @@ export default function SamplesPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={getStatusColor(sample.importer_status) as any}>
-                            {sample.importer_status}
+                          <Badge variant={sample.agency_status !== 'approved' && sample.importer_status === 'pending' ? 'outline' as any : getStatusColor(sample.importer_status) as any}>
+                            {sample.agency_status !== 'approved' && sample.importer_status === 'pending' ? 'Awaiting Agency' : sample.importer_status}
                           </Badge>
                         </TableCell>
                         <TableCell>
