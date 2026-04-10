@@ -272,7 +272,7 @@ class PurchaseOrderController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
-        $po = PurchaseOrder::with(['importer', 'agency', 'styles.assignedFactory'])->findOrFail($id);
+        $po = PurchaseOrder::with(['importer', 'agency', 'currency', 'styles.assignedFactory'])->findOrFail($id);
 
         // Check permission
         if (!$this->permissionService->canAccessPO($user, $po)) {
@@ -303,12 +303,19 @@ class PurchaseOrderController extends Controller
                 'po_date' => $po->po_date?->format('Y-m-d'),
                 'total_quantity' => $po->total_quantity,
                 'total_value' => $po->total_value,
+                'currency_id' => $po->currency_id,
+                'currency' => $po->getRelation('currency')?->code ?? 'USD',
+                'exchange_rate' => $po->exchange_rate,
+                'payment_term_id' => $po->payment_term_id,
+                'buyer_id' => $po->buyer_id,
                 'payment_terms' => $po->payment_terms,
                 'payment_terms_structured' => $po->payment_terms_structured,
                 'additional_notes' => $po->additional_notes,
                 'status' => $po->status,
                 'metadata' => $po->metadata,
+                'shipping_term' => $po->shipping_term,
                 'revision_date' => $po->revision_date?->format('Y-m-d'),
+                'ex_factory_date' => $po->ex_factory_date?->format('Y-m-d'),
                 'etd_date' => $po->etd_date?->format('Y-m-d'),
                 'eta_date' => $po->eta_date?->format('Y-m-d'),
                 'in_warehouse_date' => $po->in_warehouse_date?->format('Y-m-d'),
