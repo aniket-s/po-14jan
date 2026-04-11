@@ -48,7 +48,7 @@ export default function StylesPage() {
   const [categories, setCategories] = useState<any[]>([]);
 
   // View & selection
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [selectedStyle, setSelectedStyle] = useState<Style | null>(null);
   const [detailStyle, setDetailStyle] = useState<Style | null>(null);
