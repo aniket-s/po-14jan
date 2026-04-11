@@ -232,6 +232,7 @@ class ExcelImportService
     public function importStyles(
         string $filePath,
         int $purchaseOrderId,
+        int $createdBy,
         array $columnMapping,
         bool $skipFirstRow = true,
         ?int $startRow = null,
@@ -315,9 +316,9 @@ class ExcelImportService
                     'style_number' => $rowData['style_number'],
                     'description' => $rowData['description'] ?? null,
                     'fabric' => $rowData['fabric'] ?? null,
-                    'color' => $rowData['color'] ?? 'N/A',
+                    'color' => $rowData['color'] ?? null,
                     'fit' => $rowData['fit'] ?? null,
-                    'size_breakup' => $rowData['size_breakdown'] ?? ['breakdown' => 1],
+                    'size_breakup' => $rowData['size_breakdown'] ?? null,
                     'packing_details' => $packingDetails,
                     'images' => $rowImageData['images'],
                     'metadata' => array_filter([
@@ -328,8 +329,9 @@ class ExcelImportService
                     'total_quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'fob_price' => $unitPrice,
-                    'created_by' => $po->created_by ?? null,
+                    'created_by' => $createdBy,
                     'is_active' => true,
+                    'status' => 'pending',
                 ]);
 
                 // Determine ex_factory_date: use IHD from Excel if available, else PO delivery date
