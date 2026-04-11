@@ -70,7 +70,7 @@ export function SampleTableView({
   canDeleteSample,
   role,
 }: SampleTableViewProps) {
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['__all__']));
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   // Group samples by style
@@ -93,7 +93,7 @@ export function SampleTableView({
   });
 
   const toggleGroup = (key: string) => {
-    setExpandedGroups(prev => {
+    setCollapsedGroups(prev => {
       const next = new Set(prev);
       if (next.has(key)) {
         next.delete(key);
@@ -239,7 +239,7 @@ export function SampleTableView({
               </TableRow>
             ) : (
               grouped.map((group) => {
-                const isExpanded = expandedGroups.has('__all__') || expandedGroups.has(group.key);
+                const isExpanded = !collapsedGroups.has(group.key);
                 return (
                   <GroupRows
                     key={group.key}
