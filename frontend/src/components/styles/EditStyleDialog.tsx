@@ -34,7 +34,7 @@ import { FileDropzone } from '@/components/ui/file-dropzone';
 
 const styleSchema = z.object({
   style_number: z.string().min(1, 'Style number is required'),
-  description: z.string().optional(),
+  description: z.string().min(1, 'Style name is required'),
   fabric_type_id: z.coerce.number().optional(),
   fabric_quality_id: z.coerce.number().optional(),
   fabric_weight: z.string().optional(),
@@ -416,6 +416,23 @@ export function EditStyleDialog({
 
                 <FormField
                   control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Style Name *</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., Classic Polo Shirt, Men's Cargo Pants"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name="fit"
                   render={({ field }) => (
                     <FormItem>
@@ -428,24 +445,6 @@ export function EditStyleDialog({
                   )}
                 />
               </div>
-
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Detailed description of the style..."
-                        rows={3}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
             </div>
 
             {/* Fabric & Color Details */}
