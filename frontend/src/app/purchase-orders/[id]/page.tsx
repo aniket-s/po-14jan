@@ -158,6 +158,22 @@ export default function PurchaseOrderDetailPage() {
           status: 'pending'
         }))
       });
+
+      // Update style images if any were uploaded during selection
+      const stylesWithImages = selectedStyles.filter(
+        s => s.uploaded_images && s.uploaded_images.length > 0
+      );
+      if (stylesWithImages.length > 0) {
+        await Promise.all(
+          stylesWithImages.map(style => {
+            const existingImages = style.images || [];
+            return api.put(`/styles/${style.id}`, {
+              images: [...existingImages, ...style.uploaded_images],
+            });
+          })
+        );
+      }
+
       fetchStyles();
       fetchPurchaseOrder(); // Refresh to update totals
     } catch (error) {

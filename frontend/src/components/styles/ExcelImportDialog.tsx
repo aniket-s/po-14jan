@@ -41,7 +41,9 @@ import {
   ArrowLeft,
   ArrowRight,
   Eye,
+  ImageIcon,
 } from 'lucide-react';
+import { StyleImageUpload } from '@/components/styles/StyleImageUpload';
 
 interface ExcelImportDialogProps {
   open: boolean;
@@ -82,6 +84,7 @@ export function ExcelImportDialog({
   const [analysisResult, setAnalysisResult] = useState<ExcelAnalysisResult | null>(null);
   const [columnMapping, setColumnMapping] = useState<Record<string, number | null>>({});
   const [importResult, setImportResult] = useState<ExcelImportResult | null>(null);
+  const [styleImages, setStyleImages] = useState<Record<number, string[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -175,6 +178,7 @@ export function ExcelImportDialog({
         temp_file_path: analysisResult.temp_file_path,
         column_mapping: columnMapping,
         image_columns: analysisResult.image_columns,
+        style_images: Object.keys(styleImages).length > 0 ? styleImages : undefined,
       });
 
       setImportResult(result);
@@ -199,6 +203,7 @@ export function ExcelImportDialog({
     setAnalysisResult(null);
     setColumnMapping({});
     setImportResult(null);
+    setStyleImages({});
     setError('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -407,26 +412,49 @@ export function ExcelImportDialog({
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-[80px]">
+                          <div className="flex items-center gap-1">
+                            <ImageIcon className="h-4 w-4" />
+                            Image
+                          </div>
+                        </TableHead>
                         {mappedFields.map(field => (
                           <TableHead key={field.key}>{field.label}</TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {analysisResult.sample_data.slice(0, 5).map((_, rowIndex) => (
-                        <TableRow key={rowIndex}>
-                          {mappedFields.map(field => (
-                            <TableCell key={field.key}>
-                              {getPreviewValue(rowIndex, field.key)}
+                      {analysisResult.sample_data.slice(0, 5).map((_, rowIndex) => {
+                        const excelRow = rowIndex + 2; // Row 2 is first data row (row 1 is header)
+                        return (
+                          <TableRow key={rowIndex}>
+                            <TableCell>
+                              <StyleImageUpload
+                                images={styleImages[excelRow] || []}
+                                onImagesChange={(imgs) =>
+                                  setStyleImages(prev => ({ ...prev, [excelRow]: imgs }))
+                                }
+                                compact
+                              />
                             </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
+                            {mappedFields.map(field => (
+                              <TableCell key={field.key}>
+                                {getPreviewValue(rowIndex, field.key)}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
                 <p className="text-sm text-muted-foreground mt-4">
                   Showing first {Math.min(5, analysisResult.sample_data.length)} rows. Total rows to import: {analysisResult.row_count}
+                  {Object.keys(styleImages).length > 0 && (
+                    <span className="ml-2 text-green-600">
+                      ({Object.values(styleImages).filter(imgs => imgs.length > 0).length} style(s) with images)
+                    </span>
+                  )}
                 </p>
               </CardContent>
             </Card>

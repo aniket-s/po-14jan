@@ -46,6 +46,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { analyzePdfForPOImport, createPOFromPdf } from '@/services/styles';
+import { StyleImageUpload } from '@/components/styles/StyleImageUpload';
 import api from '@/lib/api';
 import type {
   PdfAnalysisResult,
@@ -385,6 +386,7 @@ export function PdfImportDialog({
           quantity: s.quantity?.value || 0,
           unit_price: s.unit_price?.value || 0,
           total_amount: s.total_amount?.value || 0,
+          images: [] as string[],
         };
       });
       setStylesForm(styles);
@@ -568,6 +570,7 @@ export function PdfImportDialog({
           packing_method: s.packing_method || 'solid',
           quantity: Number(s.quantity),
           unit_price: Number(s.unit_price),
+          images: s.images && s.images.length > 0 ? s.images : undefined,
         })),
         temp_file_path: analysisResult?.temp_file_path,
       };
@@ -1265,6 +1268,7 @@ export function PdfImportDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[40px]">#</TableHead>
+                      <TableHead className="w-[70px]">Image</TableHead>
                       <TableHead className="min-w-[140px]">Style Number</TableHead>
                       <TableHead className="min-w-[180px]">Description</TableHead>
                       <TableHead className="min-w-[120px]">Color</TableHead>
@@ -1282,6 +1286,13 @@ export function PdfImportDialog({
                       return (
                         <TableRow key={index} className={isZeroPrice ? 'bg-orange-50' : ''}>
                           <TableCell className="text-muted-foreground text-sm">{index + 1}</TableCell>
+                          <TableCell>
+                            <StyleImageUpload
+                              images={style.images || []}
+                              onImagesChange={(imgs) => updateStyle(index, 'images', imgs)}
+                              compact
+                            />
+                          </TableCell>
                           <TableCell>
                             <Input
                               value={style.style_number}

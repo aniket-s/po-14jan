@@ -237,7 +237,8 @@ class ExcelImportService
         bool $skipFirstRow = true,
         ?int $startRow = null,
         ?int $endRow = null,
-        ?array $imageColumns = null
+        ?array $imageColumns = null,
+        ?array $userStyleImages = null
     ): array {
         try {
             $po = PurchaseOrder::findOrFail($purchaseOrderId);
@@ -311,6 +312,15 @@ class ExcelImportService
                 // Extract images for this row using column-aware mapping
                 $rowImageData = $this->extractRowImages($row, $imagesByCell, $imageColumns);
 
+                // Merge user-uploaded images with Excel-extracted images
+                $styleImages = $rowImageData['images'];
+                if (!empty($userStyleImages) && isset($userStyleImages[$row])) {
+                    $uploadedImages = array_filter((array) $userStyleImages[$row]);
+                    if (!empty($uploadedImages)) {
+                        $styleImages = array_merge($styleImages ?? [], $uploadedImages);
+                    }
+                }
+
                 // Create style record (master data - no PO-specific fields)
                 $style = Style::create([
                     'style_number' => $rowData['style_number'],
@@ -320,7 +330,7 @@ class ExcelImportService
                     'fit' => $rowData['fit'] ?? null,
                     'size_breakup' => $rowData['size_breakdown'] ?? null,
                     'packing_details' => $packingDetails,
-                    'images' => $rowImageData['images'],
+                    'images' => $styleImages,
                     'metadata' => array_filter([
                         'label' => $rowData['label'] ?? null,
                         'size_scale' => is_string($rowData['size_breakdown'] ?? null) ? $rowData['size_breakdown'] : null,
@@ -1052,7 +1062,8 @@ class ExcelImportService
         bool $skipFirstRow = true,
         ?int $startRow = null,
         ?int $endRow = null,
-        ?array $imageColumns = null
+        ?array $imageColumns = null,
+        ?array $userStyleImages = null
     ): array {
         try {
             $spreadsheet = IOFactory::load($filePath);
@@ -1113,6 +1124,15 @@ class ExcelImportService
                 // Extract images for this row using column-aware mapping
                 $rowImageData = $this->extractRowImages($row, $imagesByCell, $imageColumns);
 
+                // Merge user-uploaded images with Excel-extracted images
+                $styleImages = $rowImageData['images'];
+                if (!empty($userStyleImages) && isset($userStyleImages[$row])) {
+                    $uploadedImages = array_filter((array) $userStyleImages[$row]);
+                    if (!empty($uploadedImages)) {
+                        $styleImages = array_merge($styleImages ?? [], $uploadedImages);
+                    }
+                }
+
                 // Create standalone style with po_id = null
                 $style = Style::create([
                     'po_id' => null,  // Standalone style
@@ -1121,7 +1141,7 @@ class ExcelImportService
                     'fabric' => $rowData['fabric'] ?? null,
                     'color' => $rowData['color'] ?? null,
                     'size_breakup' => $rowData['size_breakdown'] ?? null,
-                    'images' => $rowImageData['images'],
+                    'images' => $styleImages,
                     'metadata' => array_filter([
                         'trims_picture' => $rowImageData['trims_picture_path'],
                     ]),

@@ -111,6 +111,9 @@ class ExcelImportController extends Controller
             'start_row' => 'nullable|integer|min:1',
             'end_row' => 'nullable|integer|min:1',
             'image_columns' => 'nullable|array',
+            'style_images' => 'nullable|array',
+            'style_images.*' => 'nullable|array',
+            'style_images.*.*' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -144,7 +147,8 @@ class ExcelImportController extends Controller
             $request->get('skip_first_row', true),
             $request->start_row,
             $request->end_row,
-            $request->image_columns
+            $request->image_columns,
+            $request->style_images
         );
 
         // Delete temp file
@@ -338,6 +342,9 @@ class ExcelImportController extends Controller
             'start_row' => 'nullable|integer|min:1',
             'end_row' => 'nullable|integer|min:1',
             'image_columns' => 'nullable|array',
+            'style_images' => 'nullable|array',
+            'style_images.*' => 'nullable|array',
+            'style_images.*.*' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -381,7 +388,8 @@ class ExcelImportController extends Controller
             $request->get('skip_first_row', true),
             $request->start_row,
             $request->end_row,
-            $request->image_columns
+            $request->image_columns,
+            $request->style_images
         );
 
         // Delete temp file
