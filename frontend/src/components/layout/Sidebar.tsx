@@ -14,7 +14,6 @@ import {
   BarChart3,
   Users,
   Settings,
-  FileText,
   Mail,
   UserCheck,
   PackageCheck,
