@@ -227,7 +227,7 @@ const PAGE_SIZE = 15;
 
 type SortDir = 'asc' | 'desc' | null;
 
-function useSortedPaginatedData<T extends Record<string, unknown>>(
+function useSortedPaginatedData<T extends object>(
   data: T[],
   searchFields: (keyof T)[],
   searchQuery: string,
@@ -250,8 +250,8 @@ function useSortedPaginatedData<T extends Record<string, unknown>>(
   const sorted = useMemo(() => {
     if (!sortKey || !sortDir) return filtered;
     return [...filtered].sort((a, b) => {
-      const av = a[sortKey] ?? '';
-      const bv = b[sortKey] ?? '';
+      const av = (a as Record<string, unknown>)[sortKey] ?? '';
+      const bv = (b as Record<string, unknown>)[sortKey] ?? '';
       if (typeof av === 'number' && typeof bv === 'number') {
         return sortDir === 'asc' ? av - bv : bv - av;
       }

@@ -734,7 +734,7 @@ export default function EditPurchaseOrderPage() {
                           if (selectedCountryId && shippingTerm === 'DDP') {
                             calculateDates(e.target.value, selectedCountryId);
                           }
-                        }
+                        }}
                       />
                       {errors.etd_date && (
                         <p className="text-sm text-destructive">{errors.etd_date.message}</p>
