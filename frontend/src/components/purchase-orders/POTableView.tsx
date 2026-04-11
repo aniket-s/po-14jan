@@ -32,6 +32,7 @@ interface POTableViewProps {
   purchaseOrders: PurchaseOrder[];
   onDelete: (id: number) => void;
   onBulkDelete?: (ids: number[]) => void;
+  onExport?: (pos: PurchaseOrder[]) => void;
   canEdit: boolean;
   canDelete: boolean;
   canExport: boolean;
@@ -44,6 +45,7 @@ export function POTableView({
   purchaseOrders,
   onDelete,
   onBulkDelete,
+  onExport,
   canEdit,
   canDelete,
   canExport,
@@ -187,8 +189,16 @@ export function POTableView({
           <span className="text-sm font-medium">
             {selectedIds.size} PO{selectedIds.size > 1 ? 's' : ''} selected
           </span>
-          {canExport && (
-            <Button size="sm" variant="outline" className="h-7" disabled>
+          {canExport && onExport && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              onClick={() => {
+                const selected = purchaseOrders.filter(p => selectedIds.has(p.id));
+                onExport(selected);
+              }}
+            >
               Export Selected
             </Button>
           )}
