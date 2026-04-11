@@ -132,8 +132,7 @@ class ReportController extends Controller
         $validator = Validator::make($request->all(), [
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
-            'result' => 'nullable|string|in:pass,fail',
-            'inspection_type_id' => 'nullable|exists:inspection_types,id',
+            'result' => 'nullable|string|in:passed,failed',
             'format' => 'nullable|string|in:json,csv,excel',
         ]);
 
@@ -144,7 +143,7 @@ class ReportController extends Controller
             ], 422);
         }
 
-        $filters = $request->only(['start_date', 'end_date', 'result', 'inspection_type_id']);
+        $filters = $request->only(['start_date', 'end_date', 'result']);
         $report = $this->reportService->getQualityInspectionReport($user, $filters);
 
         $format = $request->input('format', 'json');

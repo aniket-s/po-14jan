@@ -263,16 +263,16 @@ class ReportService
 
         $passRate = $totalCount > 0 ? round(($passedCount / $totalCount) * 100, 2) : 0;
 
-        $byInspectionType = (clone $query)
-            ->with('inspectionType:id,name')
+        $byAqlLevel = (clone $query)
+            ->with('aqlLevel:id,name')
             ->get()
-            ->groupBy('inspection_type_id')
-            ->map(function ($inspections, $typeId) {
-                $type = $inspections->first()->inspectionType;
+            ->groupBy('aql_level_id')
+            ->map(function ($inspections) {
+                $level = $inspections->first()->aqlLevel;
                 $total = $inspections->count();
                 $passed = $inspections->where('result', 'passed')->count();
                 return [
-                    'type_name' => $type->name,
+                    'level_name' => $level->name ?? '-',
                     'total' => $total,
                     'passed' => $passed,
                     'failed' => $total - $passed,
@@ -291,7 +291,7 @@ class ReportService
             'passed_count' => $passedCount,
             'failed_count' => $failedCount,
             'pass_rate' => $passRate,
-            'by_inspection_type' => $byInspectionType,
+            'by_aql_level' => $byAqlLevel,
             'defects' => [
                 'total' => $totalDefects,
                 'critical' => $criticalDefects,
@@ -466,7 +466,7 @@ class ReportService
     {
         $query = QualityInspection::with([
             'style:id,style_number',
-            'inspectionType:id,name',
+            'aqlLevel:id,name',
             'inspector:id,name',
         ]);
 
@@ -479,10 +479,6 @@ class ReportService
             $query->where('result', $filters['result']);
         }
 
-        if (!empty($filters['inspection_type_id'])) {
-            $query->where('inspection_type_id', $filters['inspection_type_id']);
-        }
-
         // Apply user-based access control
         if ($user->hasRole('qc_inspector')) {
             $query->where('inspector_id', $user->id);
@@ -492,7 +488,7 @@ class ReportService
             return [
                 'inspection_number' => $inspection->inspection_number,
                 'style_number' => $inspection->style->style_number ?? '-',
-                'inspection_type' => $inspection->inspectionType->name ?? '-',
+                'aql_level' => $inspection->aqlLevel->name ?? '-',
                 'inspector' => $inspection->inspector->name ?? '-',
                 'inspected_at' => $inspection->inspected_at?->format('Y-m-d'),
                 'lot_size' => $inspection->lot_size,
