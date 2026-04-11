@@ -730,6 +730,18 @@ export function POCreateWizard({
             {/* Step 4: Terms & Notes */}
             {currentStep === 3 && (
               <div className="space-y-4">
+                {/* Ship To */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Ship To</Label>
+                    <Input placeholder="Recipient name" {...register('ship_to')} className="h-9" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Ship To Address</Label>
+                    <Input placeholder="Full shipping address" {...register('ship_to_address')} className="h-9" />
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
                   <Label className="text-xs">Packing Method</Label>
                   <textarea

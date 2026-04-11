@@ -376,8 +376,15 @@ export default function PurchaseOrdersPage() {
           <POTableView
             purchaseOrders={filteredPOs}
             onDelete={handleDelete}
+            onBulkDelete={async (ids) => {
+              for (const id of ids) {
+                try { await api.delete(`/purchase-orders/${id}`); } catch (e) { console.error('Failed to delete PO:', id, e); }
+              }
+              fetchPurchaseOrders();
+            }}
             canEdit={can('po.edit')}
             canDelete={can('po.delete')}
+            canExport={can('po.export')}
           />
         )}
 

@@ -64,11 +64,7 @@ export interface TimelineEvent {
   description?: string;
   user_name?: string;
   created_at?: string;
-  metadata?: {
-    rejection_reason?: string;
-    reason?: string;
-    comments?: string;
-  };
+  metadata?: Record<string, any>;
 }
 
 export type ViewMode = 'board' | 'table';

@@ -186,10 +186,9 @@ export function SampleKanbanBoard({
                             {sample.style?.purchase_orders?.[0]?.po_number || ''}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            {new Date(sample.submission_date || sample.created_at).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
+                            {(sample.submission_date || sample.created_at)
+                              ? new Date(sample.submission_date || sample.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                              : '-'}
                           </span>
                         </div>
                       </button>

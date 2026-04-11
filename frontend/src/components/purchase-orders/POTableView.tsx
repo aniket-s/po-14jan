@@ -31,8 +31,10 @@ import { cn } from '@/lib/utils';
 interface POTableViewProps {
   purchaseOrders: PurchaseOrder[];
   onDelete: (id: number) => void;
+  onBulkDelete?: (ids: number[]) => void;
   canEdit: boolean;
   canDelete: boolean;
+  canExport: boolean;
 }
 
 type SortField = 'po_number' | 'po_date' | 'total_quantity' | 'total_value' | 'styles_count' | 'etd_date';
@@ -41,8 +43,10 @@ type SortOrder = 'asc' | 'desc';
 export function POTableView({
   purchaseOrders,
   onDelete,
+  onBulkDelete,
   canEdit,
   canDelete,
+  canExport,
 }: POTableViewProps) {
   const [sortField, setSortField] = useState<SortField>('po_date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
@@ -182,11 +186,23 @@ export function POTableView({
           <span className="text-sm font-medium">
             {selectedIds.size} PO{selectedIds.size > 1 ? 's' : ''} selected
           </span>
-          <Button size="sm" variant="outline" className="h-7">
-            Export Selected
-          </Button>
-          {canDelete && (
-            <Button size="sm" variant="destructive" className="h-7">
+          {canExport && (
+            <Button size="sm" variant="outline" className="h-7" disabled>
+              Export Selected
+            </Button>
+          )}
+          {canDelete && onBulkDelete && (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7"
+              onClick={() => {
+                if (confirm(`Delete ${selectedIds.size} purchase order(s)? This action cannot be undone.`)) {
+                  onBulkDelete(Array.from(selectedIds));
+                  setSelectedIds(new Set());
+                }
+              }}
+            >
               Delete Selected
             </Button>
           )}
