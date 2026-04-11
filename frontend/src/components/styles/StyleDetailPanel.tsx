@@ -5,10 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  X, Edit, Trash2, Package, Link2, Ruler, Palette, ShoppingBag,
-  Tag, Calendar, User, FileText, Image as ImageIcon,
-} from 'lucide-react';
+import { X, Edit, Trash2, Package, Link2, ExternalLink, FileText } from 'lucide-react';
 import { Style } from '@/services/styles';
 import { SampleImageGallery } from '@/components/samples/SampleImageGallery';
 
@@ -37,7 +34,7 @@ export function StyleDetailPanel({
     <div className="flex flex-col h-full border-l bg-card">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
-        <div className="space-y-1 min-w-0">
+        <div className="min-w-0">
           <h3 className="font-semibold text-sm truncate">{style.style_number}</h3>
           <p className="text-xs text-muted-foreground truncate">{style.description || 'No description'}</p>
         </div>
@@ -47,22 +44,23 @@ export function StyleDetailPanel({
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-4 space-y-5">
+        <div className="p-4 space-y-4">
           {/* Image */}
           {images.length > 0 && (
-            <div>
-              <div className="rounded-lg overflow-hidden border bg-muted mb-2">
-                <img src={images[0]} alt={style.style_number} className="w-full h-48 object-cover" />
-              </div>
-              {images.length > 1 && (
-                <SampleImageGallery images={images} title="" />
-              )}
+            <div className="rounded-lg overflow-hidden border bg-muted">
+              <img src={images[0]} alt={style.style_number} className="w-full h-44 object-cover" />
             </div>
+          )}
+          {images.length > 1 && (
+            <SampleImageGallery images={images} title="" />
           )}
 
           {/* Status */}
           <div className="flex items-center gap-2">
-            <Badge variant={style.is_active !== false ? 'default' : 'secondary'} className={style.is_active !== false ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-300' : ''}>
+            <Badge
+              variant={style.is_active !== false ? 'default' : 'secondary'}
+              className={style.is_active !== false ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-300' : ''}
+            >
               {style.is_active !== false ? 'Active' : 'Inactive'}
             </Badge>
             {style.purchase_orders && style.purchase_orders.length > 0 && (
@@ -75,28 +73,16 @@ export function StyleDetailPanel({
 
           <Separator />
 
-          {/* Details Grid */}
-          <div>
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Details</h4>
-            <div className="grid grid-cols-2 gap-3">
-              {style.brand?.name && (
-                <DetailItem icon={<Tag />} label="Brand" value={style.brand.name} />
-              )}
-              {style.retailer?.name && (
-                <DetailItem icon={<ShoppingBag />} label="Retailer" value={style.retailer.name} />
-              )}
-              {style.category?.name && (
-                <DetailItem icon={<Package />} label="Category" value={style.category.name} />
-              )}
-              {style.season?.name && (
-                <DetailItem icon={<Calendar />} label="Season" value={style.season.name} />
-              )}
-              {style.gender?.name && (
-                <DetailItem icon={<User />} label="Gender" value={style.gender.name} />
-              )}
-              {style.fit && (
-                <DetailItem icon={<Ruler />} label="Fit" value={style.fit} />
-              )}
+          {/* Details */}
+          <div className="space-y-2.5">
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Details</h4>
+            <div className="space-y-2">
+              {style.brand?.name && <DetailRow label="Brand" value={style.brand.name} />}
+              {style.retailer?.name && <DetailRow label="Retailer" value={style.retailer.name} />}
+              {style.category?.name && <DetailRow label="Category" value={style.category.name} />}
+              {style.season?.name && <DetailRow label="Season" value={style.season.name} />}
+              {style.gender?.name && <DetailRow label="Gender" value={style.gender.name} />}
+              {style.fit && <DetailRow label="Fit" value={style.fit} />}
             </div>
           </div>
 
@@ -104,26 +90,19 @@ export function StyleDetailPanel({
           {(style.fabric_type_name || style.color?.name || style.color_name) && (
             <>
               <Separator />
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Fabric & Color</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  {style.fabric_type_name && (
-                    <DetailItem icon={<Ruler />} label="Fabric Type" value={style.fabric_type_name} />
-                  )}
-                  {style.fabric_weight && (
-                    <DetailItem icon={<Ruler />} label="Weight" value={style.fabric_weight} />
-                  )}
+              <div className="space-y-2.5">
+                <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Fabric & Color</h4>
+                <div className="space-y-2">
+                  {style.fabric_type_name && <DetailRow label="Fabric" value={style.fabric_type_name} />}
+                  {style.fabric_weight && <DetailRow label="Weight" value={style.fabric_weight} />}
                   {(style.color?.name || style.color_name) && (
-                    <div className="flex items-start gap-2">
-                      <Palette className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">Color</p>
-                        <div className="flex items-center gap-1">
-                          {style.color?.code && (
-                            <span className="h-3 w-3 rounded-full border" style={{ backgroundColor: style.color.code }} />
-                          )}
-                          <p className="text-xs font-medium">{style.color?.name || style.color_name}</p>
-                        </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Color</span>
+                      <div className="flex items-center gap-1.5">
+                        {style.color?.code && (
+                          <span className="h-3.5 w-3.5 rounded-full border" style={{ backgroundColor: style.color.code }} />
+                        )}
+                        <span className="text-xs font-medium">{style.color?.name || style.color_name}</span>
                       </div>
                     </div>
                   )}
@@ -136,20 +115,20 @@ export function StyleDetailPanel({
           {(style.unit_price || style.fob_price || style.msrp || style.wholesale_price) && (
             <>
               <Separator />
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Pricing</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  {style.unit_price != null && style.unit_price > 0 && (
-                    <DetailItem icon={<Tag />} label="Unit Price" value={`$${Number(style.unit_price).toFixed(2)}`} />
+              <div className="space-y-2.5">
+                <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Pricing</h4>
+                <div className="space-y-2">
+                  {style.unit_price != null && Number(style.unit_price) > 0 && (
+                    <DetailRow label="Unit Price" value={`$${Number(style.unit_price).toFixed(2)}`} />
                   )}
-                  {style.fob_price != null && style.fob_price > 0 && (
-                    <DetailItem icon={<Tag />} label="FOB Price" value={`$${Number(style.fob_price).toFixed(2)}`} />
+                  {style.fob_price != null && Number(style.fob_price) > 0 && (
+                    <DetailRow label="FOB Price" value={`$${Number(style.fob_price).toFixed(2)}`} />
                   )}
-                  {style.msrp != null && style.msrp > 0 && (
-                    <DetailItem icon={<Tag />} label="MSRP" value={`$${Number(style.msrp).toFixed(2)}`} />
+                  {style.msrp != null && Number(style.msrp) > 0 && (
+                    <DetailRow label="MSRP" value={`$${Number(style.msrp).toFixed(2)}`} />
                   )}
-                  {style.wholesale_price != null && style.wholesale_price > 0 && (
-                    <DetailItem icon={<Tag />} label="Wholesale" value={`$${Number(style.wholesale_price).toFixed(2)}`} />
+                  {style.wholesale_price != null && Number(style.wholesale_price) > 0 && (
+                    <DetailRow label="Wholesale" value={`$${Number(style.wholesale_price).toFixed(2)}`} />
                   )}
                 </div>
               </div>
@@ -160,8 +139,8 @@ export function StyleDetailPanel({
           {style.purchase_orders && style.purchase_orders.length > 0 && (
             <>
               <Separator />
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Purchase Orders</h4>
+              <div className="space-y-2.5">
+                <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Purchase Orders</h4>
                 <div className="space-y-1.5">
                   {style.purchase_orders.map((po: any) => (
                     <Button
@@ -184,8 +163,8 @@ export function StyleDetailPanel({
           {documents.length > 0 && (
             <>
               <Separator />
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Documents</h4>
+              <div className="space-y-2.5">
+                <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Documents</h4>
                 <div className="space-y-1">
                   {documents.map((url: string, idx: number) => (
                     <a
@@ -193,10 +172,11 @@ export function StyleDetailPanel({
                       href={url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-xs text-blue-600 hover:underline py-1"
+                      className="flex items-center gap-2 text-xs text-blue-600 hover:underline py-1 px-2 rounded hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors"
                     >
-                      <FileText className="h-3 w-3 shrink-0" />
-                      Technical File {idx + 1}
+                      <FileText className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Technical File {idx + 1}</span>
+                      <ExternalLink className="h-3 w-3 shrink-0 ml-auto" />
                     </a>
                   ))}
                 </div>
@@ -208,14 +188,11 @@ export function StyleDetailPanel({
           {style.creator && (
             <>
               <Separator />
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Audit</h4>
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  <p>Created by {style.creator.name} on {new Date(style.created_at).toLocaleDateString()}</p>
-                  {style.updatedBy && (
-                    <p>Updated by {style.updatedBy.name} on {new Date(style.updated_at).toLocaleDateString()}</p>
-                  )}
-                </div>
+              <div className="space-y-1.5 text-[11px] text-muted-foreground">
+                <p>Created by <span className="font-medium text-foreground">{style.creator.name}</span> on {new Date(style.created_at).toLocaleDateString()}</p>
+                {style.updatedBy && (
+                  <p>Updated by <span className="font-medium text-foreground">{style.updatedBy.name}</span> on {new Date(style.updated_at).toLocaleDateString()}</p>
+                )}
               </div>
             </>
           )}
@@ -246,14 +223,11 @@ export function StyleDetailPanel({
   );
 }
 
-function DetailItem({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start gap-2">
-      <span className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0">{icon}</span>
-      <div>
-        <p className="text-[10px] text-muted-foreground">{label}</p>
-        <p className="text-xs font-medium">{value}</p>
-      </div>
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-xs font-medium text-right">{value}</span>
     </div>
   );
 }
