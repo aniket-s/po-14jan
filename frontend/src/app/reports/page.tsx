@@ -160,6 +160,21 @@ interface ReportData<T> {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const formatDate = (value: string | null | undefined) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const formatDateTime = (value: string | null | undefined) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    + ', ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+};
+
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -622,7 +637,7 @@ export default function ReportsPage() {
                         <TableCell className="text-sm">{row.factory_name}</TableCell>
                         <TableCell className="text-sm">{formatNumber(row.quantity)}</TableCell>
                         <TableCell className="text-sm">{formatCurrency(row.total_value)}</TableCell>
-                        <TableCell className="text-sm">{row.ex_factory_date ?? '—'}</TableCell>
+                        <TableCell className="text-sm">{formatDate(row.ex_factory_date)}</TableCell>
                         <TableCell>{statusBadge(row.production_status)}</TableCell>
                         <TableCell>{statusBadge(row.shipping_approval_status)}</TableCell>
                       </TableRow>
@@ -701,7 +716,7 @@ export default function ReportsPage() {
                       <TableCell className="text-sm">{row.style_number}</TableCell>
                       <TableCell className="text-sm">{row.factory_name}</TableCell>
                       <TableCell className="text-sm">{formatNumber(row.quantity)}</TableCell>
-                      <TableCell className="text-sm">{row.ex_factory_date ?? '—'}</TableCell>
+                      <TableCell className="text-sm">{formatDate(row.ex_factory_date)}</TableCell>
                       <TableCell>
                         {row.days_remaining !== null ? (
                           <span className={`text-sm font-semibold ${
@@ -794,7 +809,7 @@ export default function ReportsPage() {
                       <TableCell className="text-sm">{row.style_number}</TableCell>
                       <TableCell className="text-sm">{row.factory_name}</TableCell>
                       <TableCell className="text-sm">{row.sample_type}</TableCell>
-                      <TableCell className="text-sm">{row.submission_date ?? '—'}</TableCell>
+                      <TableCell className="text-sm">{formatDate(row.submission_date)}</TableCell>
                       <TableCell>
                         {row.days_pending !== null ? (
                           <span className={`text-sm font-semibold ${
@@ -897,7 +912,7 @@ export default function ReportsPage() {
                       <TableCell className="font-medium text-sm">{row.po_number}</TableCell>
                       <TableCell className="text-sm">{row.style_number}</TableCell>
                       <TableCell className="text-sm">{row.factory_name}</TableCell>
-                      <TableCell className="text-sm">{row.expected_date ?? '—'}</TableCell>
+                      <TableCell className="text-sm">{formatDate(row.expected_date)}</TableCell>
                       <TableCell>
                         <span className={`text-sm font-bold ${
                           row.days_delayed > 14 ? 'text-red-600' : row.days_delayed > 7 ? 'text-amber-600' : 'text-yellow-600'
@@ -978,12 +993,12 @@ export default function ReportsPage() {
                       <TableCell className="text-sm">{row.style_number}</TableCell>
                       <TableCell className="text-sm">{row.factory_name}</TableCell>
                       <TableCell className="text-sm">{row.sample_type}</TableCell>
-                      <TableCell className="text-sm">{row.submission_date ?? '—'}</TableCell>
+                      <TableCell className="text-sm">{formatDate(row.submission_date)}</TableCell>
                       <TableCell>
                         <div className="flex flex-col">
                           {statusBadge(row.agency_status)}
                           {row.agency_approved_at && (
-                            <span className="text-[10px] text-muted-foreground mt-0.5">{row.agency_approved_at}</span>
+                            <span className="text-[10px] text-muted-foreground mt-0.5">{formatDateTime(row.agency_approved_at)}</span>
                           )}
                         </div>
                       </TableCell>
@@ -991,7 +1006,7 @@ export default function ReportsPage() {
                         <div className="flex flex-col">
                           {statusBadge(row.importer_status)}
                           {row.importer_approved_at && (
-                            <span className="text-[10px] text-muted-foreground mt-0.5">{row.importer_approved_at}</span>
+                            <span className="text-[10px] text-muted-foreground mt-0.5">{formatDateTime(row.importer_approved_at)}</span>
                           )}
                         </div>
                       </TableCell>
