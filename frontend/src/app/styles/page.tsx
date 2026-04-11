@@ -3,71 +3,76 @@
 // Disable static generation for this authenticated page
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Package, Search, ListChecks, Plus, Edit, Trash2, FileUp } from 'lucide-react';
+  Package, ListChecks, Plus, FileUp, LayoutGrid, TableIcon, ChevronLeft, ChevronRight,
+} from 'lucide-react';
 import api from '@/lib/api';
 import { ListPageSkeleton } from '@/components/skeletons';
 import { BulkSampleProcessModal } from '@/components/styles/BulkSampleProcessModal';
 import { CreateStyleDialog } from '@/components/styles/CreateStyleDialog';
 import { EditStyleDialog } from '@/components/styles/EditStyleDialog';
 import { DeleteStyleConfirmation } from '@/components/styles/DeleteStyleConfirmation';
-
 import { Style, PaginatedStyles } from '@/services/styles';
+
+import { StyleKPICards } from '@/components/styles/StyleKPICards';
+import { StyleFilterBar, StyleFilters } from '@/components/styles/StyleFilterBar';
+import { StyleCardGrid } from '@/components/styles/StyleCardGrid';
+import { StyleTableView } from '@/components/styles/StyleTableView';
+import { StyleDetailPanel } from '@/components/styles/StyleDetailPanel';
 
 export default function StylesPage() {
   const { user, can, loading: authLoading } = useAuth();
   const router = useRouter();
+
+  // Data
   const [styles, setStyles] = useState<Style[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pagination, setPagination] = useState({
-    currentPage: 1,
-    lastPage: 1,
-    perPage: 20,
-    total: 0,
+  const [pagination, setPagination] = useState({ currentPage: 1, lastPage: 1, perPage: 20, total: 0 });
+
+  // Filters
+  const [filters, setFilters] = useState<StyleFilters>({
+    search: '', brand: 'all', retailer: 'all', season: 'all', category: 'all',
   });
-  const [searchQuery, setSearchQuery] = useState('');
-  const [brandFilter, setBrandFilter] = useState('');
-  const [retailerFilter, setRetailerFilter] = useState('');
+  const [kpiFilter, setKpiFilter] = useState<string>('');
+
+  // Master data for filters
   const [brands, setBrands] = useState<any[]>([]);
   const [retailers, setRetailers] = useState<any[]>([]);
-  const [selectedStyles, setSelectedStyles] = useState<number[]>([]);
-  const [isSampleProcessModalOpen, setIsSampleProcessModalOpen] = useState(false);
+  const [seasons, setSeasons] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
 
+  // View & selection
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectedStyle, setSelectedStyle] = useState<Style | null>(null);
+  const [detailStyle, setDetailStyle] = useState<Style | null>(null);
+
+  // Dialogs
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedStyle, setSelectedStyle] = useState<Style | null>(null);
+  const [isSampleProcessModalOpen, setIsSampleProcessModalOpen] = useState(false);
 
-  useEffect(() => {
-    if (authLoading) return;
-  }, [authLoading]);
-
+  // Fetch filter data
   useEffect(() => {
     const fetchFilterData = async () => {
       try {
-        const [brandsResponse, retailersResponse] = await Promise.all([
+        const [brandsRes, retailersRes, seasonsRes, categoriesRes] = await Promise.all([
           api.get('/master-data/brands?all=true'),
           api.get('/master-data/retailers?all=true'),
+          api.get('/master-data/seasons?all=true'),
+          api.get('/master-data/categories?all=true'),
         ]);
-        setBrands(brandsResponse.data || []);
-        setRetailers(retailersResponse.data || []);
+        setBrands(brandsRes.data || []);
+        setRetailers(retailersRes.data || []);
+        setSeasons(seasonsRes.data || []);
+        setCategories(categoriesRes.data || []);
       } catch (error) {
         console.error('Failed to fetch filter data:', error);
       }
@@ -75,25 +80,21 @@ export default function StylesPage() {
     fetchFilterData();
   }, []);
 
+  // Fetch styles with debounce for search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchStyles();
+    }, filters.search ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [pagination.currentPage, filters.search, filters.brand, filters.retailer]);
+
   const fetchStyles = async () => {
     try {
       setLoading(true);
-      const params: any = {
-        page: pagination.currentPage,
-        per_page: pagination.perPage,
-      };
-
-      if (searchQuery) {
-        params.search = searchQuery;
-      }
-
-      if (brandFilter) {
-        params.brand_id = brandFilter;
-      }
-
-      if (retailerFilter) {
-        params.retailer_id = retailerFilter;
-      }
+      const params: any = { page: pagination.currentPage, per_page: pagination.perPage };
+      if (filters.search) params.search = filters.search;
+      if (filters.brand !== 'all') params.brand_id = filters.brand;
+      if (filters.retailer !== 'all') params.retailer_id = filters.retailer;
 
       const response = await api.get<PaginatedStyles>('/styles', { params });
       setStyles(response.data.data);
@@ -110,434 +111,264 @@ export default function StylesPage() {
     }
   };
 
-  useEffect(() => {
-    fetchStyles();
-  }, [pagination.currentPage, searchQuery, brandFilter, retailerFilter]);
+  // Local filters (season, category, KPI)
+  const filteredStyles = useMemo(() => {
+    let result = styles;
 
-  const formatCurrency = (amount: number | null | undefined, currency: string = 'USD') => {
-    if (amount === null || amount === undefined) {
-      return '-';
+    if (filters.season !== 'all') {
+      result = result.filter(s => s.season_id?.toString() === filters.season);
     }
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency,
-    }).format(amount);
-  };
+    if (filters.category !== 'all') {
+      result = result.filter(s => s.category_id?.toString() === filters.category);
+    }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+    // KPI filters
+    if (kpiFilter === 'active') {
+      result = result.filter(s => s.is_active !== false);
+    } else if (kpiFilter === 'used_in_pos') {
+      result = result.filter(s => s.purchase_orders && s.purchase_orders.length > 0);
+    } else if (kpiFilter === 'not_in_pos') {
+      result = result.filter(s => !s.purchase_orders || s.purchase_orders.length === 0);
+    }
+
+    return result;
+  }, [styles, filters.season, filters.category, kpiFilter]);
+
+  // Selection
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
     });
-  };
+  }, []);
 
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedStyles(styles.map(s => s.id));
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === filteredStyles.length) {
+      setSelectedIds(new Set());
     } else {
-      setSelectedStyles([]);
+      setSelectedIds(new Set(filteredStyles.map(s => s.id)));
     }
-  };
+  }, [selectedIds.size, filteredStyles]);
 
-  const handleSelectStyle = (styleId: number, checked: boolean) => {
-    if (checked) {
-      setSelectedStyles(prev => [...prev, styleId]);
-    } else {
-      setSelectedStyles(prev => prev.filter(id => id !== styleId));
+  // Clear selection when data changes
+  useEffect(() => { setSelectedIds(new Set()); }, [styles]);
+
+  // Actions
+  const handleEdit = (style: Style) => { setSelectedStyle(style); setIsEditDialogOpen(true); };
+  const handleDelete = (style: Style) => { setSelectedStyle(style); setIsDeleteDialogOpen(true); };
+
+  // Pagination
+  const startItem = (pagination.currentPage - 1) * pagination.perPage + 1;
+  const endItem = Math.min(pagination.currentPage * pagination.perPage, pagination.total);
+  const getPageNumbers = () => {
+    const pages: (number | '...')[] = [];
+    const tp = pagination.lastPage;
+    const cp = pagination.currentPage;
+    if (tp <= 5) { for (let i = 1; i <= tp; i++) pages.push(i); }
+    else {
+      pages.push(1);
+      if (cp > 3) pages.push('...');
+      for (let i = Math.max(2, cp - 1); i <= Math.min(tp - 1, cp + 1); i++) pages.push(i);
+      if (cp < tp - 2) pages.push('...');
+      pages.push(tp);
     }
-  };
-
-  const isAllSelected = styles.length > 0 && selectedStyles.length === styles.length;
-
-  const handleEdit = (style: Style) => {
-    setSelectedStyle(style);
-    setIsEditDialogOpen(true);
-  };
-
-  const handleDelete = (style: Style) => {
-    setSelectedStyle(style);
-    setIsDeleteDialogOpen(true);
+    return pages;
   };
 
   if (loading && styles.length === 0) {
     return (
       <DashboardLayout requiredPermissions={['style.view', 'style.view_own', 'style.create', 'style.edit']} requireAll={false}>
-        <ListPageSkeleton statCards={1} filterCount={2} columns={9} />
+        <ListPageSkeleton statCards={4} filterCount={4} columns={10} />
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout requiredPermissions={['style.view', 'style.view_own', 'style.create', 'style.edit']} requireAll={false}>
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Styles</h1>
-            <p className="text-muted-foreground mt-1">
-              Manage your style library - create styles independently and add them to purchase orders
+            <h1 className="text-2xl font-bold tracking-tight">Styles</h1>
+            <p className="text-sm text-muted-foreground">
+              Manage your style library - create styles and add them to purchase orders
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {selectedStyles.length > 0 && can('style.edit') && (
+            {/* View Toggle */}
+            <div className="flex items-center rounded-lg border bg-muted p-0.5">
+              <Button
+                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                onClick={() => setViewMode('grid')}
+              >
+                <LayoutGrid className="h-3.5 w-3.5 mr-1" />
+                Grid
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'default' : 'ghost'}
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+                onClick={() => setViewMode('table')}
+              >
+                <TableIcon className="h-3.5 w-3.5 mr-1" />
+                Table
+              </Button>
+            </div>
+
+            {/* Bulk actions */}
+            {selectedIds.size > 0 && can('style.edit') && (
               <>
-                <Badge variant="secondary" className="text-sm">
-                  {selectedStyles.length} selected
-                </Badge>
-                <Button
-                  onClick={() => setIsSampleProcessModalOpen(true)}
-                  disabled={selectedStyles.length === 0}
-                >
-                  <ListChecks className="mr-2 h-4 w-4" />
-                  Change Sample Process
+                <Badge variant="secondary" className="text-xs">{selectedIds.size} selected</Badge>
+                <Button size="sm" className="h-8" onClick={() => setIsSampleProcessModalOpen(true)}>
+                  <ListChecks className="mr-1.5 h-3.5 w-3.5" />
+                  Sample Process
                 </Button>
               </>
             )}
+
             {can('style.create') && (
               <>
-                <Button onClick={() => setIsCreateDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
+                <Button size="sm" className="h-8" onClick={() => setIsCreateDialogOpen(true)}>
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
                   Create Style
                 </Button>
-                <Button variant="outline" onClick={() => router.push('/styles/import')}>
-                  <FileUp className="mr-2 h-4 w-4" />
-                  Import from Excel
+                <Button variant="outline" size="sm" className="h-8" onClick={() => router.push('/styles/import')}>
+                  <FileUp className="mr-1.5 h-3.5 w-3.5" />
+                  Import Excel
                 </Button>
               </>
             )}
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-1">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Styles</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{pagination.total}</div>
-            </CardContent>
-          </Card>
+        {/* KPI Cards */}
+        <StyleKPICards
+          styles={styles}
+          total={pagination.total}
+          activeFilter={kpiFilter}
+          onFilterClick={setKpiFilter}
+        />
+
+        {/* Filter Bar */}
+        <StyleFilterBar
+          filters={filters}
+          onFiltersChange={setFilters}
+          brands={brands}
+          retailers={retailers}
+          seasons={seasons}
+          categories={categories}
+        />
+
+        {/* Main Content */}
+        <div className="flex gap-4 min-h-[400px]">
+          {/* Left: Grid or Table */}
+          <div className={`flex-1 min-w-0 ${detailStyle ? 'hidden lg:block' : ''}`}>
+            {viewMode === 'grid' ? (
+              <StyleCardGrid
+                styles={filteredStyles}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                selectedStyleId={detailStyle?.id || null}
+                onSelectStyle={setDetailStyle}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                canEdit={can('style.edit')}
+                canDelete={can('style.delete')}
+              />
+            ) : (
+              <StyleTableView
+                styles={filteredStyles}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                onToggleSelectAll={toggleSelectAll}
+                selectedStyleId={detailStyle?.id || null}
+                onSelectStyle={setDetailStyle}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                canEdit={can('style.edit')}
+                canDelete={can('style.delete')}
+              />
+            )}
+          </div>
+
+          {/* Right: Detail Panel */}
+          {detailStyle && (
+            <div className="w-full lg:w-[380px] shrink-0">
+              <StyleDetailPanel
+                style={detailStyle}
+                onClose={() => setDetailStyle(null)}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                canEdit={can('style.edit')}
+                canDelete={can('style.delete')}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Search & Filters */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Search & Filter Styles</CardTitle>
-            <CardDescription>Search by style number or filter by brand/retailer</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by style number, name, or PO number..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="brand-filter">Filter by Brand</Label>
-                  <select
-                    id="brand-filter"
-                    value={brandFilter}
-                    onChange={(e) => setBrandFilter(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        {/* Pagination */}
+        {pagination.lastPage > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Showing {startItem}-{endItem} of {pagination.total} styles
+            </p>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0"
+                onClick={() => setPagination(p => ({ ...p, currentPage: Math.max(1, p.currentPage - 1) }))}
+                disabled={pagination.currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              {getPageNumbers().map((page, idx) =>
+                page === '...' ? (
+                  <span key={`dots-${idx}`} className="px-1 text-muted-foreground text-sm">...</span>
+                ) : (
+                  <Button key={page} variant={pagination.currentPage === page ? 'default' : 'outline'}
+                    size="sm" className="h-8 w-8 p-0 text-xs"
+                    onClick={() => setPagination(p => ({ ...p, currentPage: page as number }))}
                   >
-                    <option value="">All Brands</option>
-                    {brands.map((brand) => (
-                      <option key={brand.id} value={brand.id}>
-                        {brand.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="retailer-filter">Filter by Retailer</Label>
-                  <select
-                    id="retailer-filter"
-                    value={retailerFilter}
-                    onChange={(e) => setRetailerFilter(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="">All Retailers</option>
-                    {retailers.map((retailer) => (
-                      <option key={retailer.id} value={retailer.id}>
-                        {retailer.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {(brandFilter || retailerFilter) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setBrandFilter('');
-                    setRetailerFilter('');
-                  }}
-                >
-                  Clear Filters
-                </Button>
+                    {page}
+                  </Button>
+                )
               )}
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0"
+                onClick={() => setPagination(p => ({ ...p, currentPage: Math.min(p.lastPage, p.currentPage + 1) }))}
+                disabled={pagination.currentPage === pagination.lastPage}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Styles Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Styles</CardTitle>
-            <CardDescription>
-              Showing {styles.length} of {pagination.total} styles
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
-                      <Checkbox
-                        checked={isAllSelected}
-                        onCheckedChange={handleSelectAll}
-                        aria-label="Select all styles"
-                      />
-                    </TableHead>
-                    <TableHead>Style Number</TableHead>
-                    <TableHead>Style Name</TableHead>
-                    <TableHead>Fabric / Weight</TableHead>
-                    <TableHead>Color</TableHead>
-                    <TableHead>Retailer</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Used in POs</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {styles.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                        <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p>No styles found</p>
-                        {can('style.create') && (
-                          <Button
-                            variant="link"
-                            onClick={() => setIsCreateDialogOpen(true)}
-                            className="mt-2"
-                          >
-                            Create your first style
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    styles.map((style) => {
-                      return (
-                        <TableRow key={style.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedStyles.includes(style.id)}
-                              onCheckedChange={(checked) => handleSelectStyle(style.id, checked as boolean)}
-                              aria-label={`Select style ${style.style_number}`}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">{style.style_number}</TableCell>
-                          <TableCell>
-                            <span className="text-sm truncate max-w-xs block">
-                              {style.description || '-'}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            {style.fabric_type_name || style.fabric_weight ? (
-                              <div className="space-y-0.5">
-                                {style.fabric_type_name && <div className="text-sm">{style.fabric_type_name}</div>}
-                                {style.fabric_weight && <div className="text-xs text-muted-foreground">{style.fabric_weight}</div>}
-                              </div>
-                            ) : (
-                              '-'
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {style.color?.name ? (
-                              <Badge variant="outline">
-                                {style.color.name}
-                                {style.color.code && <span className="ml-1 text-xs opacity-70">({style.color.code})</span>}
-                              </Badge>
-                            ) : style.color_name ? (
-                              <span className="text-sm">{style.color_name}</span>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {style.retailer?.name || '-'}
-                          </TableCell>
-                          <TableCell>
-                            {style.category?.name || '-'}
-                          </TableCell>
-                          <TableCell>
-                            {style.purchase_orders && style.purchase_orders.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {style.purchase_orders.map((po: any) => (
-                                  <Button
-                                    key={po.id}
-                                    variant="link"
-                                    size="sm"
-                                    onClick={() => router.push(`/purchase-orders/${po.id}`)}
-                                    className="h-auto p-0"
-                                  >
-                                    {po.po_number}
-                                  </Button>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">Not used yet</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              {can('style.edit') && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleEdit(style)}
-                                  title="Edit style"
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              )}
-                              {can('style.delete') && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDelete(style)}
-                                  className="text-destructive hover:text-destructive"
-                                  title="Delete style"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Pagination */}
-            {pagination.lastPage > 1 && (
-              <div className="flex items-center justify-between mt-4">
-                <div className="text-sm text-muted-foreground">
-                  Page {pagination.currentPage} of {pagination.lastPage}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setPagination({ ...pagination, currentPage: pagination.currentPage - 1 })
-                    }
-                    disabled={pagination.currentPage === 1}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setPagination({ ...pagination, currentPage: pagination.currentPage + 1 })
-                    }
-                    disabled={pagination.currentPage === pagination.lastPage}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Info Card */}
-        <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-900">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              About Styles Library
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p>
-              <strong>Styles are now managed independently!</strong> Create your style library first,
-              then add styles to purchase orders as needed. This allows you to:
-            </p>
-            <ul className="list-disc list-inside space-y-1 ml-4">
-              <li>Create styles in bulk (manual or Excel import)</li>
-              <li>Reuse the same style across multiple purchase orders</li>
-              <li>Set different quantities and prices per PO</li>
-              <li>Update style master data without affecting existing POs</li>
-              <li>Track which POs are using each style</li>
-            </ul>
-            <p className="pt-2">
-              <strong>Workflow:</strong>
-            </p>
-            <ol className="list-decimal list-inside space-y-1 ml-4">
-              <li>Create styles using "Create Style" or "Import from Excel"</li>
-              <li>When creating a PO, select styles from your library</li>
-              <li>Set PO-specific quantities, prices, and assignments</li>
-              <li>The same style can be used in multiple POs with different settings</li>
-            </ol>
-          </CardContent>
-        </Card>
+          </div>
+        )}
       </div>
 
-      {/* Bulk Sample Process Modal */}
+      {/* Dialogs (unchanged) */}
       <BulkSampleProcessModal
         open={isSampleProcessModalOpen}
         onOpenChange={setIsSampleProcessModalOpen}
-        selectedStyleIds={selectedStyles}
-        onSuccess={() => {
-          setSelectedStyles([]);
-          fetchStyles();
-        }}
+        selectedStyleIds={Array.from(selectedIds)}
+        onSuccess={() => { setSelectedIds(new Set()); fetchStyles(); }}
       />
-
       <CreateStyleDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
-        onSuccess={() => {
-          fetchStyles();
-        }}
+        onSuccess={fetchStyles}
       />
-
       <EditStyleDialog
         open={isEditDialogOpen}
         onOpenChange={setIsEditDialogOpen}
         style={selectedStyle}
-        onSuccess={() => {
-          fetchStyles();
-          setSelectedStyle(null);
-        }}
+        onSuccess={() => { fetchStyles(); setSelectedStyle(null); setDetailStyle(null); }}
       />
-
       <DeleteStyleConfirmation
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
         style={selectedStyle}
-        onSuccess={() => {
-          fetchStyles();
-          setSelectedStyle(null);
-        }}
+        onSuccess={() => { fetchStyles(); setSelectedStyle(null); setDetailStyle(null); }}
       />
-
     </DashboardLayout>
   );
 }
