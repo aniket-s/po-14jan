@@ -286,7 +286,14 @@ class PurchaseOrderController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
-        $po = PurchaseOrder::with(['importer', 'agency', 'currency', 'styles.assignedFactory'])->findOrFail($id);
+        // For Factory users, constrain styles eager load to only their assigned styles
+        $stylesEagerLoad = $user->hasRole('Factory')
+            ? ['styles' => function ($query) use ($user) {
+                $query->wherePivot('assigned_factory_id', $user->id);
+            }]
+            : ['styles'];
+
+        $po = PurchaseOrder::with(array_merge(['importer', 'agency', 'currency'], $stylesEagerLoad))->findOrFail($id);
 
         // Check permission
         if (!$this->permissionService->canAccessPO($user, $po)) {
@@ -348,11 +355,6 @@ class PurchaseOrderController extends Controller
                 'shipping_method' => $po->metadata['shipping_method'] ?? null,
                 'terms_of_delivery' => $po->terms_of_delivery,
                 'styles' => $po->styles
-                    ->when($user->hasRole('Factory'), function ($styles) use ($user) {
-                        return $styles->filter(function ($style) use ($user) {
-                            return (int) $style->pivot->assigned_factory_id === $user->id;
-                        })->values();
-                    })
                     ->map(function ($style) {
                     return [
                         'id' => $style->id,
@@ -686,6 +688,31 @@ class PurchaseOrderController extends Controller
             return response()->json([
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Validate date sequence: po_date < ex_factory_date < etd_date < eta_date < in_warehouse_date
+        $poDate = $request->po_date ?? $po->po_date;
+        $etdDate = $request->has('etd_date') ? $request->etd_date : $po->etd_date;
+        $exFactoryDate = $request->has('ex_factory_date') ? $request->ex_factory_date : $po->ex_factory_date;
+        $etaDate = $request->has('eta_date') ? $request->eta_date : $po->eta_date;
+
+        if ($poDate && $etdDate && strtotime($etdDate) <= strtotime($poDate)) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => ['etd_date' => ['ETD date must be after PO date']],
+            ], 422);
+        }
+        if ($exFactoryDate && $etdDate && strtotime($etdDate) < strtotime($exFactoryDate)) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => ['etd_date' => ['ETD date must be on or after ex-factory date']],
+            ], 422);
+        }
+        if ($etaDate && $etdDate && strtotime($etaDate) < strtotime($etdDate)) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => ['eta_date' => ['ETA date must be on or after ETD date']],
             ], 422);
         }
 

@@ -589,9 +589,13 @@ class PurchaseOrderStyleController extends Controller
 
             // Get style to use its base quantity if no default provided
             $style = Style::find($styleId);
+            if (!$style) {
+                $errors[] = "Style {$styleId} not found";
+                continue;
+            }
 
             $pivotData = [
-                'quantity_in_po' => $request->default_quantity ?? $style->total_quantity,
+                'quantity_in_po' => $request->default_quantity ?? $style->total_quantity ?? 0,
                 'unit_price_in_po' => null, // Use style's base price
                 'status' => $request->default_status ?? 'pending',
             ];

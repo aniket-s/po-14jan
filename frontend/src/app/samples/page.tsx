@@ -435,8 +435,8 @@ export default function SamplesPage() {
           const response = await api.post('/upload/file', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
           });
-          if (response.data?.url) {
-            imageUrls.push(response.data.url);
+          if (response.data?.file?.url) {
+            imageUrls.push(response.data.file.url);
           }
         }
       }
@@ -453,8 +453,8 @@ export default function SamplesPage() {
           const response = await api.post('/upload/file', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
           });
-          if (response.data?.url) {
-            docUrls.push(response.data.url);
+          if (response.data?.file?.url) {
+            docUrls.push(response.data.file.url);
           }
         }
       }
