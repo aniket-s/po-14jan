@@ -159,6 +159,8 @@ class PdfImportController extends Controller
             'styles.*.size_breakdown' => 'nullable|array',
             'styles.*.quantity' => 'required|integer|min:1',
             'styles.*.unit_price' => 'required|numeric|min:0',
+            'styles.*.images' => 'nullable|array',
+            'styles.*.images.*' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -282,6 +284,7 @@ class PdfImportController extends Controller
                             'color_name' => $colorName,
                             'color_id' => $colorId,
                             'size_breakup' => $styleData['size_breakdown'] ?? null,
+                            'images' => !empty($styleData['images']) ? $styleData['images'] : null,
                             'total_quantity' => $styleData['quantity'],
                             'unit_price' => $styleData['unit_price'],
                             'fob_price' => $styleData['unit_price'],

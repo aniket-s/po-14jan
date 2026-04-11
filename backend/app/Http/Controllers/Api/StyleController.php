@@ -221,7 +221,7 @@ class StyleController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'style_number' => 'required|string|max:100',
+            'style_number' => 'sometimes|required|string|max:100',
             'description' => 'nullable|string',
             'fabric' => 'nullable|string|max:255',
             'color' => 'nullable|string|max:100',
@@ -280,53 +280,32 @@ class StyleController extends Controller
             'unit_price' => $style->unit_price,
         ];
 
+        // Build update data from only the fields present in the request
+        // This allows partial updates (e.g., updating just images without affecting other fields)
+        $updatableFields = [
+            'style_number', 'description', 'fabric', 'color', 'size_breakup',
+            'total_quantity', 'unit_price', 'fob_price', 'technical_file_paths', 'images',
+            'brand_id', 'retailer_id', 'category_id', 'season_id', 'gender_id',
+            'color_id', 'fabric_type_id', 'fabric_quality_id',
+            'color_code', 'color_name', 'fabric_name', 'fabric_type', 'fabric_type_name',
+            'fabric_weight', 'country_of_origin', 'item_description', 'fit',
+            'msrp', 'wholesale_price', 'is_active',
+        ];
+
+        $updateData = $request->only($updatableFields);
+
         // Auto-resolve fabric_type_name from fabric_type_id if not explicitly provided
-        $fabricTypeName = $request->fabric_type_name;
-        if (!$fabricTypeName && $request->fabric_type_id) {
-            $fabricType = \App\Models\FabricType::find($request->fabric_type_id);
+        if (!isset($updateData['fabric_type_name']) && isset($updateData['fabric_type_id'])) {
+            $fabricType = \App\Models\FabricType::find($updateData['fabric_type_id']);
             if ($fabricType) {
-                $fabricTypeName = $fabricType->name;
+                $updateData['fabric_type_name'] = $fabricType->name;
             }
         }
 
-        $style->update([
-            'style_number' => $request->style_number,
-            'description' => $request->description,
-            'fabric' => $request->fabric,
-            'color' => $request->color,
-            'size_breakup' => $request->size_breakup,
-            'total_quantity' => $request->total_quantity,
-            'unit_price' => $request->unit_price,
-            'fob_price' => $request->fob_price,
-            'technical_file_paths' => $request->technical_file_paths,
-            'images' => $request->images,
-            // Master data
-            'brand_id' => $request->brand_id,
-            'retailer_id' => $request->retailer_id,
-            'category_id' => $request->category_id,
-            'season_id' => $request->season_id,
-            'gender_id' => $request->gender_id,
-            'color_id' => $request->color_id,
-            'fabric_type_id' => $request->fabric_type_id,
-            'fabric_quality_id' => $request->fabric_quality_id,
-            // Enhanced fields
-            'color_code' => $request->color_code,
-            'color_name' => $request->color_name,
-            'fabric_name' => $request->fabric_name,
-            'fabric_type' => $request->fabric_type,
-            'fabric_type_name' => $fabricTypeName,
-            'fabric_weight' => $request->fabric_weight,
-            'country_of_origin' => $request->country_of_origin,
-            'item_description' => $request->item_description,
-            'fit' => $request->fit,
-            // Pricing fields
-            'msrp' => $request->msrp,
-            'wholesale_price' => $request->wholesale_price,
-            // Status
-            'is_active' => $request->input('is_active', $style->is_active),
-            // Audit
-            'updated_by' => $user->id,
-        ]);
+        // Always set audit field
+        $updateData['updated_by'] = $user->id;
+
+        $style->update($updateData);
 
         // Sync trims if provided
         if ($request->has('trims')) {

@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/table';
 import { Search, Package, ShoppingCart, X, AlertCircle } from 'lucide-react';
 import { getAllStyles, Style } from '@/services/styles';
+import { StyleImageUpload } from '@/components/styles/StyleImageUpload';
 import { toast } from 'sonner';
 
 interface SelectedStyle extends Style {
@@ -34,6 +35,7 @@ interface SelectedStyle extends Style {
   packing_method: 'solid' | 'prepack'; // NEW: Solid pack or Prepack
   ratio: Record<string, number>; // NEW: For prepack ratio
   packs_count: number; // NEW: Number of packs for prepack
+  uploaded_images: string[]; // Optional images uploaded during selection
 }
 
 interface StyleSelectorDialogProps {
@@ -105,6 +107,7 @@ export function StyleSelectorDialog({
         packing_method: 'solid', // Default to solid pack
         ratio: {}, // Empty ratio for prepack
         packs_count: 0, // Number of packs for prepack
+        uploaded_images: [], // Optional images uploaded during selection
       });
     } else {
       newSelected.delete(style.id);
@@ -149,6 +152,17 @@ export function StyleSelectorDialog({
     const style = newSelected.get(styleId);
     if (style) {
       style.unit_price_in_po = price;
+      newSelected.set(styleId, style);
+      setSelectedStyles(newSelected);
+    }
+  };
+
+  // Update uploaded images for selected style
+  const updateUploadedImages = (styleId: number, images: string[]) => {
+    const newSelected = new Map(selectedStyles);
+    const style = newSelected.get(styleId);
+    if (style) {
+      style.uploaded_images = images;
       newSelected.set(styleId, style);
       setSelectedStyles(newSelected);
     }
@@ -443,6 +457,18 @@ export function StyleSelectorDialog({
                             }
                             className="h-8 text-sm"
                           />
+                        </div>
+
+                        {/* Style Image Upload (optional) */}
+                        <div>
+                          <Label className="text-xs">Style Image (optional)</Label>
+                          <div className="mt-1">
+                            <StyleImageUpload
+                              images={style.uploaded_images || []}
+                              onImagesChange={(imgs) => updateUploadedImages(style.id, imgs)}
+                              compact={false}
+                            />
+                          </div>
                         </div>
 
                         {/* Packing Method - Solid or Prepack */}

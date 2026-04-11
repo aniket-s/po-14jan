@@ -389,6 +389,7 @@ export interface PdfCreatePORequest {
     size_breakdown?: Record<string, number> | null;
     quantity: number;
     unit_price: number;
+    images?: string[];
   }>;
   temp_file_path?: string;
 }

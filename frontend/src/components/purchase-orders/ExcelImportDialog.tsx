@@ -22,8 +22,9 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { FileUp, Loader2, CheckCircle, XCircle, Download, AlertTriangle, Save, BookmarkPlus, Star } from 'lucide-react';
+import { FileUp, Loader2, CheckCircle, XCircle, Download, AlertTriangle, Save, BookmarkPlus, Star, ImageIcon } from 'lucide-react';
 import api from '@/lib/api';
+import { StyleImageUpload } from '@/components/styles/StyleImageUpload';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   DropdownMenu,
@@ -105,6 +106,7 @@ export function ExcelImportDialog({ isOpen, onClose, purchaseOrderId, onImportCo
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string>('');
+  const [styleImages, setStyleImages] = useState<Record<number, string[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Saved mappings state
@@ -276,6 +278,7 @@ export function ExcelImportDialog({ isOpen, onClose, purchaseOrderId, onImportCo
           temp_file_path: tempFilePath,
           column_mapping: columnMapping,
           skip_first_row: true,
+          style_images: Object.keys(styleImages).length > 0 ? styleImages : undefined,
         }
       );
 
@@ -320,6 +323,7 @@ export function ExcelImportDialog({ isOpen, onClose, purchaseOrderId, onImportCo
     setTempFilePath('');
     setColumnMapping({});
     setImportResult(null);
+    setStyleImages({});
     setError('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -552,26 +556,49 @@ export function ExcelImportDialog({ isOpen, onClose, purchaseOrderId, onImportCo
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-[80px]">
+                          <div className="flex items-center gap-1">
+                            <ImageIcon className="h-4 w-4" />
+                            Image
+                          </div>
+                        </TableHead>
                         {allFields.filter(f => columnMapping[f.key] !== null).map(field => (
                           <TableHead key={field.key}>{field.label}</TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {analysis.sample_rows.slice(0, 5).map((_, rowIndex) => (
-                        <TableRow key={rowIndex}>
-                          {allFields.filter(f => columnMapping[f.key] !== null).map(field => (
-                            <TableCell key={field.key}>
-                              {getPreviewValue(rowIndex, field.key)}
+                      {analysis.sample_rows.slice(0, 5).map((_, rowIndex) => {
+                        const excelRow = rowIndex + 2;
+                        return (
+                          <TableRow key={rowIndex}>
+                            <TableCell>
+                              <StyleImageUpload
+                                images={styleImages[excelRow] || []}
+                                onImagesChange={(imgs) =>
+                                  setStyleImages(prev => ({ ...prev, [excelRow]: imgs }))
+                                }
+                                compact
+                              />
                             </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
+                            {allFields.filter(f => columnMapping[f.key] !== null).map(field => (
+                              <TableCell key={field.key}>
+                                {getPreviewValue(rowIndex, field.key)}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
                 <p className="text-sm text-muted-foreground mt-4">
                   Showing first 5 rows. Total rows to import: {analysis.total_rows}
+                  {Object.keys(styleImages).length > 0 && (
+                    <span className="ml-2 text-green-600">
+                      ({Object.values(styleImages).filter(imgs => imgs.length > 0).length} style(s) with images)
+                    </span>
+                  )}
                 </p>
               </CardContent>
             </Card>

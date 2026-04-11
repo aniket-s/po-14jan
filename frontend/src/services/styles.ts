@@ -331,6 +331,7 @@ export interface ExcelImportRequest {
   start_row?: number;
   end_row?: number;
   image_columns?: Record<string, number>;
+  style_images?: Record<number, string[]>;
 }
 
 export interface ExcelImportResult {
