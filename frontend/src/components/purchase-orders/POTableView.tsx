@@ -1,8 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -33,6 +40,8 @@ interface POTableViewProps {
   onDelete: (id: number) => void;
   onBulkDelete?: (ids: number[]) => void;
   onExport?: (pos: PurchaseOrder[]) => void;
+  onStatusChange?: (poId: number, newStatus: string) => Promise<void>;
+  onBulkStatusChange?: (poIds: number[], newStatus: string) => Promise<void>;
   canEdit: boolean;
   canDelete: boolean;
   canExport: boolean;
@@ -46,6 +55,8 @@ export function POTableView({
   onDelete,
   onBulkDelete,
   onExport,
+  onStatusChange,
+  onBulkStatusChange,
   canEdit,
   canDelete,
   canExport,
@@ -53,6 +64,12 @@ export function POTableView({
   const [sortField, setSortField] = useState<SortField>('po_date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [changingStatusId, setChangingStatusId] = useState<number | null>(null);
+
+  // Clear selection when data changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [purchaseOrders]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -201,6 +218,39 @@ export function POTableView({
               Export Selected
             </Button>
           )}
+          {canEdit && onBulkStatusChange && (
+            <>
+              <Button
+                size="sm"
+                className="h-7 bg-green-600 hover:bg-green-700 text-white"
+                onClick={async () => {
+                  await onBulkStatusChange(Array.from(selectedIds), 'active');
+                }}
+              >
+                Mark Active
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                onClick={async () => {
+                  await onBulkStatusChange(Array.from(selectedIds), 'completed');
+                }}
+              >
+                Mark Completed
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-red-600 border-red-200 hover:bg-red-50"
+                onClick={async () => {
+                  await onBulkStatusChange(Array.from(selectedIds), 'cancelled');
+                }}
+              >
+                Cancel
+              </Button>
+            </>
+          )}
           {canDelete && onBulkDelete && (
             <Button
               size="sm"
@@ -209,7 +259,6 @@ export function POTableView({
               onClick={() => {
                 if (confirm(`Delete ${selectedIds.size} purchase order(s)? This action cannot be undone.`)) {
                   onBulkDelete(Array.from(selectedIds));
-                  setSelectedIds(new Set());
                 }
               }}
             >
@@ -299,8 +348,34 @@ export function POTableView({
                         </div>
                       </Link>
                     </TableCell>
-                    <TableCell>
-                      {getStatusBadge(po.status)}
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {canEdit && onStatusChange && (po as any).allowed_transitions?.length > 0 ? (
+                        <Select
+                          value={po.status}
+                          onValueChange={async (val) => {
+                            setChangingStatusId(po.id);
+                            await onStatusChange(po.id, val);
+                            setChangingStatusId(null);
+                          }}
+                          disabled={changingStatusId === po.id}
+                        >
+                          <SelectTrigger className="h-7 w-[110px] text-[10px] px-2">
+                            <SelectValue>{getStatusBadge(po.status)}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={po.status} disabled>
+                              <span className="capitalize">{po.status.replace(/_/g, ' ')} (current)</span>
+                            </SelectItem>
+                            {((po as any).allowed_transitions || []).map((s: string) => (
+                              <SelectItem key={s} value={s}>
+                                <span className="capitalize">{s.replace(/_/g, ' ')}</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        getStatusBadge(po.status)
+                      )}
                     </TableCell>
                     <TableCell>
                       <span className="text-xs">{formatDate(po.po_date)}</span>
