@@ -94,13 +94,14 @@ class Style extends Model
      */
     public function getImagesAttribute($value)
     {
-        $images = json_decode($value, true);
+        $images = is_string($value) ? json_decode($value, true) : $value;
 
         if (!is_array($images)) {
             return [];
         }
 
         return array_map(function($imageUrl) {
+            if (!is_string($imageUrl)) return $imageUrl;
             // If it's already an absolute URL, return as-is
             if (str_starts_with($imageUrl, 'http://') || str_starts_with($imageUrl, 'https://')) {
                 return $imageUrl;
@@ -121,13 +122,14 @@ class Style extends Model
      */
     public function getTechnicalFilePathsAttribute($value)
     {
-        $paths = json_decode($value, true);
+        $paths = is_string($value) ? json_decode($value, true) : $value;
 
         if (!is_array($paths)) {
             return [];
         }
 
         return array_map(function($fileUrl) {
+            if (!is_string($fileUrl)) return $fileUrl;
             // If it's already an absolute URL, return as-is
             if (str_starts_with($fileUrl, 'http://') || str_starts_with($fileUrl, 'https://')) {
                 return $fileUrl;
