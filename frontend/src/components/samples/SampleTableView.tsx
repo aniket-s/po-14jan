@@ -407,10 +407,9 @@ function GroupRows({
             </TableCell>
             <TableCell>
               <span className="text-xs text-muted-foreground">
-                {new Date(sample.submission_date || sample.created_at).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                })}
+                {(sample.submission_date || sample.created_at)
+                  ? new Date(sample.submission_date || sample.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                  : '-'}
               </span>
             </TableCell>
             <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>

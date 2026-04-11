@@ -189,39 +189,9 @@ export default function SamplesPage() {
     return () => clearTimeout(timer);
   }, [filters.search, filters.status]);
 
-  // Filter samples locally based on all filter criteria + KPI filter
-  const filteredSamples = useMemo(() => {
+  // Base filtered samples (sampleType + dateRange but NOT kpiFilter) - used by KPI cards
+  const baseFilteredSamples = useMemo(() => {
     let result = samples;
-
-    // KPI filter
-    if (kpiFilter) {
-      switch (kpiFilter) {
-        case 'needs_agency_review':
-          result = result.filter(s => s.agency_status === 'pending');
-          break;
-        case 'agency_approved':
-          result = result.filter(s => s.agency_status === 'approved');
-          break;
-        case 'agency_rejected':
-          result = result.filter(s => s.agency_status === 'rejected');
-          break;
-        case 'passed_to_importer':
-          result = result.filter(s => s.agency_status === 'approved' && s.importer_status === 'pending');
-          break;
-        case 'needs_importer_review':
-          result = result.filter(s => s.agency_status === 'approved' && s.importer_status === 'pending');
-          break;
-        case 'pending':
-          result = result.filter(s => s.final_status === 'pending');
-          break;
-        case 'approved':
-          result = result.filter(s => s.final_status === 'approved');
-          break;
-        case 'rejected':
-          result = result.filter(s => s.final_status === 'rejected');
-          break;
-      }
-    }
 
     // Sample type filter
     if (filters.sampleType !== 'all') {
@@ -259,7 +229,41 @@ export default function SamplesPage() {
     }
 
     return result;
-  }, [samples, kpiFilter, filters.sampleType, filters.dateRange]);
+  }, [samples, filters.sampleType, filters.dateRange]);
+
+  // Full filtered samples (base + KPI filter) - used by board/table
+  const filteredSamples = useMemo(() => {
+    let result = baseFilteredSamples;
+
+    if (kpiFilter) {
+      switch (kpiFilter) {
+        case 'needs_agency_review':
+          result = result.filter(s => s.agency_status === 'pending');
+          break;
+        case 'agency_approved':
+          result = result.filter(s => s.agency_status === 'approved');
+          break;
+        case 'agency_rejected':
+          result = result.filter(s => s.agency_status === 'rejected');
+          break;
+        case 'passed_to_importer':
+        case 'needs_importer_review':
+          result = result.filter(s => s.agency_status === 'approved' && s.importer_status === 'pending');
+          break;
+        case 'pending':
+          result = result.filter(s => s.final_status === 'pending');
+          break;
+        case 'approved':
+          result = result.filter(s => s.final_status === 'approved');
+          break;
+        case 'rejected':
+          result = result.filter(s => s.final_status === 'rejected');
+          break;
+      }
+    }
+
+    return result;
+  }, [baseFilteredSamples, kpiFilter]);
 
   // Permission checks
   const canApproveAsAgency = useCallback((sample: Sample) => {
@@ -348,6 +352,7 @@ export default function SamplesPage() {
       setIsApprovalDialogOpen(false);
       setApprovalSample(null);
       setApprovalComments('');
+      setSelectedSample(null);
       fetchSamples();
     } catch (error) {
       console.error('Failed to process approval:', error);
@@ -366,6 +371,7 @@ export default function SamplesPage() {
           : `/samples/${id}/importer-approve`;
         await api.post(endpoint, { comments: 'Bulk approved' });
       }
+      setSelectedSample(null);
       fetchSamples();
     } catch (error) {
       console.error('Bulk approval failed:', error);
@@ -375,7 +381,6 @@ export default function SamplesPage() {
   };
 
   const handleBulkReject = async (sampleIds: number[], type: 'agency' | 'importer') => {
-    // Open a dialog for rejection reason - for now, use prompt
     const reason = window.prompt('Enter rejection reason for all selected samples:');
     if (!reason) return;
     setIsSubmitting(true);
@@ -386,6 +391,7 @@ export default function SamplesPage() {
           : `/samples/${id}/importer-reject`;
         await api.post(endpoint, { reason, comments: reason });
       }
+      setSelectedSample(null);
       fetchSamples();
     } catch (error) {
       console.error('Bulk rejection failed:', error);
@@ -469,6 +475,7 @@ export default function SamplesPage() {
       });
       setIsResubmitDialogOpen(false);
       setResubmitSample(null);
+      setSelectedSample(null);
       fetchSamples();
     } catch (error: any) {
       console.error('Failed to resubmit:', error);
@@ -763,7 +770,7 @@ export default function SamplesPage() {
 
         {/* KPI Cards */}
         <SampleKPICards
-          samples={samples}
+          samples={baseFilteredSamples}
           role={userRole}
           activeFilter={kpiFilter}
           onFilterClick={setKpiFilter}
