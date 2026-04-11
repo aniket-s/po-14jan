@@ -30,6 +30,7 @@ import {
   Truck,
   ClipboardCheck,
   AlertTriangle,
+  CheckCircle2,
   Search,
   ArrowUpDown,
   ArrowUp,
@@ -37,6 +38,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '@/lib/api';
 import { StatCardsSkeleton, TableSkeleton } from '@/components/skeletons';
 import { useAuth } from '@/contexts/AuthContext';
@@ -127,6 +129,26 @@ interface DelayItem {
   status: string;
   severity: 'warning' | 'critical';
   details: string;
+}
+
+interface ApprovedSampleItem {
+  id: number;
+  po_number: string;
+  style_number: string;
+  factory_id: number | null;
+  factory_name: string;
+  sample_type: string;
+  sample_reference: string | null;
+  submission_date: string | null;
+  agency_status: string;
+  agency_approved_by: string;
+  agency_approved_at: string | null;
+  importer_status: string;
+  importer_approved_by: string;
+  importer_approved_at: string | null;
+  final_status: string;
+  submitted_by: string;
+  notes: string | null;
 }
 
 interface ReportData<T> {
@@ -342,6 +364,7 @@ export default function ReportsPage() {
   const [pendingShipmentsData, setPendingShipmentsData] = useState<ReportData<PendingShipmentItem> | null>(null);
   const [pendingSamplesData, setPendingSamplesData] = useState<ReportData<PendingSampleItem> | null>(null);
   const [delayData, setDelayData] = useState<ReportData<DelayItem> | null>(null);
+  const [approvedSamplesData, setApprovedSamplesData] = useState<ReportData<ApprovedSampleItem> | null>(null);
 
   // Set default date range
   useEffect(() => {
@@ -388,6 +411,11 @@ export default function ReportsPage() {
           setPendingSamplesData(response.data);
           if (response.data.factories) setFactories(response.data.factories);
           break;
+        case 'approved-samples':
+          response = await api.get('/reports/approved-samples', { params });
+          setApprovedSamplesData(response.data);
+          if (response.data.factories) setFactories(response.data.factories);
+          break;
         case 'delays':
           response = await api.get('/reports/delays', { params });
           setDelayData(response.data);
@@ -396,6 +424,7 @@ export default function ReportsPage() {
       }
     } catch (error) {
       console.error(`Failed to fetch ${activeTab} report:`, error);
+      toast.error('Failed to load report data. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -409,13 +438,23 @@ export default function ReportsPage() {
         'factory-wise': '/reports/factory-wise',
         'pending-shipments': '/reports/pending-shipments',
         'pending-samples': '/reports/pending-samples',
+        'approved-samples': '/reports/approved-samples',
         delays: '/reports/delays',
       };
       const response = await api.get(endpointMap[activeTab], {
         params,
         responseType: 'blob',
+        headers: { Accept: 'text/csv' },
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+
+      // Check if the response is actually CSV (not a JSON error)
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      if (blob.size === 0) {
+        toast.error('Export returned empty data. Try adjusting your filters.');
+        return;
+      }
+
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `${activeTab}_report_${startDate}_${endDate}.csv`);
@@ -423,8 +462,10 @@ export default function ReportsPage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      toast.success('CSV exported successfully.');
     } catch (error) {
       console.error('Export failed:', error);
+      toast.error('Export failed. Please try again.');
     } finally {
       setExporting(false);
     }
@@ -455,6 +496,12 @@ export default function ReportsPage() {
         alert: (pendingSamplesData?.summary?.overdue ?? 0) > 0,
       },
       {
+        title: 'Approved Samples',
+        value: approvedSamplesData?.summary?.total_approved ?? '—',
+        icon: <CheckCircle2 className="h-5 w-5 text-green-600" />,
+        subtitle: `${approvedSamplesData?.summary?.by_importer ?? 0} by importer`,
+      },
+      {
         title: 'Active Delays',
         value: delayData?.summary?.total_delays ?? '—',
         icon: <AlertTriangle className="h-5 w-5 text-muted-foreground" />,
@@ -464,7 +511,7 @@ export default function ReportsPage() {
     ];
 
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         {cards.map((card) => (
           <Card key={card.title} className={card.alert ? 'border-red-200 dark:border-red-900' : ''}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -872,6 +919,95 @@ export default function ReportsPage() {
     );
   }
 
+  // ─── Approved Samples Tab ───────────────────────────────────────────────────
+
+  function ApprovedSamplesTab() {
+    const items = approvedSamplesData?.items ?? [];
+    const {
+      paginated, page, setPage, totalPages, toggleSort, sortKey, sortDir, totalFiltered,
+    } = useSortedPaginatedData(
+      items,
+      ['po_number', 'style_number', 'factory_name', 'sample_type'] as (keyof ApprovedSampleItem)[],
+      search,
+    );
+
+    return (
+      <Card>
+        <CardContent className="pt-4">
+          {/* Summary bar */}
+          <div className="flex gap-4 mb-4 flex-wrap">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Total Approved:</span>
+              <span className="font-bold text-green-600">{approvedSamplesData?.summary?.total_approved ?? 0}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Agency Approved:</span>
+              <span className="font-bold">{approvedSamplesData?.summary?.by_agency ?? 0}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Importer Approved:</span>
+              <span className="font-bold">{approvedSamplesData?.summary?.by_importer ?? 0}</span>
+            </div>
+          </div>
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortableHeader label="PO #" sortKey="po_number" currentSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                  <SortableHeader label="Style #" sortKey="style_number" currentSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                  <SortableHeader label="Factory" sortKey="factory_name" currentSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                  <SortableHeader label="Sample Type" sortKey="sample_type" currentSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                  <SortableHeader label="Submitted" sortKey="submission_date" currentSortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                  <TableHead className="text-xs">Agency</TableHead>
+                  <TableHead className="text-xs">Importer</TableHead>
+                  <TableHead className="text-xs">Submitted By</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginated.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                      No approved samples found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginated.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-medium text-sm">{row.po_number}</TableCell>
+                      <TableCell className="text-sm">{row.style_number}</TableCell>
+                      <TableCell className="text-sm">{row.factory_name}</TableCell>
+                      <TableCell className="text-sm">{row.sample_type}</TableCell>
+                      <TableCell className="text-sm">{row.submission_date ?? '—'}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          {statusBadge(row.agency_status)}
+                          {row.agency_approved_at && (
+                            <span className="text-[10px] text-muted-foreground mt-0.5">{row.agency_approved_at}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          {statusBadge(row.importer_status)}
+                          {row.importer_approved_at && (
+                            <span className="text-[10px] text-muted-foreground mt-0.5">{row.importer_approved_at}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">{row.submitted_by}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <PaginationControls page={page} totalPages={totalPages} totalFiltered={totalFiltered} onPageChange={setPage} />
+        </CardContent>
+      </Card>
+    );
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -949,15 +1085,15 @@ export default function ReportsPage() {
         </Card>
 
         {/* KPI Cards */}
-        {loading && !factoryWiseData && !pendingShipmentsData && !pendingSamplesData && !delayData ? (
-          <StatCardsSkeleton count={4} />
+        {loading && !factoryWiseData && !pendingShipmentsData && !pendingSamplesData && !approvedSamplesData && !delayData ? (
+          <StatCardsSkeleton count={5} />
         ) : (
           renderKPICards()
         )}
 
         {/* Report Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v)} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="factory-wise" className="text-xs sm:text-sm">
               <Factory className="mr-1.5 h-4 w-4 hidden sm:inline" />
               Factory Wise
@@ -969,6 +1105,10 @@ export default function ReportsPage() {
             <TabsTrigger value="pending-samples" className="text-xs sm:text-sm">
               <ClipboardCheck className="mr-1.5 h-4 w-4 hidden sm:inline" />
               Pending Samples
+            </TabsTrigger>
+            <TabsTrigger value="approved-samples" className="text-xs sm:text-sm">
+              <CheckCircle2 className="mr-1.5 h-4 w-4 hidden sm:inline" />
+              Approved Samples
             </TabsTrigger>
             <TabsTrigger value="delays" className="text-xs sm:text-sm">
               <AlertTriangle className="mr-1.5 h-4 w-4 hidden sm:inline" />
@@ -988,6 +1128,9 @@ export default function ReportsPage() {
               </TabsContent>
               <TabsContent value="pending-samples">
                 <PendingSamplesTab />
+              </TabsContent>
+              <TabsContent value="approved-samples">
+                <ApprovedSamplesTab />
               </TabsContent>
               <TabsContent value="delays">
                 <DelayReportsTab />

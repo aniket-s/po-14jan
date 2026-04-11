@@ -827,6 +827,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/pending-shipments', [ReportController::class, 'pendingShipments']);
         Route::get('/pending-samples', [ReportController::class, 'pendingSamples']);
         Route::get('/delays', [ReportController::class, 'delays']);
+        Route::get('/approved-samples', [ReportController::class, 'approvedSamples']);
 
         // Statistics endpoints
         Route::get('/stats/purchase-orders', [ReportController::class, 'purchaseOrderStats']);
