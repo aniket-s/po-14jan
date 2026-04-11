@@ -405,7 +405,19 @@ export function POCreateWizard({
         </div>
 
         {/* Step Content */}
-        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (currentStep < STEPS.length - 1) return;
+            handleSubmit(onSubmit)(e);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && currentStep < STEPS.length - 1) {
+              e.preventDefault();
+            }
+          }}
+          className="flex-1 overflow-y-auto"
+        >
           <div className="p-4 space-y-4">
             {/* Step 1: Basic Info */}
             {currentStep === 0 && (
