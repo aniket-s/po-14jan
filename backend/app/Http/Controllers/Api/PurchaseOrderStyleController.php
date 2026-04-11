@@ -182,10 +182,17 @@ class PurchaseOrderStyleController extends Controller
         // Update PO totals
         $po->updateTotals();
 
+        // Auto-transition: draft → active when first styles are attached
+        if ($attachedCount > 0 && $po->status === 'draft') {
+            $po->status = 'active';
+            $po->save();
+        }
+
         return response()->json([
             'message' => "Successfully attached {$attachedCount} style(s) to purchase order",
             'attached_count' => $attachedCount,
             'errors' => $errors,
+            'status' => $po->status,
             'po_totals' => [
                 'total_quantity' => $po->total_quantity,
                 'total_value' => $po->total_value,
@@ -608,10 +615,17 @@ class PurchaseOrderStyleController extends Controller
         // Update PO totals
         $po->updateTotals();
 
+        // Auto-transition: draft → active when first styles are attached
+        if ($attachedCount > 0 && $po->status === 'draft') {
+            $po->status = 'active';
+            $po->save();
+        }
+
         return response()->json([
             'message' => "Successfully attached {$attachedCount} style(s) to purchase order",
             'attached_count' => $attachedCount,
             'errors' => $errors,
+            'status' => $po->status,
             'po_totals' => [
                 'total_quantity' => $po->total_quantity,
                 'total_value' => $po->total_value,

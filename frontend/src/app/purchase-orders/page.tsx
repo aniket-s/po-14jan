@@ -439,6 +439,29 @@ export default function PurchaseOrdersPage() {
               a.click();
               URL.revokeObjectURL(url);
             }}
+            onStatusChange={async (poId, newStatus) => {
+              try {
+                await api.post(`/purchase-orders/${poId}/status`, { status: newStatus });
+                fetchPurchaseOrders();
+              } catch (e: any) {
+                alert(e.response?.data?.message || 'Failed to update status');
+              }
+            }}
+            onBulkStatusChange={async (poIds, newStatus) => {
+              const failures: string[] = [];
+              for (const id of poIds) {
+                try {
+                  await api.post(`/purchase-orders/${id}/status`, { status: newStatus });
+                } catch (e: any) {
+                  const po = purchaseOrders.find(p => p.id === id);
+                  failures.push(`${po?.po_number || id}: ${e.response?.data?.message || 'Failed'}`);
+                }
+              }
+              fetchPurchaseOrders();
+              if (failures.length > 0) {
+                alert(`Some POs could not be updated:\n${failures.join('\n')}`);
+              }
+            }}
             canEdit={can('po.edit')}
             canDelete={can('po.delete')}
             canExport={can('po.export')}

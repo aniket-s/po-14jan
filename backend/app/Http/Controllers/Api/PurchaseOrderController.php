@@ -175,6 +175,7 @@ class PurchaseOrderController extends Controller
                         'po_number' => $po->po_number,
                         'headline' => $po->headline,
                         'status' => $po->status,
+                        'allowed_transitions' => $this->getAllowedTransitions($po->status),
                         'po_date' => $po->po_date?->format('Y-m-d'),
                         'revision_date' => $po->revision_date?->format('Y-m-d'),
                         'shipping_term' => $po->shipping_term,
@@ -269,6 +270,7 @@ class PurchaseOrderController extends Controller
                     'total_value' => $po->total_value,
                     'currency' => ($po->relationLoaded('currency') ? $po->getRelation('currency')?->code : null) ?? $po->getAttributes()['currency'] ?? 'USD',
                     'status' => $po->status,
+                    'allowed_transitions' => $this->getAllowedTransitions($po->status),
                     'styles_count' => $getVisibleStyles($po)->count(),
                     'created_at' => $po->created_at,
                 ];
