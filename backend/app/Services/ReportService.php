@@ -476,7 +476,7 @@ class ReportService
         }
 
         if (!empty($filters['result'])) {
-            $query->where('inspection_result', $filters['result']);
+            $query->where('result', $filters['result']);
         }
 
         if (!empty($filters['inspection_type_id'])) {
@@ -490,27 +490,26 @@ class ReportService
 
         $inspections = $query->get()->map(function ($inspection) {
             return [
-                'inspection_reference' => $inspection->inspection_reference,
-                'style_number' => $inspection->style->style_number,
-                'inspection_type' => $inspection->inspectionType->name,
-                'inspector' => $inspection->inspector->name,
-                'inspected_at' => $inspection->inspected_at->format('Y-m-d'),
+                'inspection_number' => $inspection->inspection_number,
+                'style_number' => $inspection->style->style_number ?? '-',
+                'inspection_type' => $inspection->inspectionType->name ?? '-',
+                'inspector' => $inspection->inspector->name ?? '-',
+                'inspected_at' => $inspection->inspected_at?->format('Y-m-d'),
                 'lot_size' => $inspection->lot_size,
                 'sample_size' => $inspection->sample_size,
-                'result' => $inspection->inspection_result,
-                'critical_found' => $inspection->critical_found,
-                'major_found' => $inspection->major_found,
-                'minor_found' => $inspection->minor_found,
-                'total_defects' => $inspection->total_defects_found,
-                'certificate_number' => $inspection->certificate_number,
+                'result' => $inspection->result,
+                'critical_defects' => $inspection->critical_defects,
+                'major_defects' => $inspection->major_defects,
+                'minor_defects' => $inspection->minor_defects,
+                'total_defects' => ($inspection->critical_defects ?? 0) + ($inspection->major_defects ?? 0) + ($inspection->minor_defects ?? 0),
             ];
         });
 
         $summary = [
             'total_inspections' => $inspections->count(),
-            'passed' => $inspections->where('result', 'pass')->count(),
-            'failed' => $inspections->where('result', 'fail')->count(),
-            'pass_rate' => $inspections->count() > 0 ? round(($inspections->where('result', 'pass')->count() / $inspections->count()) * 100, 2) : 0,
+            'passed' => $inspections->where('result', 'passed')->count(),
+            'failed' => $inspections->where('result', 'failed')->count(),
+            'pass_rate' => $inspections->count() > 0 ? round(($inspections->where('result', 'passed')->count() / $inspections->count()) * 100, 2) : 0,
             'total_defects' => $inspections->sum('total_defects'),
         ];
 
@@ -688,7 +687,7 @@ class ReportService
             ->whereNotNull('assigned_factory_id')
             ->where(function ($q) {
                 $q->whereNull('production_status')
-                  ->orWhereIn('production_status', ['pending', 'in_production']);
+                  ->orWhereNotIn('production_status', ['shipped']);
             })
             ->where(function ($q) {
                 $q->whereNull('shipping_approval_status')
@@ -854,6 +853,91 @@ class ReportService
     }
 
     /**
+     * Get approved samples report: all samples that have been fully approved.
+     */
+    public function getApprovedSamplesReport(User $user, array $filters): array
+    {
+        $query = Sample::query()
+            ->where('final_status', 'approved')
+            ->with([
+                'style:id,style_number,description,assigned_factory_id',
+                'style.assignedFactory:id,name,company',
+                'style.purchaseOrders:id,po_number',
+                'sampleType:id,name,display_name,typical_days',
+                'submittedBy:id,name',
+                'agencyApprovedBy:id,name',
+                'importerApprovedBy:id,name',
+            ]);
+
+        // Apply PO-level access control
+        $poIds = $this->getAccessiblePOIds($user);
+        if ($poIds !== null) {
+            $query->whereHas('style.purchaseOrders', function ($q) use ($poIds) {
+                $q->whereIn('purchase_orders.id', $poIds);
+            });
+        }
+
+        if (!empty($filters['factory_id'])) {
+            $query->whereHas('style', function ($q) use ($filters) {
+                $q->where('assigned_factory_id', $filters['factory_id']);
+            });
+        }
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $query->whereBetween('submission_date', [$filters['start_date'], $filters['end_date']]);
+        }
+
+        if (!empty($filters['sample_type'])) {
+            $query->where('sample_type_id', $filters['sample_type']);
+        }
+
+        $rows = $query->get();
+
+        $items = $rows->map(function ($sample) {
+            $style = $sample->style;
+            $factory = $style?->assignedFactory;
+            $poNumber = $style?->purchaseOrders?->first()?->po_number ?? '-';
+
+            return [
+                'id' => $sample->id,
+                'po_number' => $poNumber,
+                'style_number' => $style->style_number ?? '-',
+                'factory_id' => $factory->id ?? null,
+                'factory_name' => $factory->name ?? '-',
+                'sample_type' => $sample->sampleType->display_name ?? $sample->sampleType->name ?? '-',
+                'sample_reference' => $sample->sample_reference,
+                'submission_date' => $sample->submission_date,
+                'agency_status' => $sample->agency_status,
+                'agency_approved_by' => $sample->agencyApprovedBy->name ?? '-',
+                'agency_approved_at' => $sample->agency_approved_at,
+                'importer_status' => $sample->importer_status,
+                'importer_approved_by' => $sample->importerApprovedBy->name ?? '-',
+                'importer_approved_at' => $sample->importer_approved_at,
+                'final_status' => $sample->final_status,
+                'submitted_by' => $sample->submittedBy->name ?? '-',
+                'notes' => $sample->notes,
+            ];
+        })->sortByDesc('submission_date')->values();
+
+        // Get factory list from the styles
+        $factories = $rows->map(fn($s) => $s->style?->assignedFactory)
+            ->filter()
+            ->unique('id')
+            ->map(fn($f) => ['id' => $f->id, 'name' => $f->name, 'company' => $f->company])
+            ->values();
+
+        return [
+            'summary' => [
+                'total_approved' => $items->count(),
+                'by_agency' => $items->where('agency_status', 'approved')->count(),
+                'by_importer' => $items->where('importer_status', 'approved')->count(),
+            ],
+            'items' => $items,
+            'factories' => $factories,
+        ];
+    }
+
+    /**
      * Get delay report: all delayed items across shipments, ex-factory dates, and samples.
      */
     public function getDelayReport(User $user, array $filters): array
@@ -883,6 +967,10 @@ class ReportService
             });
         }
 
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $shipmentQuery->whereBetween('estimated_delivery_date', [$filters['start_date'], $filters['end_date']]);
+        }
+
         $shipmentQuery->get()->each(function ($shipment) use ($delays, $now) {
             $daysDelayed = Carbon::parse($shipment->estimated_delivery_date)->diffInDays($now);
             $delays->push([
@@ -905,7 +993,7 @@ class ReportService
             ->whereNotNull('assigned_factory_id')
             ->where(function ($q) {
                 $q->whereNull('production_status')
-                  ->orWhereIn('production_status', ['pending', 'in_production']);
+                  ->orWhereNotIn('production_status', ['shipped']);
             })
             ->where(function ($q) use ($now) {
                 $q->where('ex_factory_date', '<', $now)
@@ -925,6 +1013,15 @@ class ReportService
 
         if (!empty($filters['factory_id'])) {
             $exFactoryQuery->where('assigned_factory_id', $filters['factory_id']);
+        }
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $exFactoryQuery->where(function ($q) use ($filters) {
+                $q->whereBetween('ex_factory_date', [$filters['start_date'], $filters['end_date']])
+                  ->orWhereHas('purchaseOrder', function ($pq) use ($filters) {
+                      $pq->whereBetween('ex_factory_date', [$filters['start_date'], $filters['end_date']]);
+                  });
+            });
         }
 
         $exFactoryQuery->get()->each(function ($pos) use ($delays, $now) {
@@ -968,6 +1065,10 @@ class ReportService
             $sampleQuery->whereHas('style', function ($q) use ($filters) {
                 $q->where('assigned_factory_id', $filters['factory_id']);
             });
+        }
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $sampleQuery->whereBetween('submission_date', [$filters['start_date'], $filters['end_date']]);
         }
 
         $sampleQuery->get()->each(function ($sample) use ($delays, $now) {

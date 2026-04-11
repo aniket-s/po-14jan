@@ -440,6 +440,8 @@ class ReportController extends Controller
         $user = $request->user();
 
         $validator = Validator::make($request->all(), [
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
             'factory_id' => 'nullable|exists:users,id',
             'format' => 'nullable|string|in:json,csv',
         ]);
@@ -451,11 +453,43 @@ class ReportController extends Controller
             ], 422);
         }
 
-        $filters = $request->only(['factory_id']);
+        $filters = $request->only(['start_date', 'end_date', 'factory_id']);
         $report = $this->reportService->getDelayReport($user, $filters);
 
         if ($request->input('format') === 'csv') {
             return $this->exportToCsv(collect($report['items']), 'delay_report.csv');
+        }
+
+        return response()->json($report);
+    }
+
+    /**
+     * Get approved samples report
+     */
+    public function approvedSamples(Request $request)
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'factory_id' => 'nullable|exists:users,id',
+            'sample_type' => 'nullable|exists:sample_types,id',
+            'format' => 'nullable|string|in:json,csv',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $filters = $request->only(['start_date', 'end_date', 'factory_id', 'sample_type']);
+        $report = $this->reportService->getApprovedSamplesReport($user, $filters);
+
+        if ($request->input('format') === 'csv') {
+            return $this->exportToCsv(collect($report['items']), 'approved_samples_report.csv');
         }
 
         return response()->json($report);
@@ -469,25 +503,120 @@ class ReportController extends Controller
         $headers = [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'Pragma' => 'no-cache',
         ];
 
-        $callback = function () use ($data) {
+        $columns = $this->getCsvColumnHeaders($filename);
+
+        $callback = function () use ($data, $columns) {
             $file = fopen('php://output', 'w');
 
-            // Write headers
-            if ($data->isNotEmpty()) {
+            if ($columns) {
+                // Use human-readable headers mapped from field keys
+                fputcsv($file, array_values($columns));
+                foreach ($data as $row) {
+                    $rowArray = (array) $row;
+                    $mapped = [];
+                    foreach (array_keys($columns) as $key) {
+                        $mapped[] = $rowArray[$key] ?? '';
+                    }
+                    fputcsv($file, $mapped);
+                }
+            } elseif ($data->isNotEmpty()) {
                 fputcsv($file, array_keys($data->first()));
-            }
-
-            // Write rows
-            foreach ($data as $row) {
-                fputcsv($file, (array) $row);
+                foreach ($data as $row) {
+                    fputcsv($file, (array) $row);
+                }
+            } else {
+                fputcsv($file, ['No data found']);
             }
 
             fclose($file);
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Get human-readable CSV column headers for a given report.
+     */
+    private function getCsvColumnHeaders(string $filename): ?array
+    {
+        $map = [
+            'factory_wise_report.csv' => [
+                'po_number' => 'PO Number',
+                'po_date' => 'PO Date',
+                'style_number' => 'Style Number',
+                'style_description' => 'Description',
+                'factory_name' => 'Factory',
+                'quantity' => 'Quantity',
+                'unit_price' => 'Unit Price',
+                'total_value' => 'Total Value',
+                'ex_factory_date' => 'Ex-Factory Date',
+                'estimated_ex_factory_date' => 'Est. Ex-Factory Date',
+                'production_status' => 'Production Status',
+                'shipping_approval_status' => 'Shipping Approval',
+                'po_status' => 'PO Status',
+            ],
+            'pending_shipments_report.csv' => [
+                'po_number' => 'PO Number',
+                'po_date' => 'PO Date',
+                'style_number' => 'Style Number',
+                'style_description' => 'Description',
+                'factory_name' => 'Factory',
+                'quantity' => 'Quantity',
+                'ex_factory_date' => 'Ex-Factory Date',
+                'estimated_ex_factory_date' => 'Est. Ex-Factory Date',
+                'days_remaining' => 'Days Remaining',
+                'is_overdue' => 'Overdue',
+                'production_status' => 'Production Status',
+                'shipping_approval_status' => 'Shipping Approval',
+            ],
+            'pending_samples_report.csv' => [
+                'po_number' => 'PO Number',
+                'style_number' => 'Style Number',
+                'factory_name' => 'Factory',
+                'sample_type' => 'Sample Type',
+                'sample_reference' => 'Sample Reference',
+                'submission_date' => 'Submission Date',
+                'days_pending' => 'Days Pending',
+                'typical_days' => 'Typical Days',
+                'is_overdue' => 'Overdue',
+                'agency_status' => 'Agency Status',
+                'importer_status' => 'Importer Status',
+                'final_status' => 'Final Status',
+                'submitted_by' => 'Submitted By',
+            ],
+            'approved_samples_report.csv' => [
+                'po_number' => 'PO Number',
+                'style_number' => 'Style Number',
+                'factory_name' => 'Factory',
+                'sample_type' => 'Sample Type',
+                'sample_reference' => 'Sample Reference',
+                'submission_date' => 'Submission Date',
+                'agency_status' => 'Agency Status',
+                'agency_approved_at' => 'Agency Approved At',
+                'importer_status' => 'Importer Status',
+                'importer_approved_at' => 'Importer Approved At',
+                'final_status' => 'Final Status',
+                'submitted_by' => 'Submitted By',
+            ],
+            'delay_report.csv' => [
+                'delay_type' => 'Delay Type',
+                'po_number' => 'PO Number',
+                'style_number' => 'Style Number',
+                'factory_name' => 'Factory',
+                'reference' => 'Reference',
+                'expected_date' => 'Expected Date',
+                'days_delayed' => 'Days Delayed',
+                'status' => 'Status',
+                'severity' => 'Severity',
+                'details' => 'Details',
+            ],
+        ];
+
+        return $map[$filename] ?? null;
     }
 
     /**
