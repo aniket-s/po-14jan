@@ -161,7 +161,8 @@ class Sample extends Model
         $this->agency_approved_by = $userId;
         $this->agency_approved_at = now();
         $this->agency_rejection_reason = $reason;
-        $this->final_status = 'rejected';
+
+        $this->updateFinalStatus();
         $this->save();
     }
 
@@ -188,7 +189,8 @@ class Sample extends Model
         $this->importer_approved_by = $userId;
         $this->importer_approved_at = now();
         $this->importer_rejection_reason = $reason;
-        $this->final_status = 'rejected';
+
+        $this->updateFinalStatus();
         $this->save();
     }
 
@@ -215,11 +217,11 @@ class Sample extends Model
     }
 
     /**
-     * Get prerequisite sample type
+     * Get prerequisite sample types (supports multiple prerequisites)
      */
-    public function getPrerequisiteSampleType()
+    public function getPrerequisiteSampleTypes()
     {
-        return $this->sampleType?->prerequisiteSampleType;
+        return $this->sampleType?->getPrerequisiteTypes() ?? collect();
     }
 
     /**
@@ -231,16 +233,23 @@ class Sample extends Model
             return true;
         }
 
-        $prerequisiteType = $this->getPrerequisiteSampleType();
-        if (!$prerequisiteType) {
+        $prerequisiteTypes = $this->getPrerequisiteSampleTypes();
+        if ($prerequisiteTypes->isEmpty()) {
             return true;
         }
 
-        $prerequisiteSample = Sample::where('style_id', $this->style_id)
-            ->where('sample_type_id', $prerequisiteType->id)
-            ->where('final_status', 'approved')
-            ->exists();
+        // All prerequisite types must have an approved sample for this style
+        foreach ($prerequisiteTypes as $prerequisiteType) {
+            $approved = Sample::where('style_id', $this->style_id)
+                ->where('sample_type_id', $prerequisiteType->id)
+                ->where('final_status', 'approved')
+                ->exists();
 
-        return $prerequisiteSample;
+            if (!$approved) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

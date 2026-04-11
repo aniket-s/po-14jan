@@ -40,14 +40,22 @@ class PurchaseOrderController extends Controller
         $isExcelView = $request->get('view') === 'excel';
 
         // Eager-load relationships based on view mode
+        // For Factory users, constrain styles eager load to only their assigned styles
+        $isFactory = $user->hasRole('Factory');
+        $factoryUserId = $user->id;
+        $stylesConstraint = $isFactory
+            ? ['styles' => function ($query) use ($factoryUserId) {
+                $query->wherePivot('assigned_factory_id', $factoryUserId);
+            }]
+            : ['styles'];
+
         if ($isExcelView) {
-            $query = PurchaseOrder::with([
+            $query = PurchaseOrder::with(array_merge([
                 'importer', 'agency',
                 'retailer', 'season', 'country', 'warehouse', 'currency',
-                'styles',
-            ]);
+            ], $stylesConstraint));
         } else {
-            $query = PurchaseOrder::with(['importer', 'agency', 'styles']);
+            $query = PurchaseOrder::with(array_merge(['importer', 'agency'], $stylesConstraint));
         }
 
         // Apply permission-based filtering
@@ -144,16 +152,9 @@ class PurchaseOrderController extends Controller
         $perPage = min((int) $request->get('per_page', $isExcelView ? 50 : 15), $isExcelView ? 100 : 50);
         $pos = $query->paginate($perPage);
 
-        // For Factory users, filter styles to only those assigned to them
-        $isFactory = $user->hasRole('Factory');
-        $factoryUserId = $user->id;
-        $getVisibleStyles = function ($po) use ($isFactory, $factoryUserId) {
-            if (!$isFactory) {
-                return $po->styles;
-            }
-            return $po->styles->filter(function ($style) use ($factoryUserId) {
-                return (int) $style->pivot->assigned_factory_id === $factoryUserId;
-            })->values();
+        // Helper to get styles - factory filtering is already applied via eager load constraint
+        $getVisibleStyles = function ($po) {
+            return $po->styles;
         };
 
         // Return enriched data for Excel view
@@ -285,7 +286,14 @@ class PurchaseOrderController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
-        $po = PurchaseOrder::with(['importer', 'agency', 'currency', 'styles.assignedFactory'])->findOrFail($id);
+        // For Factory users, constrain styles eager load to only their assigned styles
+        $stylesEagerLoad = $user->hasRole('Factory')
+            ? ['styles' => function ($query) use ($user) {
+                $query->wherePivot('assigned_factory_id', $user->id);
+            }]
+            : ['styles'];
+
+        $po = PurchaseOrder::with(array_merge(['importer', 'agency', 'currency'], $stylesEagerLoad))->findOrFail($id);
 
         // Check permission
         if (!$this->permissionService->canAccessPO($user, $po)) {
@@ -347,11 +355,6 @@ class PurchaseOrderController extends Controller
                 'shipping_method' => $po->metadata['shipping_method'] ?? null,
                 'terms_of_delivery' => $po->terms_of_delivery,
                 'styles' => $po->styles
-                    ->when($user->hasRole('Factory'), function ($styles) use ($user) {
-                        return $styles->filter(function ($style) use ($user) {
-                            return (int) $style->pivot->assigned_factory_id === $user->id;
-                        })->values();
-                    })
                     ->map(function ($style) {
                     return [
                         'id' => $style->id,
@@ -444,6 +447,32 @@ class PurchaseOrderController extends Controller
                     'errors' => [
                         'payment_terms_structured.percentage' => ['Percentage is required for this payment term'],
                     ]
+                ], 422);
+            }
+        }
+
+        // Validate date sequence: po_date < ex_factory_date < etd_date < eta_date < in_warehouse_date
+        if ($request->filled('po_date') && $request->filled('etd_date')) {
+            if (strtotime($request->etd_date) <= strtotime($request->po_date)) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => ['etd_date' => ['ETD date must be after PO date']],
+                ], 422);
+            }
+        }
+        if ($request->filled('ex_factory_date') && $request->filled('etd_date')) {
+            if (strtotime($request->etd_date) < strtotime($request->ex_factory_date)) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => ['etd_date' => ['ETD date must be on or after ex-factory date']],
+                ], 422);
+            }
+        }
+        if ($request->filled('eta_date') && $request->filled('etd_date')) {
+            if (strtotime($request->eta_date) < strtotime($request->etd_date)) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => ['eta_date' => ['ETA date must be on or after ETD date']],
                 ], 422);
             }
         }
@@ -586,6 +615,16 @@ class PurchaseOrderController extends Controller
             }
         }
 
+        // Notify importer if different from creator
+        if ($po->importer_id && $po->importer_id !== $user->id) {
+            $importerUser = User::find($po->importer_id);
+            if ($importerUser) {
+                SendPurchaseOrderNotification::dispatch($po, $importerUser, 'created', [
+                    'created_by' => $request->user()->name,
+                ]);
+            }
+        }
+
         return response()->json([
             'message' => 'Purchase order created successfully',
             'purchase_order' => [
@@ -652,6 +691,31 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
+        // Validate date sequence: po_date < ex_factory_date < etd_date < eta_date < in_warehouse_date
+        $poDate = $request->po_date ?? $po->po_date;
+        $etdDate = $request->has('etd_date') ? $request->etd_date : $po->etd_date;
+        $exFactoryDate = $request->has('ex_factory_date') ? $request->ex_factory_date : $po->ex_factory_date;
+        $etaDate = $request->has('eta_date') ? $request->eta_date : $po->eta_date;
+
+        if ($poDate && $etdDate && strtotime($etdDate) <= strtotime($poDate)) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => ['etd_date' => ['ETD date must be after PO date']],
+            ], 422);
+        }
+        if ($exFactoryDate && $etdDate && strtotime($etdDate) < strtotime($exFactoryDate)) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => ['etd_date' => ['ETD date must be on or after ex-factory date']],
+            ], 422);
+        }
+        if ($etaDate && $etdDate && strtotime($etaDate) < strtotime($etdDate)) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => ['eta_date' => ['ETA date must be on or after ETD date']],
+            ], 422);
+        }
+
         // Verify importer has Importer role if provided
         if ($request->filled('importer_id')) {
             $importer = User::find($request->importer_id);
@@ -682,14 +746,14 @@ class PurchaseOrderController extends Controller
         $po->update([
             'po_number' => $request->po_number,
             'headline' => $request->headline,
-            'importer_id' => $request->importer_id ?? $po->importer_id,
+            'importer_id' => $request->has('importer_id') ? $request->importer_id : $po->importer_id,
             'po_date' => $request->po_date,
-            'currency_id' => $request->currency_id ?? $po->currency_id,
-            'exchange_rate' => $request->exchange_rate ?? $po->exchange_rate,
-            'payment_term_id' => $request->payment_term_id ?? $po->payment_term_id,
-            'payment_terms_structured' => $request->payment_terms_structured ?? $po->payment_terms_structured,
+            'currency_id' => $request->has('currency_id') ? $request->currency_id : $po->currency_id,
+            'exchange_rate' => $request->has('exchange_rate') ? $request->exchange_rate : $po->exchange_rate,
+            'payment_term_id' => $request->has('payment_term_id') ? $request->payment_term_id : $po->payment_term_id,
+            'payment_terms_structured' => $request->has('payment_terms_structured') ? $request->payment_terms_structured : $po->payment_terms_structured,
             'additional_notes' => $request->additional_notes,
-            'agency_id' => $request->agency_id,
+            'agency_id' => $request->has('agency_id') ? $request->agency_id : $po->agency_id,
             'buyer_id' => $request->buyer_id,
             'status' => $request->get('status', $po->status),
             'revision_date' => $request->revision_date,
@@ -705,7 +769,7 @@ class PurchaseOrderController extends Controller
             'retailer_id' => $request->retailer_id,
             'country_id' => $request->country_id,
             'warehouse_id' => $request->warehouse_id,
-            'shipping_term' => $request->shipping_term ?? $po->shipping_term,
+            'shipping_term' => $request->has('shipping_term') ? $request->shipping_term : $po->shipping_term,
             'payment_term' => $request->payment_term,
             'country_of_origin' => $request->country_of_origin,
             'packing_method' => $request->packing_method,

@@ -285,16 +285,29 @@ class PurchaseOrder extends Model
     }
 
     /**
-     * Update totals from styles
+     * Update totals from styles, wrapped in a transaction for consistency
      */
     public function updateTotals(): void
     {
-        // Reload styles with pivot data
-        $this->load('styles');
+        \Illuminate\Support\Facades\DB::transaction(function () {
+            // Lock this PO row to prevent concurrent updates
+            $po = PurchaseOrder::lockForUpdate()->find($this->id);
+            if (!$po) {
+                return;
+            }
 
-        $this->total_quantity = $this->calculateTotalQuantity();
-        $this->total_value = $this->calculateTotalValue();
-        $this->total_styles = $this->styles()->count();
-        $this->save();
+            // Reload styles with pivot data
+            $po->load('styles');
+
+            $po->total_quantity = $po->calculateTotalQuantity();
+            $po->total_value = $po->calculateTotalValue();
+            $po->total_styles = $po->styles()->count();
+            $po->save();
+
+            // Refresh this instance's attributes
+            $this->total_quantity = $po->total_quantity;
+            $this->total_value = $po->total_value;
+            $this->total_styles = $po->total_styles;
+        });
     }
 }

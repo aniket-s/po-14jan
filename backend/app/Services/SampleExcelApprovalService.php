@@ -86,14 +86,23 @@ class SampleExcelApprovalService
                 continue;
             }
 
-            // Find sample
+            // Find sample - first look for pending, then provide specific error for already-processed
             $sample = Sample::where('style_id', $style->id)
                 ->where('sample_type_id', $sampleType->id)
                 ->where('agency_status', 'pending')
                 ->first();
 
             if (!$sample) {
-                $errors[] = "Row {$i}: No pending sample found for style '{$styleNumber}' type '{$sampleTypeName}'";
+                // Check if sample exists but was already processed
+                $existingSample = Sample::where('style_id', $style->id)
+                    ->where('sample_type_id', $sampleType->id)
+                    ->first();
+
+                if ($existingSample) {
+                    $errors[] = "Row {$i}: Sample for style '{$styleNumber}' type '{$sampleTypeName}' already has agency status '{$existingSample->agency_status}'";
+                } else {
+                    $errors[] = "Row {$i}: No sample found for style '{$styleNumber}' type '{$sampleTypeName}'";
+                }
                 continue;
             }
 

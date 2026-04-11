@@ -137,9 +137,9 @@ export default function PurchaseOrderDetailPage() {
       setAssignedFactoryIdForDialog(null);
       setAssignedAgencyIdForDialog(null);
       fetchStyles();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to assign factory:', error);
-      alert('Failed to assign factory. Please try again.');
+      alert(error.response?.data?.message || 'Failed to assign factory. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -399,9 +399,8 @@ export default function PurchaseOrderDetailPage() {
 
             {/* Shipping & Dates Section */}
             {(() => {
-              // FOB/DDP conditional display: Check if any styles have DDP shipping term
-              // FOB = shows only ETD, DDP = shows ETD, ETA, In-warehouse
-              const hasDDPStyles = styles.some((style: any) => style.pivot?.shipping_term === 'DDP');
+              // FOB/DDP conditional display: Use PO-level shipping term
+              const isDDP = purchaseOrder.shipping_term === 'DDP';
 
               return (purchaseOrder.revision_date || purchaseOrder.etd_date || purchaseOrder.eta_date ||
                 purchaseOrder.ship_to || purchaseOrder.ship_to_address) && (
@@ -411,9 +410,9 @@ export default function PurchaseOrderDetailPage() {
                       <CardTitle>Shipping Dates</CardTitle>
                       <CardDescription>
                         Key dates and timeline
-                        {(styles?.length || 0) > 0 && (
+                        {purchaseOrder.shipping_term && (
                           <span className="ml-2 text-xs text-muted-foreground">
-                            ({hasDDPStyles ? 'DDP - All dates shown' : 'FOB - ETD only'})
+                            ({isDDP ? 'DDP - All dates shown' : 'FOB - ETD only'})
                           </span>
                         )}
                       </CardDescription>
@@ -432,13 +431,13 @@ export default function PurchaseOrderDetailPage() {
                         </div>
                       )}
                       {/* ETA and In-warehouse dates only shown for DDP shipping terms */}
-                      {hasDDPStyles && purchaseOrder.eta_date && (
+                      {isDDP && purchaseOrder.eta_date && (
                         <div className="flex justify-between">
                           <span className="text-sm text-muted-foreground">ETA Date</span>
                           <span className="text-sm font-medium">{formatDate(purchaseOrder.eta_date)}</span>
                         </div>
                       )}
-                      {hasDDPStyles && purchaseOrder.in_warehouse_date && (
+                      {isDDP && purchaseOrder.in_warehouse_date && (
                         <div className="flex justify-between">
                           <span className="text-sm text-muted-foreground">In-Warehouse Date</span>
                           <span className="text-sm font-medium">{formatDate(purchaseOrder.in_warehouse_date)}</span>

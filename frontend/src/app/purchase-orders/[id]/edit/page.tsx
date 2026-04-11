@@ -136,6 +136,7 @@ export default function EditPurchaseOrderPage() {
       setWarehouses(warehousesRes.data || []);
     } catch (error) {
       console.error('Failed to fetch master data:', error);
+      alert('Failed to load form options (seasons, retailers, etc.). Some dropdowns may be empty. Please refresh the page.');
     }
   };
 
@@ -611,9 +612,9 @@ export default function EditPurchaseOrderPage() {
                           onValueChange={(value) => {
                             setSelectedCountryId(value);
                             setValue('country_id', value);
-                            const etdDate = document.getElementById('etd_date') as HTMLInputElement;
-                            if (etdDate?.value) {
-                              calculateDates(etdDate.value, value);
+                            const etdDate = getValues('etd_date');
+                            if (etdDate) {
+                              calculateDates(etdDate, value);
                             }
                           }}
                         >
@@ -730,11 +731,10 @@ export default function EditPurchaseOrderPage() {
                         type="date"
                         {...register('etd_date')}
                         onChange={(e) => {
-                          const countrySelect = document.querySelector('[name="country_id"]') as HTMLInputElement;
-                          if (countrySelect?.value && shippingTerm === 'DDP') {
-                            calculateDates(e.target.value, countrySelect.value);
+                          if (selectedCountryId && shippingTerm === 'DDP') {
+                            calculateDates(e.target.value, selectedCountryId);
                           }
-                        }}
+                        }
                       />
                       {errors.etd_date && (
                         <p className="text-sm text-destructive">{errors.etd_date.message}</p>
@@ -777,8 +777,8 @@ export default function EditPurchaseOrderPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        const poDate = (document.getElementById('po_date') as HTMLInputElement)?.value;
-                        const etdDate = (document.getElementById('etd_date') as HTMLInputElement)?.value;
+                        const poDate = getValues('po_date');
+                        const etdDate = getValues('etd_date');
                         if (poDate && etdDate) {
                           generateSampleSchedule(poDate, etdDate);
                         } else {
