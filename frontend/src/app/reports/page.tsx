@@ -167,6 +167,14 @@ const formatDate = (value: string | null | undefined) => {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+const formatDateTime = (value: string | null | undefined) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    + ', ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+};
+
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -990,7 +998,7 @@ export default function ReportsPage() {
                         <div className="flex flex-col">
                           {statusBadge(row.agency_status)}
                           {row.agency_approved_at && (
-                            <span className="text-[10px] text-muted-foreground mt-0.5">{formatDate(row.agency_approved_at)}</span>
+                            <span className="text-[10px] text-muted-foreground mt-0.5">{formatDateTime(row.agency_approved_at)}</span>
                           )}
                         </div>
                       </TableCell>
@@ -998,7 +1006,7 @@ export default function ReportsPage() {
                         <div className="flex flex-col">
                           {statusBadge(row.importer_status)}
                           {row.importer_approved_at && (
-                            <span className="text-[10px] text-muted-foreground mt-0.5">{formatDate(row.importer_approved_at)}</span>
+                            <span className="text-[10px] text-muted-foreground mt-0.5">{formatDateTime(row.importer_approved_at)}</span>
                           )}
                         </div>
                       </TableCell>
