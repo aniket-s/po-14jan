@@ -194,8 +194,12 @@ export default function PurchaseOrderDetailPage() {
     if (!purchaseOrder) return;
     setIsUpdatingStatus(true);
     try {
-      await api.post(`/purchase-orders/${purchaseOrder.id}/status`, { status: newStatus });
-      setPurchaseOrder({ ...purchaseOrder, status: newStatus });
+      const response = await api.post(`/purchase-orders/${purchaseOrder.id}/status`, { status: newStatus });
+      setPurchaseOrder({
+        ...purchaseOrder,
+        status: newStatus,
+        allowed_transitions: response.data.allowed_transitions || [],
+      } as any);
     } catch (error: any) {
       alert(error.response?.data?.message || 'Failed to update status');
     } finally {

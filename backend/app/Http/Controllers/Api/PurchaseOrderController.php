@@ -756,7 +756,8 @@ class PurchaseOrderController extends Controller
             'additional_notes' => $request->additional_notes,
             'agency_id' => $request->has('agency_id') ? $request->agency_id : $po->agency_id,
             'buyer_id' => $request->buyer_id,
-            'status' => $request->get('status', $po->status),
+            // Status changes must go through updateStatus() endpoint for transition validation
+            'status' => $po->status,
             'revision_date' => $request->revision_date,
             'ex_factory_date' => $request->ex_factory_date,
             'etd_date' => $request->etd_date,
@@ -867,7 +868,7 @@ class PurchaseOrderController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'status' => 'required|string|max:50',
+            'status' => 'required|string|in:' . implode(',', self::VALID_STATUSES),
         ]);
 
         if ($validator->fails()) {
@@ -879,6 +880,14 @@ class PurchaseOrderController extends Controller
 
         $oldStatus = $po->status;
         $newStatus = $request->status;
+
+        if ($oldStatus === $newStatus) {
+            return response()->json([
+                'message' => 'Status is already ' . $newStatus,
+                'status' => $po->status,
+                'allowed_transitions' => $this->getAllowedTransitions($po->status),
+            ]);
+        }
 
         // Validate transition is allowed
         $allowedTransitions = $this->getAllowedTransitions($oldStatus);
@@ -930,13 +939,21 @@ class PurchaseOrderController extends Controller
     {
         $transitions = [
             'draft' => ['active', 'cancelled'],
+            'pending_agency' => ['active', 'cancelled'],
+            'pending_factory' => ['active', 'cancelled'],
+            'pending_assignments' => ['active', 'cancelled'],
             'active' => ['completed', 'cancelled'],
             'completed' => [],
             'cancelled' => [],
         ];
 
-        return $transitions[$currentStatus] ?? [];
+        return $transitions[$currentStatus] ?? ['active', 'cancelled'];
     }
+
+    private const VALID_STATUSES = [
+        'draft', 'pending_agency', 'pending_factory', 'pending_assignments',
+        'active', 'completed', 'cancelled',
+    ];
 
     /**
      * Recalculate PO totals from styles

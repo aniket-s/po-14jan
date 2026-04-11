@@ -409,10 +409,19 @@ export default function PurchaseOrdersPage() {
             purchaseOrders={filteredPOs}
             onDelete={handleDelete}
             onBulkDelete={async (ids) => {
+              const failures: string[] = [];
               for (const id of ids) {
-                try { await api.delete(`/purchase-orders/${id}`); } catch (e) { console.error('Failed to delete PO:', id, e); }
+                try {
+                  await api.delete(`/purchase-orders/${id}`);
+                } catch (e: any) {
+                  const po = purchaseOrders.find(p => p.id === id);
+                  failures.push(`${po?.po_number || id}: ${e.response?.data?.message || 'Failed'}`);
+                }
               }
               fetchPurchaseOrders();
+              if (failures.length > 0) {
+                alert(`Some POs could not be deleted:\n${failures.join('\n')}`);
+              }
             }}
             onExport={(pos) => {
               const headers = ['PO Number', 'Headline', 'Status', 'PO Date', 'Shipping Term', 'ETD', 'Styles', 'Total Quantity', 'Total Value', 'Currency'];
