@@ -165,10 +165,12 @@ export default function PurchaseOrderDetailPage() {
       );
       if (stylesWithImages.length > 0) {
         await Promise.all(
-          stylesWithImages.map(style => {
-            const existingImages = style.images || [];
+          stylesWithImages.map(async (style) => {
+            // Fetch fresh style data to get current images from DB
+            const resp = await api.get(`/styles/${style.id}`);
+            const currentImages = resp.data.images || [];
             return api.put(`/styles/${style.id}`, {
-              images: [...existingImages, ...style.uploaded_images],
+              images: [...currentImages, ...style.uploaded_images],
             });
           })
         );
