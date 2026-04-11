@@ -57,9 +57,7 @@ interface POExcelViewProps {
 
 const STATUS_OPTIONS = [
   { label: 'Draft', value: 'draft' },
-  { label: 'Confirmed', value: 'confirmed' },
-  { label: 'In Production', value: 'in_production' },
-  { label: 'Shipped', value: 'shipped' },
+  { label: 'Active', value: 'active' },
   { label: 'Completed', value: 'completed' },
   { label: 'Cancelled', value: 'cancelled' },
 ];
@@ -72,10 +70,8 @@ const SHIPPING_TERM_OPTIONS = [
 const statusColor = (status: string) => {
   switch (status) {
     case 'draft': return 'bg-gray-100 text-gray-700 border-gray-200';
-    case 'confirmed': return 'bg-blue-100 text-blue-700 border-blue-200';
-    case 'in_production': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-    case 'shipped': return 'bg-purple-100 text-purple-700 border-purple-200';
-    case 'completed': return 'bg-green-100 text-green-700 border-green-200';
+    case 'active': return 'bg-green-100 text-green-700 border-green-200';
+    case 'completed': return 'bg-purple-100 text-purple-700 border-purple-200';
     case 'cancelled': return 'bg-red-100 text-red-700 border-red-200';
     default: return '';
   }

@@ -151,9 +151,8 @@ export function POTableView({
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string }> = {
-      active: { variant: 'default', className: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-300' },
       draft: { variant: 'secondary', className: '' },
-      shipped: { variant: 'default', className: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900 dark:text-blue-300' },
+      active: { variant: 'default', className: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-300' },
       completed: { variant: 'default', className: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900 dark:text-purple-300' },
       cancelled: { variant: 'destructive', className: '' },
     };
@@ -285,7 +284,6 @@ export function POTableView({
                           <div className={cn(
                             'w-1 h-8 rounded-full shrink-0 mt-0.5',
                             po.status === 'active' && 'bg-green-500',
-                            po.status === 'shipped' && 'bg-blue-500',
                             po.status === 'completed' && 'bg-purple-500',
                             po.status === 'cancelled' && 'bg-red-500',
                             (!po.status || po.status === 'draft') && 'bg-gray-300',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -72,6 +72,11 @@ export function SampleTableView({
 }: SampleTableViewProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  // Clear selection when data changes (e.g., after bulk approve/reject)
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [samples]);
 
   // Group samples by style
   const grouped: GroupedSamples[] = [];

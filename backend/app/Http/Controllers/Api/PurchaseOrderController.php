@@ -333,6 +333,7 @@ class PurchaseOrderController extends Controller
                 'payment_terms_structured' => $po->payment_terms_structured,
                 'additional_notes' => $po->additional_notes,
                 'status' => $po->status,
+                'allowed_transitions' => $this->getAllowedTransitions($po->status),
                 'metadata' => $po->metadata,
                 'shipping_term' => $po->shipping_term,
                 'revision_date' => $po->revision_date?->format('Y-m-d'),
@@ -755,7 +756,8 @@ class PurchaseOrderController extends Controller
             'additional_notes' => $request->additional_notes,
             'agency_id' => $request->has('agency_id') ? $request->agency_id : $po->agency_id,
             'buyer_id' => $request->buyer_id,
-            'status' => $request->get('status', $po->status),
+            // Status changes must go through updateStatus() endpoint for transition validation
+            'status' => $po->status,
             'revision_date' => $request->revision_date,
             'ex_factory_date' => $request->ex_factory_date,
             'etd_date' => $request->etd_date,
@@ -821,6 +823,13 @@ class PurchaseOrderController extends Controller
             ], 403);
         }
 
+        // Prevent deleting completed or active POs
+        if (in_array($po->status, ['completed', 'active'])) {
+            return response()->json([
+                'message' => "Cannot delete a purchase order with status '{$po->status}'. Cancel it first.",
+            ], 422);
+        }
+
         // Check if PO has styles
         if ($po->styles()->exists()) {
             return response()->json([
@@ -859,7 +868,7 @@ class PurchaseOrderController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'status' => 'required|string|max:50',
+            'status' => 'required|string|in:' . implode(',', self::VALID_STATUSES),
         ]);
 
         if ($validator->fails()) {
@@ -870,7 +879,26 @@ class PurchaseOrderController extends Controller
         }
 
         $oldStatus = $po->status;
-        $po->status = $request->status;
+        $newStatus = $request->status;
+
+        if ($oldStatus === $newStatus) {
+            return response()->json([
+                'message' => 'Status is already ' . $newStatus,
+                'status' => $po->status,
+                'allowed_transitions' => $this->getAllowedTransitions($po->status),
+            ]);
+        }
+
+        // Validate transition is allowed
+        $allowedTransitions = $this->getAllowedTransitions($oldStatus);
+        if (!empty($allowedTransitions) && !in_array($newStatus, $allowedTransitions)) {
+            return response()->json([
+                'message' => "Cannot transition from '{$oldStatus}' to '{$newStatus}'. Allowed: " . implode(', ', $allowedTransitions),
+                'allowed_transitions' => $allowedTransitions,
+            ], 422);
+        }
+
+        $po->status = $newStatus;
         $po->save();
 
         // Log status change
@@ -878,10 +906,10 @@ class PurchaseOrderController extends Controller
             'status_changed',
             'PurchaseOrder',
             $po->id,
-            "PO status changed from {$oldStatus} to {$request->status}",
+            "PO status changed from {$oldStatus} to {$newStatus}",
             [
                 'old_status' => $oldStatus,
-                'new_status' => $request->status,
+                'new_status' => $newStatus,
             ]
         );
 
@@ -891,7 +919,7 @@ class PurchaseOrderController extends Controller
             if ($agency && $agency->id !== $user->id) {
                 SendPurchaseOrderNotification::dispatch($po, $agency, 'status_changed', [
                     'old_status' => $oldStatus,
-                    'new_status' => $request->status,
+                    'new_status' => $newStatus,
                     'changed_by' => $user->name,
                 ]);
             }
@@ -900,8 +928,32 @@ class PurchaseOrderController extends Controller
         return response()->json([
             'message' => 'Purchase order status updated successfully',
             'status' => $po->status,
+            'allowed_transitions' => $this->getAllowedTransitions($po->status),
         ]);
     }
+
+    /**
+     * Get allowed status transitions for a given status
+     */
+    private function getAllowedTransitions(string $currentStatus): array
+    {
+        $transitions = [
+            'draft' => ['active', 'cancelled'],
+            'pending_agency' => ['active', 'cancelled'],
+            'pending_factory' => ['active', 'cancelled'],
+            'pending_assignments' => ['active', 'cancelled'],
+            'active' => ['completed', 'cancelled'],
+            'completed' => [],
+            'cancelled' => [],
+        ];
+
+        return $transitions[$currentStatus] ?? ['active', 'cancelled'];
+    }
+
+    private const VALID_STATUSES = [
+        'draft', 'pending_agency', 'pending_factory', 'pending_assignments',
+        'active', 'completed', 'cancelled',
+    ];
 
     /**
      * Recalculate PO totals from styles

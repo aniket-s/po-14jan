@@ -90,7 +90,7 @@ export function SampleKanbanBoard({
   };
 
   return (
-    <div className="grid grid-cols-4 gap-4 min-h-[400px]">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 min-h-[400px]">
       {columns.map((column) => {
         const columnSamples = samples.filter(column.filter);
         return (
