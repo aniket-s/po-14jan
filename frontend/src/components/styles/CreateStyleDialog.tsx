@@ -571,7 +571,7 @@ export function CreateStyleDialog({
                       <FormItem>
                         <FormLabel>MSRP</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                          <Input type="number" step="0.01" placeholder="0.00" {...field} value={field.value ?? ''} />
                         </FormControl>
                         <FormDescription>Manufacturer Suggested Retail Price</FormDescription>
                         <FormMessage />
@@ -585,7 +585,7 @@ export function CreateStyleDialog({
                       <FormItem>
                         <FormLabel>Wholesale Price</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                          <Input type="number" step="0.01" placeholder="0.00" {...field} value={field.value ?? ''} />
                         </FormControl>
                         <FormDescription>Price for wholesale customers</FormDescription>
                         <FormMessage />
