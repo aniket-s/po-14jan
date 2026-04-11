@@ -333,6 +333,7 @@ class PurchaseOrderController extends Controller
                 'payment_terms_structured' => $po->payment_terms_structured,
                 'additional_notes' => $po->additional_notes,
                 'status' => $po->status,
+                'allowed_transitions' => $this->getAllowedTransitions($po->status),
                 'metadata' => $po->metadata,
                 'shipping_term' => $po->shipping_term,
                 'revision_date' => $po->revision_date?->format('Y-m-d'),
@@ -821,6 +822,13 @@ class PurchaseOrderController extends Controller
             ], 403);
         }
 
+        // Prevent deleting completed or active POs
+        if (in_array($po->status, ['completed', 'active'])) {
+            return response()->json([
+                'message' => "Cannot delete a purchase order with status '{$po->status}'. Cancel it first.",
+            ], 422);
+        }
+
         // Check if PO has styles
         if ($po->styles()->exists()) {
             return response()->json([
@@ -870,7 +878,18 @@ class PurchaseOrderController extends Controller
         }
 
         $oldStatus = $po->status;
-        $po->status = $request->status;
+        $newStatus = $request->status;
+
+        // Validate transition is allowed
+        $allowedTransitions = $this->getAllowedTransitions($oldStatus);
+        if (!empty($allowedTransitions) && !in_array($newStatus, $allowedTransitions)) {
+            return response()->json([
+                'message' => "Cannot transition from '{$oldStatus}' to '{$newStatus}'. Allowed: " . implode(', ', $allowedTransitions),
+                'allowed_transitions' => $allowedTransitions,
+            ], 422);
+        }
+
+        $po->status = $newStatus;
         $po->save();
 
         // Log status change
@@ -878,10 +897,10 @@ class PurchaseOrderController extends Controller
             'status_changed',
             'PurchaseOrder',
             $po->id,
-            "PO status changed from {$oldStatus} to {$request->status}",
+            "PO status changed from {$oldStatus} to {$newStatus}",
             [
                 'old_status' => $oldStatus,
-                'new_status' => $request->status,
+                'new_status' => $newStatus,
             ]
         );
 
@@ -891,7 +910,7 @@ class PurchaseOrderController extends Controller
             if ($agency && $agency->id !== $user->id) {
                 SendPurchaseOrderNotification::dispatch($po, $agency, 'status_changed', [
                     'old_status' => $oldStatus,
-                    'new_status' => $request->status,
+                    'new_status' => $newStatus,
                     'changed_by' => $user->name,
                 ]);
             }
@@ -900,7 +919,23 @@ class PurchaseOrderController extends Controller
         return response()->json([
             'message' => 'Purchase order status updated successfully',
             'status' => $po->status,
+            'allowed_transitions' => $this->getAllowedTransitions($po->status),
         ]);
+    }
+
+    /**
+     * Get allowed status transitions for a given status
+     */
+    private function getAllowedTransitions(string $currentStatus): array
+    {
+        $transitions = [
+            'draft' => ['active', 'cancelled'],
+            'active' => ['completed', 'cancelled'],
+            'completed' => [],
+            'cancelled' => [],
+        ];
+
+        return $transitions[$currentStatus] ?? [];
     }
 
     /**

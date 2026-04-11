@@ -178,15 +178,29 @@ export default function PurchaseOrderDetailPage() {
     }).format(value);
   };
 
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       draft: 'secondary',
-      confirmed: 'default',
-      in_production: 'default',
+      active: 'default',
       completed: 'secondary',
       cancelled: 'destructive',
     };
     return colors[status] || 'secondary';
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    if (!purchaseOrder) return;
+    setIsUpdatingStatus(true);
+    try {
+      await api.post(`/purchase-orders/${purchaseOrder.id}/status`, { status: newStatus });
+      setPurchaseOrder({ ...purchaseOrder, status: newStatus });
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to update status');
+    } finally {
+      setIsUpdatingStatus(false);
+    }
   };
 
   // Check if current user can create styles
@@ -285,9 +299,35 @@ export default function PurchaseOrderDetailPage() {
               <Package className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <Badge variant={getStatusColor(purchaseOrder.status) as any} className="text-sm">
-                {purchaseOrder.status.replace('_', ' ')}
-              </Badge>
+              {can('po.edit') && (purchaseOrder as any).allowed_transitions?.length > 0 ? (
+                <Select
+                  value={purchaseOrder.status}
+                  onValueChange={handleStatusChange}
+                  disabled={isUpdatingStatus}
+                >
+                  <SelectTrigger className="w-full h-8">
+                    <SelectValue>
+                      <Badge variant={getStatusColor(purchaseOrder.status) as any} className="text-xs capitalize">
+                        {purchaseOrder.status.replace(/_/g, ' ')}
+                      </Badge>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={purchaseOrder.status} disabled>
+                      {purchaseOrder.status.replace(/_/g, ' ')} (current)
+                    </SelectItem>
+                    {((purchaseOrder as any).allowed_transitions || []).map((s: string) => (
+                      <SelectItem key={s} value={s}>
+                        {s.replace(/_/g, ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Badge variant={getStatusColor(purchaseOrder.status) as any} className="text-sm capitalize">
+                  {purchaseOrder.status.replace(/_/g, ' ')}
+                </Badge>
+              )}
             </CardContent>
           </Card>
 
