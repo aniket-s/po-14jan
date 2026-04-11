@@ -488,6 +488,12 @@ class SampleController extends Controller
             ], 403);
         }
 
+        if (!$user->hasAnyPermission(['sample.agency_approve', 'sample.factory_approve', 'sample.bulk_approve'])) {
+            return response()->json([
+                'message' => 'You do not have permission to bulk approve samples',
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
         ]);
@@ -533,13 +539,36 @@ class SampleController extends Controller
         $sampleTypes = SampleType::active()->ordered()->get();
         $submittedSamples = Sample::where('style_id', $styleId)->get();
 
-        $availableTypes = $sampleTypes->map(function ($type) use ($submittedSamples, $styleId) {
+        // Pre-compute which prerequisite types are approved to avoid N+1 queries
+        $approvedTypeIds = $submittedSamples
+            ->where('final_status', 'approved')
+            ->pluck('sample_type_id')
+            ->toArray();
+
+        // Cache all sample type names for prerequisite lookups
+        $sampleTypesByName = $sampleTypes->keyBy(function ($t) {
+            return strtolower($t->name);
+        });
+
+        $availableTypes = $sampleTypes->map(function ($type) use ($submittedSamples, $approvedTypeIds, $sampleTypesByName) {
             $existingSample = $submittedSamples->firstWhere('sample_type_id', $type->id);
 
             $canSubmit = !$existingSample;
 
             if ($canSubmit && !$type->allowsParallelSubmission()) {
-                $canSubmit = $type->prerequisitesMet($styleId);
+                // Check prerequisites in-memory instead of querying DB per type
+                $prerequisites = $type->prerequisites ?? [];
+                $canSubmit = empty($prerequisites);
+                if (!$canSubmit) {
+                    $canSubmit = true;
+                    foreach ($prerequisites as $prereqName) {
+                        $prereqType = $sampleTypesByName->get(strtolower($prereqName));
+                        if (!$prereqType || !in_array($prereqType->id, $approvedTypeIds)) {
+                            $canSubmit = false;
+                            break;
+                        }
+                    }
+                }
             }
 
             return [

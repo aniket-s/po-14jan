@@ -188,7 +188,8 @@ export default function SamplesPage() {
       }
 
       const response = await api.get('/samples', { params });
-      setSamples(response.data.samples || response.data.data || []);
+      const data = response.data;
+      setSamples(Array.isArray(data) ? data : (data.samples || data.data || []));
     } catch (error) {
       console.error('Failed to fetch samples:', error);
     } finally {
@@ -199,7 +200,8 @@ export default function SamplesPage() {
   const fetchSampleTypes = async () => {
     try {
       const response = await api.get('/admin/sample-types');
-      setSampleTypes(response.data.sample_types || response.data.data || []);
+      const data = response.data;
+      setSampleTypes(Array.isArray(data) ? data : (data.sample_types || data.data || []));
     } catch (error) {
       console.error('Failed to fetch sample types:', error);
     }
@@ -210,7 +212,8 @@ export default function SamplesPage() {
       const response = await api.get('/styles', {
         params: { per_page: 100 },
       });
-      setStyles(response.data.styles || response.data.data || []);
+      const stylesData = response.data;
+      setStyles(Array.isArray(stylesData) ? stylesData : (stylesData.styles || stylesData.data || []));
     } catch (error) {
       console.error('Failed to fetch styles:', error);
     }
@@ -419,12 +422,42 @@ export default function SamplesPage() {
     if (!resubmitSample) return;
     setIsSubmitting(true);
     try {
-      const imageUrls = resubmitImageFiles
-        .filter(f => f.url)
-        .map(f => f.url as string);
-      const docUrls = resubmitDocumentFiles
-        .filter(f => f.url)
-        .map(f => f.url as string);
+      // Upload any new files that don't have URLs yet
+      const imageUrls: string[] = [];
+      for (const f of resubmitImageFiles) {
+        if (f.url) {
+          imageUrls.push(f.url as string);
+        } else if (f.file) {
+          const formData = new FormData();
+          formData.append('file', f.file);
+          formData.append('type', 'image');
+          formData.append('folder', 'samples');
+          const response = await api.post('/upload/file', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          if (response.data?.url) {
+            imageUrls.push(response.data.url);
+          }
+        }
+      }
+
+      const docUrls: string[] = [];
+      for (const f of resubmitDocumentFiles) {
+        if (f.url) {
+          docUrls.push(f.url as string);
+        } else if (f.file) {
+          const formData = new FormData();
+          formData.append('file', f.file);
+          formData.append('type', 'document');
+          formData.append('folder', 'samples');
+          const response = await api.post('/upload/file', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          if (response.data?.url) {
+            docUrls.push(response.data.url);
+          }
+        }
+      }
 
       await api.post(`/samples/${resubmitSample.id}/resubmit`, {
         notes: resubmitNotes || null,

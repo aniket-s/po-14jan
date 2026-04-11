@@ -98,7 +98,15 @@ class PurchaseOrderStyleController extends Controller
      */
     public function attachStyles(Request $request, $poId)
     {
+        $user = $request->user();
         $po = PurchaseOrder::findOrFail($poId);
+
+        // Check if the user can access this PO
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json([
+                'message' => 'You do not have permission to attach styles to this purchase order',
+            ], 403);
+        }
 
         $validator = Validator::make($request->all(), [
             'styles' => 'required|array|min:1',
@@ -119,6 +127,22 @@ class PurchaseOrderStyleController extends Controller
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Validate that assigned users have the correct roles
+        foreach ($request->styles as $index => $styleData) {
+            if (!empty($styleData['assigned_factory_id'])) {
+                $factoryUser = User::find($styleData['assigned_factory_id']);
+                if (!$factoryUser || !$factoryUser->hasRole('Factory')) {
+                    return response()->json(['message' => "Style at index {$index}: assigned user is not a factory"], 422);
+                }
+            }
+            if (!empty($styleData['assigned_agency_id'])) {
+                $agencyUser = User::find($styleData['assigned_agency_id']);
+                if (!$agencyUser || !$agencyUser->hasRole('Agency')) {
+                    return response()->json(['message' => "Style at index {$index}: assigned user is not an agency"], 422);
+                }
+            }
         }
 
         $attachedCount = 0;
@@ -175,9 +199,17 @@ class PurchaseOrderStyleController extends Controller
      *
      * DELETE /api/purchase-orders/{poId}/styles/{styleId}/detach
      */
-    public function detachStyle($poId, $styleId)
+    public function detachStyle(Request $request, $poId, $styleId)
     {
+        $user = $request->user();
         $po = PurchaseOrder::findOrFail($poId);
+
+        // Check if the user can access this PO
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json([
+                'message' => 'You do not have permission to remove styles from this purchase order',
+            ], 403);
+        }
 
         // Check if style is attached to this PO
         if (!$po->styles()->where('style_id', $styleId)->exists()) {
@@ -207,8 +239,16 @@ class PurchaseOrderStyleController extends Controller
      */
     public function updatePivot(Request $request, $poId, $styleId)
     {
+        $user = $request->user();
         $po = PurchaseOrder::findOrFail($poId);
         $style = Style::findOrFail($styleId);
+
+        // Check if the user can access this PO
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json([
+                'message' => 'You do not have permission to update styles in this purchase order',
+            ], 403);
+        }
 
         // Check if style is attached to this PO
         if (!$po->styles()->where('style_id', $styleId)->exists()) {
@@ -216,7 +256,7 @@ class PurchaseOrderStyleController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'quantity_in_po' => 'sometimes|required|integer|min:1',
+            'quantity_in_po' => 'sometimes|integer|min:1',
             'unit_price_in_po' => 'nullable|numeric|min:0',
             'shipping_term' => 'nullable|in:FOB,DDP',
             'size_breakdown' => 'nullable|array',
@@ -285,8 +325,16 @@ class PurchaseOrderStyleController extends Controller
      */
     public function assignFactory(Request $request, $poId, $styleId)
     {
+        $user = $request->user();
         $po = PurchaseOrder::findOrFail($poId);
         $style = Style::findOrFail($styleId);
+
+        // Check if the user can access this PO
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json([
+                'message' => 'You do not have permission to assign factories in this purchase order',
+            ], 403);
+        }
 
         // Check if style is attached to this PO
         if (!$po->styles()->where('style_id', $styleId)->exists()) {
@@ -303,19 +351,27 @@ class PurchaseOrderStyleController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Update pivot
+        // Validate that assigned users have the correct roles
+        if ($request->assigned_factory_id) {
+            $factoryUser = User::find($request->assigned_factory_id);
+            if (!$factoryUser || !$factoryUser->hasRole('Factory')) {
+                return response()->json(['message' => 'The selected user is not a factory'], 422);
+            }
+        }
+
+        if ($request->assigned_agency_id) {
+            $agencyUser = User::find($request->assigned_agency_id);
+            if (!$agencyUser || !$agencyUser->hasRole('Agency')) {
+                return response()->json(['message' => 'The selected user is not an agency'], 422);
+            }
+        }
+
+        // Update pivot (single source of truth for PO-style assignments)
         $po->styles()->updateExistingPivot($styleId, [
             'assignment_type' => $request->assignment_type,
             'assigned_factory_id' => $request->assigned_factory_id,
             'assigned_agency_id' => $request->assigned_agency_id,
             'assigned_at' => now(),
-        ]);
-
-        // Also update the style model for direct filtering
-        $style->update([
-            'assignment_type' => $request->assignment_type,
-            'assigned_factory_id' => $request->assigned_factory_id,
-            'assigned_agency_id' => $request->assigned_agency_id,
         ]);
 
         // Send notification to the assigned factory user
@@ -500,7 +556,15 @@ class PurchaseOrderStyleController extends Controller
      */
     public function attachStylesBulk(Request $request, $poId)
     {
+        $user = $request->user();
         $po = PurchaseOrder::findOrFail($poId);
+
+        // Check if the user can access this PO
+        if (!$this->permissionService->canAccessPO($user, $po)) {
+            return response()->json([
+                'message' => 'You do not have permission to attach styles to this purchase order',
+            ], 403);
+        }
 
         $validator = Validator::make($request->all(), [
             'style_ids' => 'required|array|min:1',
