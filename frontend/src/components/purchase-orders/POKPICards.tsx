@@ -31,9 +31,9 @@ interface KPICard {
 export function POKPICards({ purchaseOrders, totalFromServer, activeFilter, onFilterClick }: POKPICardsProps) {
   const cards = useMemo((): KPICard[] => {
     const total = totalFromServer || purchaseOrders.length;
-    const totalValue = purchaseOrders.reduce((sum, po) => sum + (po.total_value || 0), 0);
-    const totalStyles = purchaseOrders.reduce((sum, po) => sum + (po.styles_count || 0), 0);
-    const totalQty = purchaseOrders.reduce((sum, po) => sum + (po.total_quantity || 0), 0);
+    const totalValue = purchaseOrders.reduce((sum, po) => sum + (parseFloat(String(po.total_value)) || 0), 0);
+    const totalStyles = purchaseOrders.reduce((sum, po) => sum + (Number(po.styles_count) || 0), 0);
+    const totalQty = purchaseOrders.reduce((sum, po) => sum + (Number(po.total_quantity) || 0), 0);
 
     // ETD within next 30 days
     const now = new Date();

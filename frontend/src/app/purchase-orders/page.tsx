@@ -246,6 +246,38 @@ export default function PurchaseOrdersPage() {
     }
   };
 
+  // Export CSV
+  const handleExportCSV = () => {
+    const rows = filteredPOs.length > 0 ? filteredPOs : purchaseOrders;
+    if (rows.length === 0) return;
+
+    const headers = ['PO Number', 'Headline', 'Status', 'PO Date', 'Shipping Term', 'ETD', 'Styles', 'Total Quantity', 'Total Value', 'Currency'];
+    const csvRows = rows.map(po => [
+      po.po_number,
+      po.headline || '',
+      po.status || 'draft',
+      po.po_date,
+      po.shipping_term || '',
+      po.etd_date || '',
+      po.styles_count || 0,
+      po.total_quantity || 0,
+      parseFloat(String(po.total_value)) || 0,
+      po.currency || 'USD',
+    ]);
+
+    const csvContent = [headers, ...csvRows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `purchase-orders-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const openCreateDialog = (type: 'retailer' | 'season' | 'warehouse' | 'country' | 'currency' | 'paymentTerm' | 'agent') => {
     switch (type) {
       case 'retailer': setIsCreateRetailerDialogOpen(true); break;
@@ -328,7 +360,7 @@ export default function PurchaseOrdersPage() {
             </div>
 
             {can('po.export') && (
-              <Button variant="outline" size="sm" className="h-8">
+              <Button variant="outline" size="sm" className="h-8" onClick={handleExportCSV}>
                 <FileDown className="mr-1.5 h-3.5 w-3.5" />
                 Export
               </Button>
@@ -381,6 +413,22 @@ export default function PurchaseOrdersPage() {
                 try { await api.delete(`/purchase-orders/${id}`); } catch (e) { console.error('Failed to delete PO:', id, e); }
               }
               fetchPurchaseOrders();
+            }}
+            onExport={(pos) => {
+              const headers = ['PO Number', 'Headline', 'Status', 'PO Date', 'Shipping Term', 'ETD', 'Styles', 'Total Quantity', 'Total Value', 'Currency'];
+              const csvRows = pos.map(po => [
+                po.po_number, po.headline || '', po.status || 'draft', po.po_date,
+                po.shipping_term || '', po.etd_date || '', po.styles_count || 0,
+                po.total_quantity || 0, parseFloat(String(po.total_value)) || 0, po.currency || 'USD',
+              ]);
+              const csv = [headers, ...csvRows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `purchase-orders-selected-${new Date().toISOString().split('T')[0]}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
             }}
             canEdit={can('po.edit')}
             canDelete={can('po.delete')}

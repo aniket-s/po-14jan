@@ -32,6 +32,7 @@ interface POTableViewProps {
   purchaseOrders: PurchaseOrder[];
   onDelete: (id: number) => void;
   onBulkDelete?: (ids: number[]) => void;
+  onExport?: (pos: PurchaseOrder[]) => void;
   canEdit: boolean;
   canDelete: boolean;
   canExport: boolean;
@@ -44,6 +45,7 @@ export function POTableView({
   purchaseOrders,
   onDelete,
   onBulkDelete,
+  onExport,
   canEdit,
   canDelete,
   canExport,
@@ -74,12 +76,12 @@ export function POTableView({
         bVal = new Date(b.po_date).getTime();
         break;
       case 'total_quantity':
-        aVal = a.total_quantity;
-        bVal = b.total_quantity;
+        aVal = Number(a.total_quantity) || 0;
+        bVal = Number(b.total_quantity) || 0;
         break;
       case 'total_value':
-        aVal = a.total_value;
-        bVal = b.total_value;
+        aVal = parseFloat(String(a.total_value)) || 0;
+        bVal = parseFloat(String(b.total_value)) || 0;
         break;
       case 'styles_count':
         aVal = a.styles_count || 0;
@@ -113,7 +115,8 @@ export function POTableView({
     }
   };
 
-  const formatCurrency = (value: number, currency: string) => {
+  const formatCurrency = (value: number | string, currency: string) => {
+    value = parseFloat(String(value)) || 0;
     try {
       return new Intl.NumberFormat('en-US', {
         style: 'currency',
@@ -186,8 +189,16 @@ export function POTableView({
           <span className="text-sm font-medium">
             {selectedIds.size} PO{selectedIds.size > 1 ? 's' : ''} selected
           </span>
-          {canExport && (
-            <Button size="sm" variant="outline" className="h-7" disabled>
+          {canExport && onExport && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              onClick={() => {
+                const selected = purchaseOrders.filter(p => selectedIds.has(p.id));
+                onExport(selected);
+              }}
+            >
               Export Selected
             </Button>
           )}
@@ -331,7 +342,7 @@ export function POTableView({
                     </TableCell>
                     <TableCell className="text-right">
                       <span className="text-xs font-medium tabular-nums">
-                        {po.total_quantity?.toLocaleString() || '0'}
+                        {(Number(po.total_quantity) || 0).toLocaleString()}
                       </span>
                     </TableCell>
                     <TableCell className="text-right">
