@@ -54,9 +54,7 @@ export function POKPICards({ purchaseOrders, totalFromServer, activeFilter, onFi
     const primaryCurrency = Object.entries(currencyCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'USD';
 
     const formatValue = (val: number) => {
-      if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
-      if (val >= 1_000) return `${(val / 1_000).toFixed(0)}K`;
-      return val.toLocaleString();
+      return val.toLocaleString('en-US', { maximumFractionDigits: 0 });
     };
 
     return [
