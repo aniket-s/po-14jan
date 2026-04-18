@@ -205,6 +205,9 @@ export default function StylesImportPage() {
       const result = await executeStandaloneStylesImport({
         temp_file_path: analysisResult.temp_file_path,
         column_mapping: columnMapping,
+        // Respect the analyser's detected header position so the backend
+        // skips metadata/header/footer rows instead of starting at row 2.
+        start_row: analysisResult.data_start_row,
         image_columns: analysisResult.image_columns,
       });
       setImportResult(result);

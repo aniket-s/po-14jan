@@ -177,6 +177,10 @@ export function ExcelImportDialog({
       const result = await executeStandaloneStylesImport({
         temp_file_path: analysisResult.temp_file_path,
         column_mapping: columnMapping,
+        // Respect the analyser's detected header position so the backend
+        // skips SCI-style metadata rows and the header row itself instead
+        // of starting at row 2 and treating them as invalid data.
+        start_row: analysisResult.data_start_row,
         image_columns: analysisResult.image_columns,
         style_images: Object.keys(styleImages).length > 0 ? styleImages : undefined,
       });
