@@ -270,6 +270,12 @@ class ExcelImportService
             for ($row = $startRow; $row <= $endRow; $row++) {
                 $rowData = $this->extractRowData($worksheet, $row, $columnMapping);
 
+                // Silently skip footer/summary rows ("TOTAL 7,200", "Grand Total", etc.)
+                // so they don't surface in the user-facing error list.
+                if ($this->isSummaryRow($rowData)) {
+                    continue;
+                }
+
                 // Validate required fields
                 $validation = $this->validateRowData($rowData);
                 if (!$validation['valid']) {
@@ -839,6 +845,31 @@ class ExcelImportService
     /**
      * Validate row data
      */
+    /**
+     * Detect obvious footer/summary rows that should not be treated as data
+     * or surfaced as errors (e.g. "TOTAL 7,200", "Grand Total", "SUBTOTAL").
+     * A row is only considered a summary when there is no style number AND at
+     * least one cell contains a total-style keyword, so rows with real data
+     * but a missing style_number still produce a proper validation error.
+     */
+    private function isSummaryRow(array $data): bool
+    {
+        if (!empty($data['style_number'])) {
+            return false;
+        }
+
+        foreach ($data as $key => $value) {
+            if ($key === 'style_number' || !is_string($value)) {
+                continue;
+            }
+            if (preg_match('/\b(grand\s+)?(sub)?totals?\b/i', $value)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function validateRowData(array $data): array
     {
         // Check required fields
@@ -1093,6 +1124,12 @@ class ExcelImportService
 
             for ($row = $startRow; $row <= $endRow; $row++) {
                 $rowData = $this->extractRowData($worksheet, $row, $columnMapping);
+
+                // Silently skip footer/summary rows ("TOTAL 7,200", "Grand Total", etc.)
+                // so they don't surface in the user-facing error list.
+                if ($this->isSummaryRow($rowData)) {
+                    continue;
+                }
 
                 // Validate required fields
                 $validation = $this->validateRowData($rowData);
