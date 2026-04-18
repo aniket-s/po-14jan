@@ -86,7 +86,7 @@ export default function StylesPage() {
       fetchStyles();
     }, filters.search ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [pagination.currentPage, filters.search, filters.brand, filters.retailer]);
+  }, [pagination.currentPage, filters.search, filters.brand, filters.retailer, filters.season, filters.category]);
 
   const fetchStyles = async () => {
     try {
@@ -95,6 +95,8 @@ export default function StylesPage() {
       if (filters.search) params.search = filters.search;
       if (filters.brand !== 'all') params.brand_id = filters.brand;
       if (filters.retailer !== 'all') params.retailer_id = filters.retailer;
+      if (filters.season !== 'all') params.season_id = filters.season;
+      if (filters.category !== 'all') params.category_id = filters.category;
 
       const response = await api.get<PaginatedStyles>('/styles', { params });
       setStyles(response.data.data);
@@ -111,18 +113,10 @@ export default function StylesPage() {
     }
   };
 
-  // Local filters (season, category, KPI)
+  // Local KPI filter (server-side filters handle search/brand/retailer/season/category)
   const filteredStyles = useMemo(() => {
     let result = styles;
 
-    if (filters.season !== 'all') {
-      result = result.filter(s => s.season_id?.toString() === filters.season);
-    }
-    if (filters.category !== 'all') {
-      result = result.filter(s => s.category_id?.toString() === filters.category);
-    }
-
-    // KPI filters
     if (kpiFilter === 'active') {
       result = result.filter(s => s.is_active !== false);
     } else if (kpiFilter === 'used_in_pos') {
@@ -132,7 +126,7 @@ export default function StylesPage() {
     }
 
     return result;
-  }, [styles, filters.season, filters.category, kpiFilter]);
+  }, [styles, kpiFilter]);
 
   // Selection
   const toggleSelect = useCallback((id: number) => {
