@@ -172,12 +172,15 @@ export default function InvitationsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
-  // Factory assignment state (cross-PO style search)
+  // Factory assignment state (multi-PO → styles, mirrors agency assignment flow)
   const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [faAssignPOIds, setFaAssignPOIds] = useState<string[]>([]);
+  const [faPOSearch, setFaPOSearch] = useState('');
+  const [faAssignStyles, setFaAssignStyles] = useState<POStyle[]>([]);
+  const [faStylesLoading, setFaStylesLoading] = useState(false);
   const [faStyleSearch, setFaStyleSearch] = useState('');
-  const [faStyleResults, setFaStyleResults] = useState<{ id: number; style_number: string; description: string | null; quantity: number | null; po_number: string | null; po_id: number | null; assigned_factory_id: number | null }[]>([]);
-  const [faStyleSearchLoading, setFaStyleSearchLoading] = useState(false);
-  const [faSelectedStyles, setFaSelectedStyles] = useState<{ id: number; style_number: string; po_number: string | null }[]>([]);
+  // Composite keys `${po_id}:${style_id}` — a style can belong to multiple POs
+  const [faSelectedKeys, setFaSelectedKeys] = useState<string[]>([]);
   const [factories, setFactories] = useState<FactoryOption[]>([]);
   const [selectedFactoryId, setSelectedFactoryId] = useState<string>('');
   const [assignNotes, setAssignNotes] = useState('');
@@ -391,50 +394,99 @@ export default function InvitationsPage() {
     }
   };
 
-  // Fetch styles across all POs for factory assignment
-  const fetchFaStyles = useCallback(async (search: string = '') => {
+  // --- Factory Assignment functions (multi-PO → styles) ---
+  const faKeyFor = (poId: number | string, styleId: number | string) => `${poId}:${styleId}`;
+
+  const fetchFaStylesForPOs = async (poIds: string[]) => {
+    if (poIds.length === 0) { setFaAssignStyles([]); return; }
+    setFaStylesLoading(true);
     try {
-      setFaStyleSearchLoading(true);
-      const params: any = {};
-      if (search) params.search = search;
-      const response = await api.get('/factory-assignments/search-styles', { params });
-      setFaStyleResults(response.data.styles || []);
-    } catch (error) {
-      console.error('Style search failed:', error);
-      setFaStyleResults([]);
+      const results = await Promise.all(
+        poIds.map(async (poId) => {
+          try {
+            const response = await api.get(`/purchase-orders/${poId}/styles`, { params: { per_page: 200 } });
+            const list = response.data.styles || response.data.data || [];
+            const po = purchaseOrders.find((p) => p.id.toString() === poId);
+            const poNumber = po?.po_number || poId;
+            return (Array.isArray(list) ? list : []).map((s: any) => ({
+              ...s,
+              po_id: Number(poId),
+              po_number: poNumber,
+            })) as POStyle[];
+          } catch {
+            return [] as POStyle[];
+          }
+        })
+      );
+      setFaAssignStyles(results.flat());
     } finally {
-      setFaStyleSearchLoading(false);
+      setFaStylesLoading(false);
     }
-  }, []);
+  };
 
-  // Load all styles when assign dialog opens
-  useEffect(() => {
-    if (showAssignDialog) fetchFaStyles();
-  }, [showAssignDialog, fetchFaStyles]);
-
-  // Debounced style search in assign dialog
-  useEffect(() => {
-    if (!showAssignDialog) return;
-    const timer = setTimeout(() => { fetchFaStyles(faStyleSearch); }, 300);
-    return () => clearTimeout(timer);
-  }, [faStyleSearch, showAssignDialog, fetchFaStyles]);
-
-  // Toggle style selection for factory assignment
-  const toggleFaStyleSelection = (style: { id: number; style_number: string; po_number: string | null }) => {
-    setFaSelectedStyles((prev) => {
-      const exists = prev.find((s) => s.id === style.id);
-      if (exists) return prev.filter((s) => s.id !== style.id);
-      return [...prev, style];
+  const toggleFaPOSelection = (poId: string) => {
+    setFaAssignPOIds((prev) => {
+      const next = prev.includes(poId) ? prev.filter((id) => id !== poId) : [...prev, poId];
+      // Drop style selections that belong to an unselected PO
+      setFaSelectedKeys((keys) =>
+        keys.filter((k) => next.some((pid) => k.startsWith(`${pid}:`)))
+      );
+      fetchFaStylesForPOs(next);
+      return next;
     });
+  };
+
+  const toggleFaAllPOs = (visiblePOs: PurchaseOrder[]) => {
+    const visibleIds = visiblePOs.map((po) => po.id.toString());
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => faAssignPOIds.includes(id));
+    const next = allSelected
+      ? faAssignPOIds.filter((id) => !visibleIds.includes(id))
+      : Array.from(new Set([...faAssignPOIds, ...visibleIds]));
+    setFaAssignPOIds(next);
+    setFaSelectedKeys((keys) => keys.filter((k) => next.some((pid) => k.startsWith(`${pid}:`))));
+    fetchFaStylesForPOs(next);
+  };
+
+  const filteredFaStyles = faAssignStyles.filter((style) => {
+    if (!faStyleSearch) return true;
+    const s = faStyleSearch.toLowerCase();
+    return (
+      style.style_number.toLowerCase().includes(s) ||
+      (style.description || '').toLowerCase().includes(s) ||
+      (style.po_number || '').toLowerCase().includes(s)
+    );
+  });
+
+  const toggleFaStyleSelection = (poId: number, styleId: number) => {
+    const key = faKeyFor(poId, styleId);
+    setFaSelectedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
+  const toggleFaSelectAllStyles = () => {
+    const visibleKeys = filteredFaStyles
+      .filter((s) => s.po_id != null)
+      .map((s) => faKeyFor(s.po_id as number, s.id));
+    const allSelected = visibleKeys.length > 0 && visibleKeys.every((k) => faSelectedKeys.includes(k));
+    if (allSelected) {
+      setFaSelectedKeys((prev) => prev.filter((k) => !visibleKeys.includes(k)));
+    } else {
+      setFaSelectedKeys((prev) => Array.from(new Set([...prev, ...visibleKeys])));
+    }
   };
 
   // Submit factory assignment
   const handleAssignFactory = async () => {
-    if (faSelectedStyles.length === 0 || !selectedFactoryId) return;
+    if (faSelectedKeys.length === 0 || !selectedFactoryId) return;
+    // Backend only needs the unique set of style ids; it derives the PO per style.
+    const styleIds = Array.from(new Set(
+      faSelectedKeys.map((k) => Number(k.split(':')[1]))
+    ));
     setAssignLoading(true);
     try {
       await api.post('/factory-assignments/bulk-assign', {
-        style_ids: faSelectedStyles.map((s) => s.id),
+        style_ids: styleIds,
         factory_id: parseInt(selectedFactoryId),
         assignment_type: 'via_agency',
         notes: assignNotes || null,
@@ -451,9 +503,11 @@ export default function InvitationsPage() {
   };
 
   const resetAssignForm = () => {
+    setFaAssignPOIds([]);
+    setFaAssignStyles([]);
+    setFaPOSearch('');
     setFaStyleSearch('');
-    setFaStyleResults([]);
-    setFaSelectedStyles([]);
+    setFaSelectedKeys([]);
     setSelectedFactoryId('');
     setAssignNotes('');
   };
@@ -989,91 +1043,154 @@ export default function InvitationsPage() {
             <DialogHeader>
               <DialogTitle>Assign Styles to Factory</DialogTitle>
               <DialogDescription>
-                Search and select styles, then choose a factory to assign them to
+                Select one or more purchase orders, pick styles, and assign them to a factory
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-6">
-              {/* Style Search */}
+              {/* PO Selection */}
               <div className="space-y-3">
-                <Label>Search Styles</Label>
+                <Label>Purchase Orders * ({faAssignPOIds.length} selected)</Label>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Type style number, description, or PO number to search..."
-                    value={faStyleSearch}
-                    onChange={(e) => setFaStyleSearch(e.target.value)}
+                    placeholder="Search POs..."
+                    value={faPOSearch}
+                    onChange={(e) => setFaPOSearch(e.target.value)}
                     className="pl-8"
                   />
                 </div>
-
-                {/* Search Results */}
-                {faStyleSearchLoading && (
-                  <div className="text-sm text-muted-foreground py-2">Searching...</div>
-                )}
-                {faStyleResults.length > 0 && (
-                  <div className="border rounded-md max-h-[250px] overflow-y-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-10"></TableHead>
-                          <TableHead>Style #</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>PO</TableHead>
-                          <TableHead>Qty</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {faStyleResults.map((style) => {
-                          const isSelected = faSelectedStyles.some((s) => s.id === style.id);
-                          return (
-                            <TableRow
-                              key={style.id}
-                              className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => toggleFaStyleSelection({ id: style.id, style_number: style.style_number, po_number: style.po_number })}
-                            >
-                              <TableCell>
-                                <Checkbox
-                                  checked={isSelected}
-                                  onCheckedChange={() => toggleFaStyleSelection({ id: style.id, style_number: style.style_number, po_number: style.po_number })}
-                                />
-                              </TableCell>
-                              <TableCell className="font-medium">{style.style_number}</TableCell>
-                              <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">
-                                {style.description || '-'}
-                              </TableCell>
-                              <TableCell className="text-sm">{style.po_number || '-'}</TableCell>
-                              <TableCell className="text-sm">{style.quantity || '-'}</TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                {!faStyleSearchLoading && faStyleResults.length === 0 && (
-                  <div className="text-sm text-muted-foreground py-2">No styles found</div>
-                )}
+                <div className="border rounded-md max-h-[220px] overflow-y-auto">
+                  {(() => {
+                    const visiblePOs = purchaseOrders.filter((po) => {
+                      if (!faPOSearch) return true;
+                      const s = faPOSearch.toLowerCase();
+                      return (
+                        po.po_number.toLowerCase().includes(s) ||
+                        (po.headline || '').toLowerCase().includes(s)
+                      );
+                    });
+                    if (visiblePOs.length === 0) {
+                      return (
+                        <div className="text-sm text-muted-foreground py-4 text-center">
+                          No POs match your search
+                        </div>
+                      );
+                    }
+                    const allVisibleSelected =
+                      visiblePOs.length > 0 &&
+                      visiblePOs.every((po) => faAssignPOIds.includes(po.id.toString()));
+                    return (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox
+                                checked={allVisibleSelected}
+                                onCheckedChange={() => toggleFaAllPOs(visiblePOs)}
+                              />
+                            </TableHead>
+                            <TableHead>PO #</TableHead>
+                            <TableHead>Headline</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {visiblePOs.map((po) => {
+                            const checked = faAssignPOIds.includes(po.id.toString());
+                            return (
+                              <TableRow
+                                key={po.id}
+                                className="cursor-pointer hover:bg-muted/50"
+                                onClick={() => toggleFaPOSelection(po.id.toString())}
+                              >
+                                <TableCell>
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={() => toggleFaPOSelection(po.id.toString())}
+                                  />
+                                </TableCell>
+                                <TableCell className="font-medium">{po.po_number}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground truncate max-w-[320px]">
+                                  {po.headline || '-'}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    );
+                  })()}
+                </div>
               </div>
 
-              {/* Selected Styles */}
-              {faSelectedStyles.length > 0 && (
-                <div className="space-y-2">
-                  <Label>Selected Styles ({faSelectedStyles.length})</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {faSelectedStyles.map((style) => (
-                      <Badge
-                        key={style.id}
-                        variant="secondary"
-                        className="gap-1 py-1 px-2 cursor-pointer hover:bg-destructive hover:text-destructive-foreground"
-                        onClick={() => setFaSelectedStyles((prev) => prev.filter((s) => s.id !== style.id))}
-                      >
-                        {style.style_number}
-                        {style.po_number && ` (${style.po_number})`}
-                        <XCircle className="h-3 w-3 ml-1" />
-                      </Badge>
-                    ))}
+              {/* Styles picked from selected POs */}
+              {faAssignPOIds.length > 0 && (
+                <div className="space-y-3">
+                  <Label>Styles ({faSelectedKeys.length} of {filteredFaStyles.length} selected)</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search styles..."
+                      value={faStyleSearch}
+                      onChange={(e) => setFaStyleSearch(e.target.value)}
+                      className="pl-8"
+                    />
                   </div>
+                  {faStylesLoading ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">Loading styles...</div>
+                  ) : filteredFaStyles.length === 0 ? (
+                    <div className="text-sm text-muted-foreground py-4 text-center">
+                      {faAssignStyles.length === 0 ? 'No styles found in selected POs' : 'No styles match your search'}
+                    </div>
+                  ) : (
+                    <div className="border rounded-md max-h-[300px] overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox
+                                checked={
+                                  filteredFaStyles.length > 0 &&
+                                  filteredFaStyles.every((s) =>
+                                    s.po_id != null && faSelectedKeys.includes(faKeyFor(s.po_id, s.id))
+                                  )
+                                }
+                                onCheckedChange={toggleFaSelectAllStyles}
+                              />
+                            </TableHead>
+                            <TableHead>PO</TableHead>
+                            <TableHead>Style #</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Qty</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredFaStyles.map((style) => {
+                            const poId = style.po_id as number;
+                            const key = faKeyFor(poId, style.id);
+                            return (
+                              <TableRow
+                                key={key}
+                                className="cursor-pointer hover:bg-muted/50"
+                                onClick={() => toggleFaStyleSelection(poId, style.id)}
+                              >
+                                <TableCell>
+                                  <Checkbox
+                                    checked={faSelectedKeys.includes(key)}
+                                    onCheckedChange={() => toggleFaStyleSelection(poId, style.id)}
+                                  />
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground">{style.po_number || '-'}</TableCell>
+                                <TableCell className="font-medium">{style.style_number}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{style.description || '-'}</TableCell>
+                                <TableCell className="text-sm">{style.pivot?.quantity_in_po || style.total_quantity || '-'}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1120,7 +1237,7 @@ export default function InvitationsPage() {
               </Button>
               <Button
                 onClick={handleAssignFactory}
-                disabled={faSelectedStyles.length === 0 || !selectedFactoryId || assignLoading}
+                disabled={faSelectedKeys.length === 0 || !selectedFactoryId || assignLoading}
               >
                 {assignLoading ? (
                   <>
@@ -1128,7 +1245,7 @@ export default function InvitationsPage() {
                     Assigning...
                   </>
                 ) : (
-                  `Assign ${faSelectedStyles.length} Style${faSelectedStyles.length !== 1 ? 's' : ''}`
+                  `Assign ${faSelectedKeys.length} Style${faSelectedKeys.length !== 1 ? 's' : ''}`
                 )}
               </Button>
             </DialogFooter>
