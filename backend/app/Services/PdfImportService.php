@@ -974,7 +974,26 @@ class PdfImportService
             }
         }
 
-        // Build the line items
+        // Build the line items. Each row may have its own colour code +
+        // name pair (when the columnar layout lists one colour per row),
+        // so we capture the per-row colour as the primary colour and also
+        // expose every colour found across the block as the `colors` array.
+        $allColors = [];
+        $seenAll = [];
+        for ($i = 0; $i < $itemCount; $i++) {
+            $name = isset($colorNames[$i]) ? trim((string) $colorNames[$i]) : null;
+            $code = isset($colorCodes[$i]) ? trim((string) $colorCodes[$i]) : null;
+            if ($name === null || $name === '') {
+                continue;
+            }
+            $key = strtoupper($name);
+            if (isset($seenAll[$key])) {
+                continue;
+            }
+            $seenAll[$key] = true;
+            $allColors[] = ['name' => strtoupper($name), 'code' => $code !== '' ? $code : null];
+        }
+
         for ($i = 0; $i < $itemCount; $i++) {
             $colorDisplay = null;
             if (isset($colorCodes[$i]) && isset($colorNames[$i])) {
@@ -994,10 +1013,23 @@ class PdfImportService
                 $extn = round($qty * $price, 2);
             }
 
+            // Per-row colour entry (the primary colour for this line)
+            $rowColors = [];
+            if (isset($colorNames[$i]) && trim((string) $colorNames[$i]) !== '') {
+                $rowColors[] = [
+                    'name' => strtoupper(trim((string) $colorNames[$i])),
+                    'code' => isset($colorCodes[$i]) && trim((string) $colorCodes[$i]) !== '' ? $colorCodes[$i] : null,
+                ];
+            }
+
             $styles[] = [
                 'style_number' => $this->buildParsedField($styleNumber),
                 'description' => $this->buildParsedField($description),
                 'color_name' => $this->buildParsedField($colorDisplay),
+                'colors' => $this->buildParsedField(
+                    !empty($rowColors) ? $rowColors : (!empty($allColors) ? $allColors : null),
+                    !empty($rowColors) || !empty($allColors) ? 'parsed' : 'missing'
+                ),
                 'size_breakdown' => $this->buildParsedField(null, 'missing'),
                 'quantity' => $this->buildParsedField($qty),
                 'unit_price' => $this->buildParsedField($price),
@@ -1234,10 +1266,13 @@ class PdfImportService
             $totalAmount = round($totalQty * $unitPrice, 2);
         }
 
+        $colors = $this->extractColorsFromBlock($colorName, $block, $mainRow);
+
         return [
             'style_number' => $this->buildParsedField($styleNumber),
             'description' => $this->buildParsedField($description ? trim($description) : null),
-            'color_name' => $this->buildParsedField($colorName),
+            'color_name' => $this->buildParsedField($colors[0]['name'] ?? $colorName),
+            'colors' => $this->buildParsedField(!empty($colors) ? $colors : null, !empty($colors) ? 'parsed' : 'missing'),
             'size_breakdown' => $this->buildParsedField(
                 !empty($sizeBreakdown) ? $sizeBreakdown : null,
                 empty($sizeBreakdown) ? 'missing' : 'parsed'
@@ -1246,6 +1281,84 @@ class PdfImportService
             'unit_price' => $this->buildParsedField($unitPrice),
             'total_amount' => $this->buildParsedField($totalAmount),
         ];
+    }
+
+    /**
+     * Find every colour reference in a parsed item block. Returns a list of
+     * ['name' => ..., 'code' => ...] entries, de-duplicated and ordered.
+     *
+     * Looks at:
+     *   - the primary $colorName already extracted (which may itself be
+     *     multi-colour, e.g. "WHITE/BLACK"),
+     *   - the rest of the block lines, scanning for "<digits> <COLORWORD>"
+     *     codes and recognised colour words used elsewhere in the row group.
+     */
+    private function extractColorsFromBlock(?string $primaryColor, array $block, string $mainRow): array
+    {
+        $colorWordPattern = '/(BLACK|WHITE|RED|BLUE|GREEN|NAVY|GREY|GRAY|PINK|TAN|CAN|CANYON|PINE|CAR|CAROLINA|MUSLI|CREAM|CHARCOAL|KHAKI|BROWN|ORANGE|YELLOW|PURPLE|OLIVE|CORAL|TEAL|BURGUNDY|IVORY|BEIGE|SAGE|ROSE|FUCHSIA|HEATHER|OATMEAL|MUSTARD|INDIGO|LAVENDER|PLUM|MINT|RUST|WINE|BONE|SLATE|STEEL|SAINT|SAND)/i';
+
+        $entries = [];
+        $seen = [];
+
+        $push = function (?string $name, ?string $code) use (&$entries, &$seen): void {
+            if ($name === null) {
+                return;
+            }
+            $name = trim($name);
+            if ($name === '') {
+                return;
+            }
+            $key = strtoupper($name);
+            if (isset($seen[$key])) {
+                return;
+            }
+            $seen[$key] = true;
+            $entries[] = ['name' => $name, 'code' => $code !== null && $code !== '' ? $code : null];
+        };
+
+        // 1) Split the primary colour string on common separators so
+        // multi-colour cells like "WHITE/BLACK" don't collapse to one.
+        if ($primaryColor !== null && trim($primaryColor) !== '') {
+            $parts = preg_split('#[/,&]| and #i', $primaryColor);
+            foreach ($parts as $part) {
+                $part = trim($part);
+                if ($part === '') {
+                    continue;
+                }
+                if (preg_match('/^(\d{1,4})\s+(.+)$/', $part, $m)) {
+                    $push($m[2], $m[1]);
+                } else {
+                    $push($part, null);
+                }
+            }
+        }
+
+        // 2) Scan every block line for additional "<digits> <COLOR>" codes
+        // and standalone colour words. The main row was already partially
+        // mined for the primary colour, but additional colours may sit in
+        // continuation rows (e.g. SCI POs that list one colour per sub-row).
+        foreach ($block as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '') {
+                continue;
+            }
+
+            if (preg_match_all('/\b(\d{1,4})\s+([A-Z]{3,})/', $trimmed, $coded, PREG_SET_ORDER)) {
+                foreach ($coded as $m) {
+                    if (preg_match($colorWordPattern, $m[2])) {
+                        $push($m[2], $m[1]);
+                    }
+                }
+            }
+
+            if (preg_match_all($colorWordPattern, $trimmed, $words)) {
+                foreach ($words[1] as $word) {
+                    $push($word, null);
+                }
+            }
+        }
+
+        return $entries;
     }
 
     /**

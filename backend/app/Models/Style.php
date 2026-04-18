@@ -275,6 +275,15 @@ class Style extends Model
     }
 
     /**
+     * Get all colors associated with this style. PDFs sometimes list more than
+     * one colour per line item (e.g. "WHITE/BLACK"); each one is captured here.
+     */
+    public function colors()
+    {
+        return $this->hasMany(StyleColor::class)->orderBy('display_order');
+    }
+
+    /**
      * Get the user who last updated the style
      */
     public function updatedBy()

@@ -248,7 +248,13 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks) in this exa
     {
       "style_number": "string (the style/item/SKU number - REQUIRED)",
       "description": "string or null (item/product description)",
-      "color_name": "string or null",
+      "color_name": "string or null (the PRIMARY colour - keep this for backward compatibility, usually the first colour listed)",
+      "colors": [
+        {
+          "name": "string (colour name as it appears, e.g. WHITE, BLACK)",
+          "code": "string or null (supplier colour code if shown alongside, e.g. 001)"
+        }
+      ],
       "hsn_code": "string or null",
       "fabric": "string or null",
       "size_breakdown": {"S": 10, "M": 20, "L": 15} or null,
@@ -287,6 +293,7 @@ In this example, the QTY > row has only 4 values but SIZE > row has 6 sizes. The
 IMPORTANT RULES:
 - Extract ALL line items/styles from the document - do not skip any rows
 - For style_number: Use the STYLE/Style#/Item/SKU/Article column value (an alphanumeric code like RLC442, NOT a color name like WHITE or BLACK). If you see both a code and a color, the code is the style_number and the color is the color_name.
+- For colors: ALWAYS populate this array with EVERY colour mentioned for the line item, in the order they appear. If a row lists multiple colours (e.g. "WHITE/BLACK", "100 WHITE  101 NAVY", a colour list under one style), include EACH one as a separate object. Set color_name to the first entry in this array. If only one colour exists, the array still has one entry. If no colour is present, return an empty array [].
 - For quantity: Use the QTY column value from the style header row. Do NOT sum it again from the size breakdown - the size breakdown is just the detail of how that total breaks down by size.
 - For unit_price: Use the PRICE EA./Rate/Price/Unit Price/FOB/Cost column. This is REQUIRED - look carefully for it. Use 0 only if truly not present.
 - For dates: always convert to YYYY-MM-DD format regardless of the original format (e.g. 06-JUN-26 → 2026-06-06, 08-MAR-26 → 2026-03-08)
@@ -824,6 +831,9 @@ PROMPT;
                 }
             }
 
+            $colors = $this->normalizeColors($item['colors'] ?? null, $item['color_name'] ?? null);
+            $primaryColorName = $colors[0]['name'] ?? ($item['color_name'] ?? null);
+
             $result[] = [
                 'style_number' => [
                     'value' => $item['style_number'] ?? null,
@@ -836,9 +846,14 @@ PROMPT;
                     'confidence' => ($item['description'] ?? null) !== null ? 'high' : 'low',
                 ],
                 'color_name' => [
-                    'value' => $item['color_name'] ?? null,
-                    'status' => ($item['color_name'] ?? null) !== null ? 'parsed' : 'missing',
-                    'confidence' => ($item['color_name'] ?? null) !== null ? 'high' : 'low',
+                    'value' => $primaryColorName,
+                    'status' => $primaryColorName !== null ? 'parsed' : 'missing',
+                    'confidence' => $primaryColorName !== null ? 'high' : 'low',
+                ],
+                'colors' => [
+                    'value' => $colors,
+                    'status' => !empty($colors) ? 'parsed' : 'missing',
+                    'confidence' => !empty($colors) ? 'high' : 'low',
                 ],
                 'size_breakdown' => [
                     'value' => $sizeBreakdown,
@@ -871,6 +886,74 @@ PROMPT;
         }
 
         return $result;
+    }
+
+    /**
+     * Normalise the `colors` field returned by Claude (or absent).
+     * Accepts: array of objects, array of strings, single string, null.
+     * If Claude returned nothing in `colors` but provided `color_name`,
+     * also splits that on common multi-colour separators ("/", "&", ",")
+     * so we don't silently drop colours from the older single-string format.
+     *
+     * Returns a list of ['name' => string, 'code' => string|null] entries,
+     * de-duplicated and trimmed.
+     */
+    private function normalizeColors($colors, $colorName): array
+    {
+        $entries = [];
+
+        if (is_array($colors)) {
+            foreach ($colors as $entry) {
+                if (is_string($entry)) {
+                    $entries[] = ['name' => $entry, 'code' => null];
+                } elseif (is_array($entry)) {
+                    $entries[] = [
+                        'name' => $entry['name'] ?? null,
+                        'code' => $entry['code'] ?? null,
+                    ];
+                }
+            }
+        }
+
+        if (empty($entries) && is_string($colorName) && trim($colorName) !== '') {
+            // Split on common separators so multi-colour strings like
+            // "WHITE/BLACK" or "WHITE & BLACK" are not lost.
+            $parts = preg_split('#[/,&]| and #i', $colorName);
+            foreach ($parts as $part) {
+                $entries[] = ['name' => $part, 'code' => null];
+            }
+        }
+
+        $normalized = [];
+        $seen = [];
+        foreach ($entries as $entry) {
+            $name = is_string($entry['name'] ?? null) ? trim($entry['name']) : null;
+            if ($name === null || $name === '') {
+                continue;
+            }
+            $key = strtoupper($name);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $code = $entry['code'] ?? null;
+            $code = is_string($code) ? trim($code) : null;
+            if ($code === '') {
+                $code = null;
+            }
+
+            // If the name itself starts with a numeric code ("001 BLACK"),
+            // split it so the code lives in its own field.
+            if ($code === null && preg_match('/^(\d{1,4})\s+(.+)$/', $name, $m)) {
+                $code = $m[1];
+                $name = trim($m[2]);
+            }
+
+            $normalized[] = ['name' => $name, 'code' => $code];
+        }
+
+        return $normalized;
     }
 
     /**
