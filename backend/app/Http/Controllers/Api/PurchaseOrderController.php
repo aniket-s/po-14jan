@@ -231,7 +231,7 @@ class PurchaseOrderController extends Controller
                 : collect();
 
             return response()->json([
-                'data' => $pos->map(function ($po) use ($factoryNames, $getVisibleStyles) {
+                'data' => $pos->map(function ($po) use ($factoryNames, $getVisibleStyles, $isFactory, $factoryUserId) {
                     $visibleStyles = $getVisibleStyles($po);
                     return [
                         'id' => $po->id,
@@ -240,6 +240,8 @@ class PurchaseOrderController extends Controller
                         'status' => $po->status,
                         'allowed_transitions' => $this->getAllowedTransitions($po->status),
                         'po_date' => $po->po_date?->format('Y-m-d'),
+                        'buyer_po_date' => $po->po_date?->format('Y-m-d'),
+                        'factory_po_date' => $isFactory ? $po->factoryPoDateFor($factoryUserId) : null,
                         'revision_date' => $po->revision_date?->format('Y-m-d'),
                         'shipping_term' => $po->shipping_term,
                         'etd_date' => $po->etd_date?->format('Y-m-d'),
@@ -247,7 +249,7 @@ class PurchaseOrderController extends Controller
                         'ex_factory_date' => $po->ex_factory_date?->format('Y-m-d'),
                         'in_warehouse_date' => $po->in_warehouse_date?->format('Y-m-d'),
                         'total_quantity' => $po->total_quantity,
-                        'total_value' => $po->total_value,
+                        'total_value' => $isFactory ? null : $po->total_value,
                         'styles_count' => $visibleStyles->count(),
                         'payment_terms' => $po->payment_term,
                         'ship_to' => $po->ship_to,
@@ -282,23 +284,30 @@ class PurchaseOrderController extends Controller
                             'code' => $po->getRelation('currency')?->code,
                             'symbol' => $po->getRelation('currency')?->symbol ?? '',
                         ] : null,
-                        'styles' => $visibleStyles->map(function ($style) use ($factoryNames) {
+                        'styles' => $visibleStyles->map(function ($style) use ($factoryNames, $isFactory) {
                             $pivotFactoryId = $style->pivot->assigned_factory_id;
-                            return [
+                            $row = [
                                 'id' => $style->id,
                                 'style_number' => $style->style_number,
                                 'description' => $style->description,
                                 'color_name' => $style->color_name ?? ($style->color?->name ?? null),
                                 'quantity_in_po' => $style->pivot->quantity_in_po,
-                                'unit_price_in_po' => $style->pivot->unit_price_in_po,
-                                'total_price' => ($style->pivot->quantity_in_po ?? 0) * ($style->pivot->unit_price_in_po ?? 0),
                                 'production_status' => $style->pivot->status,
                                 'shipping_approval_status' => null,
                                 'assigned_factory' => $pivotFactoryId ? ($factoryNames[$pivotFactoryId] ?? null) : null,
                                 'assignment_type' => $style->pivot->assignment_type,
                                 'ex_factory_date' => $style->pivot->ex_factory_date,
+                                'factory_ex_factory_date' => $style->pivot->factory_ex_factory_date,
                                 'target_shipment_date' => $style->pivot->target_shipment_date,
                             ];
+                            if ($isFactory) {
+                                $row['factory_unit_price'] = $style->pivot->factory_unit_price;
+                            } else {
+                                $row['unit_price_in_po'] = $style->pivot->unit_price_in_po;
+                                $row['factory_unit_price'] = $style->pivot->factory_unit_price;
+                                $row['total_price'] = ($style->pivot->quantity_in_po ?? 0) * ($style->pivot->unit_price_in_po ?? 0);
+                            }
+                            return $row;
                         }),
                         'created_at' => $po->created_at,
                     ];
@@ -311,10 +320,11 @@ class PurchaseOrderController extends Controller
         }
 
         return response()->json([
-            'data' => $pos->map(function ($po) use ($getVisibleStyles) {
+            'data' => $pos->map(function ($po) use ($getVisibleStyles, $isFactory, $factoryUserId) {
                 $importerRel = $po->getRelation('importer');
                 $agencyRel   = $po->getRelation('agency');
-                return [
+
+                $row = [
                     'id' => $po->id,
                     'po_number' => $po->po_number,
                     'headline' => $po->headline,
@@ -329,16 +339,26 @@ class PurchaseOrderController extends Controller
                         'company' => $agencyRel->company,
                     ] : null,
                     'po_date' => $po->po_date?->format('Y-m-d'),
+                    'buyer_po_date' => $po->po_date?->format('Y-m-d'),
                     'ex_factory_date' => $po->ex_factory_date?->format('Y-m-d'),
                     'etd_date' => $po->etd_date?->format('Y-m-d'),
                     'total_quantity' => $po->total_quantity,
-                    'total_value' => $po->total_value,
                     'currency' => ($po->relationLoaded('currency') ? $po->getRelation('currency')?->code : null) ?? $po->getAttributes()['currency'] ?? 'USD',
                     'status' => $po->status,
                     'allowed_transitions' => $this->getAllowedTransitions($po->status),
                     'styles_count' => $getVisibleStyles($po)->count(),
                     'created_at' => $po->created_at,
                 ];
+
+                if ($isFactory) {
+                    $row['factory_po_date'] = $po->factoryPoDateFor($factoryUserId);
+                    $row['factory_ex_factory_date'] = $po->factoryExFactoryDateFor($factoryUserId);
+                    // PO value hidden from factories.
+                } else {
+                    $row['total_value'] = $po->total_value;
+                }
+
+                return $row;
             }),
             'current_page' => $pos->currentPage(),
             'last_page' => $pos->lastPage(),
@@ -353,8 +373,9 @@ class PurchaseOrderController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
+        $isFactory = $user->hasRole('Factory');
         // For Factory users, constrain styles eager load to only their assigned styles
-        $stylesEagerLoad = $user->hasRole('Factory')
+        $stylesEagerLoad = $isFactory
             ? ['styles' => function ($query) use ($user) {
                 $query->wherePivot('assigned_factory_id', $user->id);
             }]
@@ -369,85 +390,114 @@ class PurchaseOrderController extends Controller
             ], 403);
         }
 
+        // Role-aware PO date: factory sees the date the agency assigned the PO
+        // to them; importer/agency see the buyer PO date.
+        $factoryPoDate = $isFactory ? $po->factoryPoDateFor($user->id) : null;
+        $factoryExFactoryDate = $isFactory ? $po->factoryExFactoryDateFor($user->id) : null;
+
+        $payload = [
+            'id' => $po->id,
+            'po_number' => $po->po_number,
+            'headline' => $po->headline,
+            'importer_id' => $po->importer_id,
+            'importer' => $po->getRelation('importer') ? [
+                'id' => $po->getRelation('importer')->id,
+                'name' => $po->getRelation('importer')->name,
+                'email' => $po->getRelation('importer')->email,
+                'company' => $po->getRelation('importer')->company,
+            ] : null,
+            'agency_id' => $po->agency_id,
+            'agency' => $po->getRelation('agency') ? [
+                'id' => $po->getRelation('agency')->id,
+                'name' => $po->getRelation('agency')->name,
+                'email' => $po->getRelation('agency')->email,
+                'company' => $po->getRelation('agency')->company,
+            ] : null,
+            'po_date' => $po->po_date?->format('Y-m-d'),
+            'buyer_po_date' => $po->po_date?->format('Y-m-d'),
+            'factory_po_date' => $factoryPoDate,
+            'factory_ex_factory_date' => $factoryExFactoryDate,
+            'currency_id' => $po->currency_id,
+            'currency' => $po->getRelation('currency')?->code ?? 'USD',
+            'status' => $po->status,
+            'allowed_transitions' => $this->getAllowedTransitions($po->status),
+            'metadata' => $po->metadata,
+            'shipping_term' => $po->shipping_term,
+            'revision_date' => $po->revision_date?->format('Y-m-d'),
+            'ex_factory_date' => $po->ex_factory_date?->format('Y-m-d'),
+            'etd_date' => $po->etd_date?->format('Y-m-d'),
+            'eta_date' => $po->eta_date?->format('Y-m-d'),
+            'in_warehouse_date' => $po->in_warehouse_date?->format('Y-m-d'),
+            'ship_to' => $po->ship_to,
+            'ship_to_address' => $po->ship_to_address,
+            'sample_schedule' => $po->sample_schedule,
+            'packing_guidelines' => $po->packing_guidelines,
+            'season_id' => $po->season_id,
+            'retailer_id' => $po->retailer_id,
+            'country_id' => $po->country_id,
+            'warehouse_id' => $po->warehouse_id,
+            'payment_term' => $po->payment_term,
+            'country_of_origin' => $po->country_of_origin,
+            'packing_method' => $po->packing_method,
+            'other_terms' => $po->other_terms,
+            'shipping_method' => $po->metadata['shipping_method'] ?? null,
+            'terms_of_delivery' => $po->terms_of_delivery,
+            'styles' => $po->styles->map(function ($style) use ($isFactory) {
+                $styleRow = [
+                    'id' => $style->id,
+                    'style_number' => $style->style_number,
+                    'description' => $style->description,
+                    'fabric' => $style->fabric,
+                    'color' => $style->color,
+                    'quantity' => $style->quantity,
+                    'size_breakdown' => $style->size_breakdown,
+                    'packing_details' => $style->packing_details,
+                    'pivot' => [
+                        'assigned_factory_id' => $style->pivot->assigned_factory_id,
+                        'assigned_agency_id' => $style->pivot->assigned_agency_id,
+                        'assignment_type' => $style->pivot->assignment_type,
+                        'status' => $style->pivot->status,
+                        'quantity_in_po' => $style->pivot->quantity_in_po,
+                        'ex_factory_date' => $style->pivot->ex_factory_date?->format('Y-m-d'),
+                        'factory_ex_factory_date' => $style->pivot->factory_ex_factory_date?->format('Y-m-d'),
+                        'assigned_at' => $style->pivot->assigned_at?->format('Y-m-d'),
+                    ],
+                ];
+
+                if ($isFactory) {
+                    // Factories only see their own price; PO pricing is hidden.
+                    $styleRow['pivot']['factory_unit_price'] = $style->pivot->factory_unit_price;
+                } else {
+                    // Importer/Agency see the agency-assigned per-style PO price.
+                    $styleRow['unit_price'] = $style->unit_price;
+                    $styleRow['total_price'] = $style->total_price;
+                    $styleRow['pivot']['unit_price_in_po'] = $style->pivot->unit_price_in_po;
+                    $styleRow['pivot']['factory_unit_price'] = $style->pivot->factory_unit_price;
+                }
+                return $styleRow;
+            }),
+            'created_at' => $po->created_at,
+            'updated_at' => $po->updated_at,
+        ];
+
+        // Non-factory users see financial/summary fields
+        if (!$isFactory) {
+            $payload['total_quantity'] = $po->total_quantity;
+            $payload['total_value'] = $po->total_value;
+            $payload['exchange_rate'] = $po->exchange_rate;
+            $payload['payment_term_id'] = $po->payment_term_id;
+            $payload['buyer_id'] = $po->buyer_id;
+            $payload['payment_terms'] = $po->payment_terms;
+            $payload['payment_terms_structured'] = $po->payment_terms_structured;
+            $payload['additional_notes'] = $po->additional_notes;
+        } else {
+            // Factories see quantity (they need it for production) but not PO value
+            $payload['total_quantity'] = $po->styles->sum(fn ($s) => $s->pivot->quantity_in_po ?? 0);
+            $payload['total_value'] = null;
+        }
+
         return response()->json([
-            'purchase_order' => [
-                'id' => $po->id,
-                'po_number' => $po->po_number,
-                'headline' => $po->headline,
-                'importer_id' => $po->importer_id,
-                'importer' => $po->getRelation('importer') ? [
-                    'id' => $po->getRelation('importer')->id,
-                    'name' => $po->getRelation('importer')->name,
-                    'email' => $po->getRelation('importer')->email,
-                    'company' => $po->getRelation('importer')->company,
-                ] : null,
-                'agency_id' => $po->agency_id,
-                'agency' => $po->getRelation('agency') ? [
-                    'id' => $po->getRelation('agency')->id,
-                    'name' => $po->getRelation('agency')->name,
-                    'email' => $po->getRelation('agency')->email,
-                    'company' => $po->getRelation('agency')->company,
-                ] : null,
-                'po_date' => $po->po_date?->format('Y-m-d'),
-                'total_quantity' => $po->total_quantity,
-                'total_value' => $po->total_value,
-                'currency_id' => $po->currency_id,
-                'currency' => $po->getRelation('currency')?->code ?? 'USD',
-                'exchange_rate' => $po->exchange_rate,
-                'payment_term_id' => $po->payment_term_id,
-                'buyer_id' => $po->buyer_id,
-                'payment_terms' => $po->payment_terms,
-                'payment_terms_structured' => $po->payment_terms_structured,
-                'additional_notes' => $po->additional_notes,
-                'status' => $po->status,
-                'allowed_transitions' => $this->getAllowedTransitions($po->status),
-                'metadata' => $po->metadata,
-                'shipping_term' => $po->shipping_term,
-                'revision_date' => $po->revision_date?->format('Y-m-d'),
-                'ex_factory_date' => $po->ex_factory_date?->format('Y-m-d'),
-                'etd_date' => $po->etd_date?->format('Y-m-d'),
-                'eta_date' => $po->eta_date?->format('Y-m-d'),
-                'in_warehouse_date' => $po->in_warehouse_date?->format('Y-m-d'),
-                'ship_to' => $po->ship_to,
-                'ship_to_address' => $po->ship_to_address,
-                'sample_schedule' => $po->sample_schedule,
-                'packing_guidelines' => $po->packing_guidelines,
-                'season_id' => $po->season_id,
-                'retailer_id' => $po->retailer_id,
-                'country_id' => $po->country_id,
-                'warehouse_id' => $po->warehouse_id,
-                'payment_term' => $po->payment_term,
-                'country_of_origin' => $po->country_of_origin,
-                'packing_method' => $po->packing_method,
-                'other_terms' => $po->other_terms,
-                'shipping_method' => $po->metadata['shipping_method'] ?? null,
-                'terms_of_delivery' => $po->terms_of_delivery,
-                'styles' => $po->styles
-                    ->map(function ($style) {
-                    return [
-                        'id' => $style->id,
-                        'style_number' => $style->style_number,
-                        'description' => $style->description,
-                        'fabric' => $style->fabric,
-                        'color' => $style->color,
-                        'quantity' => $style->quantity,
-                        'unit_price' => $style->unit_price,
-                        'total_price' => $style->total_price,
-                        'size_breakdown' => $style->size_breakdown,
-                        'packing_details' => $style->packing_details,
-                        'pivot' => [
-                            'assigned_factory_id' => $style->pivot->assigned_factory_id,
-                            'assigned_agency_id' => $style->pivot->assigned_agency_id,
-                            'assignment_type' => $style->pivot->assignment_type,
-                            'status' => $style->pivot->status,
-                            'quantity_in_po' => $style->pivot->quantity_in_po,
-                            'unit_price_in_po' => $style->pivot->unit_price_in_po,
-                        ],
-                    ];
-                }),
-                'created_at' => $po->created_at,
-                'updated_at' => $po->updated_at,
-            ],
+            'purchase_order' => $payload,
         ]);
     }
 
@@ -1161,7 +1211,43 @@ class PurchaseOrderController extends Controller
     {
         if ($id) {
             // Get schedule for existing PO
-            $po = PurchaseOrder::findOrFail($id);
+            $po = PurchaseOrder::with(['styles' => function ($q) {
+                $q->select('styles.id', 'style_number', 'description');
+            }])->findOrFail($id);
+
+            $scheduleService = app(SampleScheduleService::class);
+            $user = $request->user();
+            $isFactory = $user && $user->hasRole('Factory');
+
+            if ($isFactory) {
+                // One schedule per style, anchored to the factory's ex-factory
+                // date from the pivot. Styles with no factory ex-factory date
+                // are reported separately so the caller can render them as
+                // "not yet scheduled".
+                $perStyle = [];
+                foreach ($po->styles as $style) {
+                    if ($style->pivot->assigned_factory_id != $user->id) {
+                        continue;
+                    }
+                    $factoryExFactory = $style->pivot->factory_ex_factory_date
+                        ?? $style->pivot->ex_factory_date;
+                    $perStyle[] = [
+                        'style_id' => $style->id,
+                        'style_number' => $style->style_number,
+                        'description' => $style->description,
+                        'factory_ex_factory_date' => $factoryExFactory?->format('Y-m-d'),
+                        'schedule' => $factoryExFactory
+                            ? $scheduleService->generateScheduleFromExFactory($factoryExFactory)
+                            : null,
+                    ];
+                }
+
+                return response()->json([
+                    'po_number' => $po->po_number,
+                    'mode' => 'factory_ex_factory_anchored',
+                    'per_style_schedules' => $perStyle,
+                ]);
+            }
 
             if (!$po->po_date || !$po->etd_date) {
                 return response()->json([
@@ -1169,12 +1255,12 @@ class PurchaseOrderController extends Controller
                 ], 400);
             }
 
-            $scheduleService = app(SampleScheduleService::class);
             $schedule = $scheduleService->generateSchedule($po->po_date, $po->etd_date, $po->ex_factory_date);
             $validation = $scheduleService->validateSchedule($po->po_date, $po->etd_date);
 
             return response()->json([
                 'po_number' => $po->po_number,
+                'mode' => 'po_based',
                 'schedule' => $schedule,
                 'validation' => $validation,
             ]);
@@ -1272,6 +1358,8 @@ class PurchaseOrderController extends Controller
     public function spreadsheetData(Request $request, $id)
     {
         $user = $request->user();
+        $isFactory = $user->hasRole('Factory');
+
         $po = PurchaseOrder::with([
             'importer', 'agency', 'retailer', 'season', 'country', 'warehouse', 'currency',
             'styles.category', 'styles.season', 'styles.brand', 'styles.color',
@@ -1293,12 +1381,12 @@ class PurchaseOrderController extends Controller
         $factories = User::role('factory')->select('id', 'name')->orderBy('name')->get();
         $agencies  = User::role('agency')->select('id', 'name')->orderBy('name')->get();
 
-        $rows = $po->styles->map(function ($style) use ($userNames) {
+        $rows = $po->styles->map(function ($style) use ($userNames, $isFactory) {
             $pivot = $style->pivot;
             $qty   = $pivot->quantity_in_po ?? 0;
             $price = $pivot->unit_price_in_po ?? $style->unit_price ?? 0;
 
-            return [
+            $row = [
                 '_styleId'  => $style->id,
                 '_pivotId'  => $pivot->id,
 
@@ -1313,19 +1401,12 @@ class PurchaseOrderController extends Controller
                 'country_of_origin'  => $style->country_of_origin,
                 'item_description'   => $style->item_description,
                 'images'             => $style->images ?? [],
-                'fob_price'          => $style->fob_price,
-                'msrp'               => $style->msrp,
-                'wholesale_price'    => $style->wholesale_price,
-                'unit_price'         => $style->unit_price,
-                'total_price_style'  => $style->total_price,
                 'category_name'      => $style->category?->name,
                 'season_name'        => $style->season?->name,
                 'brand_name'         => $style->brand?->name,
 
                 // Pivot fields
                 'quantity_in_po'             => $qty,
-                'unit_price_in_po'           => $pivot->unit_price_in_po,
-                'total_price'                => $qty * $price,
                 'size_breakdown'             => $pivot->size_breakdown,
                 'ratio'                      => $pivot->ratio,
                 'status'                     => $pivot->status ?? 'pending',
@@ -1336,11 +1417,28 @@ class PurchaseOrderController extends Controller
                 'assigned_agency_id'         => $pivot->assigned_agency_id,
                 'assignment_type'            => $pivot->assignment_type,
                 'ex_factory_date'            => $pivot->ex_factory_date?->format('Y-m-d'),
+                'factory_ex_factory_date'    => $pivot->factory_ex_factory_date?->format('Y-m-d'),
                 'estimated_ex_factory_date'  => $pivot->estimated_ex_factory_date?->format('Y-m-d'),
                 'target_production_date'     => $pivot->target_production_date?->format('Y-m-d'),
                 'target_shipment_date'       => $pivot->target_shipment_date?->format('Y-m-d'),
                 'notes'                      => $pivot->notes,
             ];
+
+            if ($isFactory) {
+                // Only the agency→factory price is visible to factories.
+                $row['factory_unit_price'] = $pivot->factory_unit_price;
+            } else {
+                $row['fob_price']          = $style->fob_price;
+                $row['msrp']               = $style->msrp;
+                $row['wholesale_price']    = $style->wholesale_price;
+                $row['unit_price']         = $style->unit_price;
+                $row['total_price_style']  = $style->total_price;
+                $row['unit_price_in_po']   = $pivot->unit_price_in_po;
+                $row['factory_unit_price'] = $pivot->factory_unit_price;
+                $row['total_price']        = $qty * $price;
+            }
+
+            return $row;
         })->values();
 
         return response()->json([
@@ -1350,13 +1448,16 @@ class PurchaseOrderController extends Controller
                 'headline'        => $po->headline,
                 'status'          => $po->status,
                 'po_date'         => $po->po_date?->format('Y-m-d'),
+                'buyer_po_date'   => $po->po_date?->format('Y-m-d'),
+                'factory_po_date' => $isFactory ? $po->factoryPoDateFor($user->id) : null,
                 'etd_date'        => $po->etd_date?->format('Y-m-d'),
                 'eta_date'        => $po->eta_date?->format('Y-m-d'),
                 'ex_factory_date' => $po->ex_factory_date?->format('Y-m-d'),
+                'factory_ex_factory_date' => $isFactory ? $po->factoryExFactoryDateFor($user->id) : null,
                 'in_warehouse_date' => $po->in_warehouse_date?->format('Y-m-d'),
                 'shipping_term'   => $po->shipping_term,
                 'total_quantity'  => $po->total_quantity,
-                'total_value'     => $po->total_value,
+                'total_value'     => $isFactory ? null : $po->total_value,
                 'currency_code'   => $po->getRelation('currency')?->code ?? $po->getAttributes()['currency'] ?? 'USD',
                 'currency_symbol' => $po->getRelation('currency')?->symbol ?? '$',
                 'retailer_name'   => $po->getRelation('retailer')?->name,

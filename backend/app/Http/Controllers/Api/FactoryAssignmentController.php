@@ -348,9 +348,10 @@ class FactoryAssignmentController extends Controller
     public function indexAll(Request $request)
     {
         $user = $request->user();
+        $isFactory = $user->hasRole('Factory');
 
         $query = FactoryAssignment::with([
-            'purchaseOrder:id,po_number,headline',
+            'purchaseOrder:id,po_number,headline,po_date,ex_factory_date,etd_date',
             'style:id,style_number,description',
             'factory:id,name,email,company',
             'assignedBy:id,name'
@@ -358,7 +359,7 @@ class FactoryAssignmentController extends Controller
 
         // Role-based filtering (Super Admin sees all)
         if (!$user->hasRole('Super Admin')) {
-            if ($user->hasRole('Factory')) {
+            if ($isFactory) {
                 $query->where('factory_id', $user->id);
             } elseif ($user->hasRole('Importer')) {
                 $query->whereHas('purchaseOrder', function ($q) use ($user) {
@@ -401,10 +402,135 @@ class FactoryAssignmentController extends Controller
             });
         }
 
-        return response()->json(
-            $query->orderBy('created_at', 'desc')
-                ->paginate($request->input('per_page', 15))
-        );
+        // Factories see the earliest ex-factory first; others default to newest
+        // assignment first.
+        if ($isFactory) {
+            $query->leftJoin('purchase_order_style as pos', function ($join) {
+                $join->on('pos.purchase_order_id', '=', 'factory_assignments.purchase_order_id')
+                    ->on('pos.style_id', '=', 'factory_assignments.style_id')
+                    ->on('pos.assigned_factory_id', '=', 'factory_assignments.factory_id');
+            })
+            ->orderByRaw('COALESCE(pos.factory_ex_factory_date, pos.ex_factory_date) IS NULL')
+            ->orderByRaw('COALESCE(pos.factory_ex_factory_date, pos.ex_factory_date) ASC')
+            ->orderBy('factory_assignments.created_at', 'desc')
+            ->select('factory_assignments.*');
+        } else {
+            $query->orderBy('created_at', 'desc');
+        }
+
+        $paginated = $query->paginate($request->input('per_page', 15));
+
+        // Hydrate each item with factory ex-factory date (from pivot) and a
+        // per-sample-type approvals summary so the factory-side table can show
+        // the approval breakdown inline without an N+1 follow-up.
+        $items = collect($paginated->items());
+
+        $pivotKeys = $items->map(fn ($a) => [
+            'purchase_order_id' => $a->purchase_order_id,
+            'style_id' => $a->style_id,
+            'factory_id' => $a->factory_id,
+        ]);
+
+        $pivots = DB::table('purchase_order_style')
+            ->whereIn('purchase_order_id', $pivotKeys->pluck('purchase_order_id')->filter()->unique())
+            ->whereIn('style_id', $pivotKeys->pluck('style_id')->filter()->unique())
+            ->get()
+            ->keyBy(fn ($row) => $row->purchase_order_id.'-'.$row->style_id.'-'.$row->assigned_factory_id);
+
+        // Build a map of sample approvals per style
+        $styleIds = $items->pluck('style_id')->filter()->unique()->values();
+        $samples = $styleIds->isEmpty()
+            ? collect()
+            : \App\Models\Sample::with('sampleType:id,name,display_name,display_order')
+                ->whereIn('style_id', $styleIds)
+                ->get()
+                ->groupBy('style_id');
+
+        $sampleTypes = \App\Models\SampleType::where('is_active', true)
+            ->orderBy('display_order')
+            ->get(['id', 'name', 'display_name', 'display_order']);
+
+        $enriched = $items->map(function ($a) use ($pivots, $samples, $sampleTypes, $isFactory) {
+            $pivot = $pivots->get($a->purchase_order_id.'-'.$a->style_id.'-'.$a->factory_id);
+            $factoryExFactoryDate = $pivot->factory_ex_factory_date ?? $pivot->ex_factory_date ?? null;
+            $factoryPoDate = $pivot->assigned_at ?? null;
+
+            // Approvals grid: one entry per active sample type, with the most
+            // recent Sample's state (or "not_sent" if none).
+            $styleSamples = $samples->get($a->style_id, collect());
+            $approvals = $sampleTypes->map(function ($type) use ($styleSamples) {
+                $sample = $styleSamples
+                    ->where('sample_type_id', $type->id)
+                    ->sortByDesc('submission_date')
+                    ->first();
+
+                if (!$sample) {
+                    return [
+                        'sample_type' => $type->name,
+                        'display_name' => $type->display_name,
+                        'status' => 'not_sent',
+                        'sent_date' => null,
+                        'agency_approved_at' => null,
+                        'importer_approved_at' => null,
+                        'final_status' => null,
+                        'rejection_reason' => null,
+                    ];
+                }
+
+                // Map internal status into a single label.
+                $status = 'sent';
+                if ($sample->final_status === 'approved') {
+                    $status = 'approved';
+                } elseif ($sample->final_status === 'rejected') {
+                    $status = 'rejected';
+                } elseif ($sample->agency_status === 'approved') {
+                    $status = 'agency_approved';
+                }
+
+                return [
+                    'sample_type' => $type->name,
+                    'display_name' => $type->display_name,
+                    'status' => $status,
+                    'sent_date' => $sample->submission_date?->format('Y-m-d'),
+                    'agency_approved_at' => $sample->agency_approved_at?->format('Y-m-d'),
+                    'importer_approved_at' => $sample->importer_approved_at?->format('Y-m-d'),
+                    'final_status' => $sample->final_status,
+                    'rejection_reason' => $sample->agency_rejection_reason ?? $sample->importer_rejection_reason,
+                ];
+            })->values()->all();
+
+            $data = $a->toArray();
+            $data['factory_ex_factory_date'] = $factoryExFactoryDate
+                ? \Carbon\Carbon::parse($factoryExFactoryDate)->format('Y-m-d')
+                : null;
+            $data['factory_po_date'] = $factoryPoDate
+                ? \Carbon\Carbon::parse($factoryPoDate)->format('Y-m-d')
+                : null;
+            $data['approvals'] = $approvals;
+
+            // Redact PO pricing from factories at this endpoint too.
+            if ($isFactory) {
+                unset($data['unit_price_in_po']);
+                // Assignment itself has no price column — only PO summary would leak, which this endpoint does not expose.
+            }
+
+            return $data;
+        });
+
+        return response()->json([
+            'current_page' => $paginated->currentPage(),
+            'data' => $enriched,
+            'first_page_url' => $paginated->url(1),
+            'from' => $paginated->firstItem(),
+            'last_page' => $paginated->lastPage(),
+            'last_page_url' => $paginated->url($paginated->lastPage()),
+            'next_page_url' => $paginated->nextPageUrl(),
+            'path' => $paginated->path(),
+            'per_page' => $paginated->perPage(),
+            'prev_page_url' => $paginated->previousPageUrl(),
+            'to' => $paginated->lastItem(),
+            'total' => $paginated->total(),
+        ]);
     }
 
     /**

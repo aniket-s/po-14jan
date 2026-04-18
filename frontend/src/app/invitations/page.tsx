@@ -3,7 +3,7 @@
 // Disable static generation for this authenticated page
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle, Factory, UserPlus, Trash2, Clock } from 'lucide-react';
+import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle, Factory, UserPlus, Trash2, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { TableSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
@@ -106,6 +106,17 @@ interface FactoryOption {
   company?: string;
 }
 
+interface ApprovalEntry {
+  sample_type: string;
+  display_name: string;
+  status: 'not_sent' | 'sent' | 'agency_approved' | 'approved' | 'rejected';
+  sent_date: string | null;
+  agency_approved_at: string | null;
+  importer_approved_at: string | null;
+  final_status: string | null;
+  rejection_reason: string | null;
+}
+
 interface FactoryAssignment {
   id: number;
   purchase_order_id: number;
@@ -119,6 +130,9 @@ interface FactoryAssignment {
   accepted_at: string | null;
   rejected_at: string | null;
   rejection_reason: string | null;
+  factory_ex_factory_date: string | null;
+  factory_po_date: string | null;
+  approvals?: ApprovalEntry[];
   purchase_order?: { id: number; po_number: string };
   style?: { id: number; style_number: string; description: string | null };
   factory?: { id: number; name: string; email: string; company: string | null };
@@ -141,6 +155,33 @@ export default function InvitationsPage() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [factoryAssignments, setFactoryAssignments] = useState<FactoryAssignment[]>([]);
+  const [expandedAssignmentIds, setExpandedAssignmentIds] = useState<Set<number>>(new Set());
+
+  const toggleAssignmentExpanded = (id: number) => {
+    setExpandedAssignmentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const getApprovalStatusBadge = (status: ApprovalEntry['status']) => {
+    switch (status) {
+      case 'not_sent':
+        return <Badge variant="secondary">Not yet sent</Badge>;
+      case 'sent':
+        return <Badge variant="outline">Sent</Badge>;
+      case 'agency_approved':
+        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Agency approved</Badge>;
+      case 'approved':
+        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Approved</Badge>;
+      case 'rejected':
+        return <Badge variant="destructive">Rejected</Badge>;
+      default:
+        return <Badge variant="secondary">{String(status)}</Badge>;
+    }
+  };
   const [faPagination, setFaPagination] = useState({ currentPage: 1, lastPage: 1, perPage: 15, total: 0 });
   const [faSearchQuery, setFaSearchQuery] = useState('');
   const [faStatusFilter, setFaStatusFilter] = useState<string>('all');
@@ -1901,10 +1942,12 @@ export default function InvitationsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8"></TableHead>
                   <TableHead>Style</TableHead>
                   <TableHead>PO Number</TableHead>
-                  <TableHead>Factory</TableHead>
-                  <TableHead>Assigned Date</TableHead>
+                  {!isFactory && <TableHead>Factory</TableHead>}
+                  <TableHead>{isFactory ? 'PO Date' : 'Assigned Date'}</TableHead>
+                  <TableHead>Ex-Factory</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Notes</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -1913,86 +1956,156 @@ export default function InvitationsPage() {
               <TableBody>
                 {factoryAssignments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={isFactory ? 8 : 9} className="text-center py-8 text-muted-foreground">
                       No factory assignments found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  factoryAssignments.map((assignment) => (
-                    <TableRow key={assignment.id}>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{assignment.style?.style_number || '-'}</span>
-                          {assignment.style?.description && (
-                            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {assignment.style.description}
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-medium">{assignment.purchase_order?.po_number || '-'}</span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{assignment.factory?.name || '-'}</span>
-                          {assignment.factory?.company && (
-                            <span className="text-xs text-muted-foreground">{assignment.factory.company}</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{formatDate(assignment.assigned_at || assignment.created_at)}</TableCell>
-                      <TableCell>
-                        {getAssignmentStatusBadge(assignment.status)}
-                        {assignment.rejection_reason && (
-                          <p className="text-xs text-red-500 mt-1 max-w-[150px] truncate" title={assignment.rejection_reason}>
-                            {assignment.rejection_reason}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate">{assignment.notes || '-'}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {isFactory && assignment.status === 'invited' && (
-                            <>
-                              <Button
-                                variant="default"
-                                size="sm"
-                                className="bg-green-600 hover:bg-green-700"
-                                onClick={() => handleAcceptAssignment(assignment)}
-                              >
-                                <CheckCircle className="h-4 w-4 mr-1" />
-                                Accept
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => {
-                                  setRejectingAssignment(assignment);
-                                  setShowRejectDialog(true);
-                                }}
-                              >
-                                <XCircle className="h-4 w-4 mr-1" />
-                                Reject
-                              </Button>
-                            </>
-                          )}
-                          {canAssignFactory && (
+                  factoryAssignments.map((assignment) => {
+                    const isExpanded = expandedAssignmentIds.has(assignment.id);
+                    const approvals = assignment.approvals || [];
+                    const factoryPoDate = assignment.factory_po_date || assignment.assigned_at || assignment.created_at;
+                    return (
+                      <React.Fragment key={assignment.id}>
+                        <TableRow>
+                          <TableCell>
                             <Button
                               variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setDeletingAssignment(assignment);
-                                setShowDeleteDialog(true);
-                              }}
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => toggleAssignmentExpanded(assignment.id)}
+                              title={isExpanded ? 'Hide approvals' : 'Show approvals'}
                             >
-                              <Trash2 className="h-4 w-4" />
+                              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </Button>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{assignment.style?.style_number || '-'}</span>
+                              {assignment.style?.description && (
+                                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                  {assignment.style.description}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-medium">{assignment.purchase_order?.po_number || '-'}</span>
+                          </TableCell>
+                          {!isFactory && (
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{assignment.factory?.name || '-'}</span>
+                                {assignment.factory?.company && (
+                                  <span className="text-xs text-muted-foreground">{assignment.factory.company}</span>
+                                )}
+                              </div>
+                            </TableCell>
                           )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                          <TableCell>{formatDate(factoryPoDate)}</TableCell>
+                          <TableCell>
+                            {assignment.factory_ex_factory_date
+                              ? formatDate(assignment.factory_ex_factory_date)
+                              : <span className="text-xs text-muted-foreground">Not set</span>}
+                          </TableCell>
+                          <TableCell>
+                            {getAssignmentStatusBadge(assignment.status)}
+                            {assignment.rejection_reason && (
+                              <p className="text-xs text-red-500 mt-1 max-w-[150px] truncate" title={assignment.rejection_reason}>
+                                {assignment.rejection_reason}
+                              </p>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">{assignment.notes || '-'}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              {isFactory && assignment.status === 'invited' && (
+                                <>
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    className="bg-green-600 hover:bg-green-700"
+                                    onClick={() => handleAcceptAssignment(assignment)}
+                                  >
+                                    <CheckCircle className="h-4 w-4 mr-1" />
+                                    Accept
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                      setRejectingAssignment(assignment);
+                                      setShowRejectDialog(true);
+                                    }}
+                                  >
+                                    <XCircle className="h-4 w-4 mr-1" />
+                                    Reject
+                                  </Button>
+                                </>
+                              )}
+                              {canAssignFactory && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setDeletingAssignment(assignment);
+                                    setShowDeleteDialog(true);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <TableRow>
+                            <TableCell colSpan={isFactory ? 8 : 9} className="bg-muted/30 p-4">
+                              {approvals.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                  No sample approvals tracked for this style yet.
+                                </p>
+                              ) : (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    Sample approvals
+                                  </p>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead className="text-xs">Sample Type</TableHead>
+                                        <TableHead className="text-xs">Sent Date</TableHead>
+                                        <TableHead className="text-xs">Agency Approved</TableHead>
+                                        <TableHead className="text-xs">Importer Approved</TableHead>
+                                        <TableHead className="text-xs">Status</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {approvals.map((a) => (
+                                        <TableRow key={a.sample_type}>
+                                          <TableCell className="text-xs font-medium">{a.display_name}</TableCell>
+                                          <TableCell className="text-xs">
+                                            {a.sent_date ? formatDate(a.sent_date) : <span className="text-muted-foreground">—</span>}
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            {a.agency_approved_at ? formatDate(a.agency_approved_at) : <span className="text-muted-foreground">—</span>}
+                                          </TableCell>
+                                          <TableCell className="text-xs">
+                                            {a.importer_approved_at ? formatDate(a.importer_approved_at) : <span className="text-muted-foreground">—</span>}
+                                          </TableCell>
+                                          <TableCell>{getApprovalStatusBadge(a.status)}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

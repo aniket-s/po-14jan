@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { PurchaseOrder } from '@/types';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface POTableViewProps {
   purchaseOrders: PurchaseOrder[];
@@ -61,6 +62,14 @@ export function POTableView({
   canDelete,
   canExport,
 }: POTableViewProps) {
+  const { hasRole } = useAuth();
+  const isFactory = hasRole('Factory');
+  const getDisplayPoDate = (po: PurchaseOrder): string | null => {
+    if (isFactory) {
+      return (po as any).factory_po_date || po.po_date;
+    }
+    return po.po_date;
+  };
   const [sortField, setSortField] = useState<SortField>('po_date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -89,8 +98,8 @@ export function POTableView({
         bVal = b.po_number.toLowerCase();
         break;
       case 'po_date':
-        aVal = new Date(a.po_date).getTime();
-        bVal = new Date(b.po_date).getTime();
+        aVal = new Date(getDisplayPoDate(a) || a.po_date).getTime();
+        bVal = new Date(getDisplayPoDate(b) || b.po_date).getTime();
         break;
       case 'total_quantity':
         aVal = Number(a.total_quantity) || 0;
@@ -294,14 +303,14 @@ export function POTableView({
               <SortHeader field="etd_date">ETD</SortHeader>
               <SortHeader field="styles_count">Styles</SortHeader>
               <SortHeader field="total_quantity" className="text-right">Quantity</SortHeader>
-              <SortHeader field="total_value" className="text-right">Value</SortHeader>
+              {!isFactory && <SortHeader field="total_value" className="text-right">Value</SortHeader>}
               <TableHead className="text-xs text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {sortedPOs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-16">
+                <TableCell colSpan={isFactory ? 9 : 10} className="text-center py-16">
                   <div className="flex flex-col items-center gap-2">
                     <Package className="h-10 w-10 text-muted-foreground/40" />
                     <p className="text-muted-foreground font-medium">No purchase orders found</p>
@@ -378,7 +387,7 @@ export function POTableView({
                       )}
                     </TableCell>
                     <TableCell>
-                      <span className="text-xs">{formatDate(po.po_date)}</span>
+                      <span className="text-xs">{formatDate(getDisplayPoDate(po) || po.po_date)}</span>
                     </TableCell>
                     <TableCell>
                       {po.shipping_term ? (
@@ -418,11 +427,13 @@ export function POTableView({
                         {(Number(po.total_quantity) || 0).toLocaleString()}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <span className="text-xs font-semibold tabular-nums">
-                        {formatCurrency(po.total_value, po.currency)}
-                      </span>
-                    </TableCell>
+                    {!isFactory && (
+                      <TableCell className="text-right">
+                        <span className="text-xs font-semibold tabular-nums">
+                          {formatCurrency(po.total_value, po.currency)}
+                        </span>
+                      </TableCell>
+                    )}
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Link href={`/purchase-orders/${po.id}`}>

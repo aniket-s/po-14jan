@@ -406,7 +406,9 @@ class StyleController extends Controller
             'season:id,name',
             'gender:id,name',
             'gender.activeSizes:id,gender_id,size_code,size_name,display_order',
-            'color:id,name,code,pantone_code'
+            'color:id,name,code,pantone_code',
+            'fabricType:id,name',
+            'fabricQuality:id,name',
         ]);
 
         // Apply role-based filtering

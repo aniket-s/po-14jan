@@ -92,6 +92,59 @@ class SampleScheduleService
     }
 
     /**
+     * Generate a sample schedule anchored entirely to a factory ex-factory date.
+     *
+     * Used for factory users: when the agency assigns a PO to a factory, it
+     * provides a factory ex-factory date; all milestones are computed as
+     * offsets from that single anchor so the factory's timeline is independent
+     * of the buyer PO date and shipping ETD.
+     *
+     * Offsets preserve the spacing of the PO-based schedule assuming a 40-day
+     * PO→ETD lead time and a 7-day ETD→ex-factory buffer:
+     * - Lab Dip:          ex_factory − 53
+     * - Fit Samples:      ex_factory − 53
+     * - Trim Approvals:   ex_factory − 50
+     * - 1st Proto:        ex_factory − 50
+     * - Bulk Fabric:      ex_factory − 40
+     * - PP Sample:        ex_factory − 35
+     * - Production Start: ex_factory − 30
+     * - TOP Approval:     ex_factory − 10
+     *
+     * @param Carbon|string $factoryExFactoryDate
+     * @return array
+     */
+    public function generateScheduleFromExFactory($factoryExFactoryDate): array
+    {
+        $anchor = $factoryExFactoryDate instanceof Carbon
+            ? $factoryExFactoryDate
+            : Carbon::parse($factoryExFactoryDate);
+
+        $milestones = [
+            'lab_dip'             => ['Lab Dip',            53],
+            'fit_samples'         => ['Fit Samples',        53],
+            'trim_approvals'      => ['Trim Approvals',     50],
+            'first_proto_samples' => ['1st Proto Samples',  50],
+            'bulk_fabric_inhouse' => ['Bulk Fabric In-house', 40],
+            'pp_sample'           => ['PP Sample',          35],
+            'production_start'   => ['Production Start',    30],
+            'top_approval'        => ['TOP Approval',       10],
+        ];
+
+        $schedule = [];
+        foreach ($milestones as $key => [$name, $daysBefore]) {
+            $schedule[$key] = [
+                'name' => $name,
+                'date' => $anchor->copy()->subDays($daysBefore),
+                'description' => "{$daysBefore} days before Ex-Factory",
+                'days_before_ex_factory' => $daysBefore,
+                'type' => 'ex_factory_anchored',
+            ];
+        }
+
+        return $schedule;
+    }
+
+    /**
      * Get sample schedule as simple date array
      *
      * @param Carbon|string $poDate

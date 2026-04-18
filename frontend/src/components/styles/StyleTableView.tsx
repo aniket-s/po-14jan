@@ -9,7 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Edit, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Package, Link2,
+  Edit, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Package, Link2, Eye,
 } from 'lucide-react';
 import { Style } from '@/services/styles';
 import { cn } from '@/lib/utils';
@@ -200,7 +200,16 @@ export function StyleTableView({
                     )}
                   </TableCell>
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex justify-end gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => onSelectStyle(style)}
+                        title="View details"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
                       {canEdit && onEdit && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => onEdit(style)} title="Edit">
                           <Edit className="h-3.5 w-3.5" />
