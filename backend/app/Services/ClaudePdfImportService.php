@@ -71,6 +71,12 @@ class ClaudePdfImportService
             $poHeader = $this->buildPoHeader($parsedData);
             $lineItems = $this->buildLineItems($parsedData);
 
+            // If Claude missed the shipping term, fall back to a regex scan over
+            // the layout-preserved raw text. Claude occasionally returns null on
+            // compact SCI-style header rows where the Incoterm (e.g. "DDP")
+            // sits between two column labels without an explicit "TERMS:" prefix.
+            $this->backfillShippingTermFromRawText($filePath, $poHeader);
+
             // Match against master data (retailers, seasons, currencies, etc.)
             $masterDataMatches = $this->matchMasterData($poHeader);
             foreach ($masterDataMatches as $field => $match) {
@@ -290,6 +296,7 @@ IMPORTANT RULES:
 - For vendor_name: Look for "Vendor:" label. This is the agent/supplier.
 - For ship_date: Look for "SHIP:", "SHIP DATE:", "SHIPPING DATE:" labels. This represents when goods should ship (ETD).
 - For cancel_date: Look for "CANCEL:", "CANCEL DATE:", "CANCELLATION:" labels. This represents the latest acceptable delivery date (in-warehouse date).
+- For shipping_term: Return ONLY the Incoterm abbreviation (FOB, DDP, CIF, CFR, EXW, FCA, DAP, or CIP). Look under "TERMS", "SHIP TERMS", "DELIVERY TERMS", "INCOTERM" — on SCI cut tickets the Incoterm sits directly between the "TERMS" and "SHIP MODE" column headers (e.g. a standalone "DDP" in that column). Do NOT include surrounding words such as "Terms:" or "(Delivered Duty Paid)".
 - For labels: Look for "LABELS:", "LABEL:" fields (brand/label info).
 - For pre_ticket: Look for "PRE-TICKET:" field (Y/N).
 - For sample_required: Look for "SAMPLE:" field (Y/N).
@@ -504,6 +511,40 @@ PROMPT;
         }
 
         return $json;
+    }
+
+    /**
+     * Last-resort regex scan over the layout-preserved raw PDF text to
+     * populate shipping_term when Claude could not identify it. Mutates
+     * the supplied $poHeader by reference.
+     */
+    private function backfillShippingTermFromRawText(string $filePath, array &$poHeader): void
+    {
+        $current = $poHeader['shipping_term']['value'] ?? null;
+        if ($current !== null) {
+            return;
+        }
+
+        try {
+            $rawText = app(PdfImportService::class)->extractTextPreservingLayout($filePath);
+        } catch (\Throwable $e) {
+            Log::warning('Shipping-term backfill: raw text extraction failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return;
+        }
+
+        if (!is_string($rawText) || $rawText === '') {
+            return;
+        }
+
+        if (preg_match('/\b(FOB|DDP|CIF|CFR|EXW|FCA|DAP|CIP)\b/i', $rawText, $m)) {
+            $poHeader['shipping_term'] = [
+                'value' => strtoupper($m[1]),
+                'status' => 'parsed',
+                'confidence' => 'medium',
+            ];
+        }
     }
 
     /**
