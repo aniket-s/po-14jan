@@ -26,12 +26,13 @@ import api from '@/lib/api';
 interface SampleDetailPanelProps {
   sample: Sample;
   onClose: () => void;
-  onApprove?: (sample: Sample, type: 'agency' | 'importer') => void;
+  onApprove?: (sample: Sample, type: 'agency' | 'importer' | 'importer_on_behalf') => void;
   onReject?: (sample: Sample, type: 'agency' | 'importer') => void;
   onResubmit?: (sample: Sample) => void;
   onDelete?: (sample: Sample) => void;
   canApproveAgency?: boolean;
   canApproveImporter?: boolean;
+  canApproveOnBehalfOfImporter?: boolean;
   canResubmit?: boolean;
   canDelete?: boolean;
 }
@@ -45,6 +46,7 @@ export function SampleDetailPanel({
   onDelete,
   canApproveAgency,
   canApproveImporter,
+  canApproveOnBehalfOfImporter,
   canResubmit,
   canDelete,
 }: SampleDetailPanelProps) {
@@ -161,6 +163,11 @@ export function SampleDetailPanel({
                       ? <Badge variant="outline" className="text-muted-foreground">Waiting</Badge>
                       : getStatusBadge(displaySample.importer_status)
                     }
+                    {displaySample.importer_status === 'approved' && displaySample.metadata?.approved_on_behalf_of_importer && (
+                      <p className="mt-1 text-[10px] text-muted-foreground italic">
+                        on behalf of importer
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -319,7 +326,7 @@ export function SampleDetailPanel({
       )}
 
       {/* Action Bar */}
-      {(canApproveAgency || canApproveImporter || canResubmit || canDelete) && (
+      {(canApproveAgency || canApproveImporter || canApproveOnBehalfOfImporter || canResubmit || canDelete) && (
         <div className="border-t p-3 space-y-2">
           {canApproveAgency && (
             <div className="flex gap-2">
@@ -362,6 +369,17 @@ export function SampleDetailPanel({
                 Reject
               </Button>
             </div>
+          )}
+          {canApproveOnBehalfOfImporter && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full border-green-600 text-green-700 hover:bg-green-50"
+              onClick={() => onApprove?.(sample, 'importer_on_behalf')}
+            >
+              <CheckCircle className="mr-1.5 h-3.5 w-3.5" />
+              Approve on behalf of Importer
+            </Button>
           )}
           {canResubmit && (
             <Button

@@ -18,6 +18,11 @@ export interface Sample {
   attachment_paths: string[] | null;
   quantity?: number | null;
   created_at: string;
+  metadata?: {
+    approved_on_behalf_of_importer?: boolean;
+    on_behalf_acted_by_role?: string;
+    [key: string]: any;
+  } | null;
   style?: {
     style_number: string;
     purchase_orders?: Array<{

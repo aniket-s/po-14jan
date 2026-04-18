@@ -176,6 +176,34 @@ class Sample extends Model
         $this->importer_approved_at = now();
         $this->importer_rejection_reason = null;
 
+        // Clear any prior delegation flag if somehow set previously
+        $metadata = $this->metadata ?? [];
+        unset($metadata['approved_on_behalf_of_importer'], $metadata['on_behalf_acted_by_role']);
+        $this->metadata = $metadata;
+
+        $this->updateFinalStatus();
+        $this->save();
+    }
+
+    /**
+     * Agency approves the importer step on behalf of the importer.
+     *
+     * Persists the acting agency's user id in `importer_approved_by` and
+     * records the delegation in the JSON `metadata` column so the UI and
+     * audit log can distinguish a delegated approval from a direct one.
+     */
+    public function importerApproveOnBehalf(int $agencyUserId): void
+    {
+        $this->importer_status = 'approved';
+        $this->importer_approved_by = $agencyUserId;
+        $this->importer_approved_at = now();
+        $this->importer_rejection_reason = null;
+
+        $metadata = $this->metadata ?? [];
+        $metadata['approved_on_behalf_of_importer'] = true;
+        $metadata['on_behalf_acted_by_role'] = 'Agency';
+        $this->metadata = $metadata;
+
         $this->updateFinalStatus();
         $this->save();
     }

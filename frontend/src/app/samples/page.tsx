@@ -86,7 +86,7 @@ export default function SamplesPage() {
   const [isSubmitDialogOpen, setIsSubmitDialogOpen] = useState(false);
   const [isApprovalDialogOpen, setIsApprovalDialogOpen] = useState(false);
   const [approvalSample, setApprovalSample] = useState<Sample | null>(null);
-  const [approvalType, setApprovalType] = useState<'agency' | 'importer'>('agency');
+  const [approvalType, setApprovalType] = useState<'agency' | 'importer' | 'importer_on_behalf'>('agency');
   const [approvalAction, setApprovalAction] = useState<'approve' | 'reject'>('approve');
   const [approvalComments, setApprovalComments] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -274,6 +274,10 @@ export default function SamplesPage() {
     return hasRole('Importer') && sample.agency_status === 'approved' && sample.importer_status === 'pending';
   }, [hasRole]);
 
+  const canApproveOnBehalfOfImporter = useCallback((sample: Sample) => {
+    return hasRole('Agency') && sample.agency_status === 'approved' && sample.importer_status === 'pending';
+  }, [hasRole]);
+
   const canResubmitSample = useCallback((sample: Sample) => {
     return (hasRole('Factory') || sample.submitted_by?.id === user?.id) && sample.final_status === 'rejected';
   }, [hasRole, user]);
@@ -329,7 +333,7 @@ export default function SamplesPage() {
   };
 
   // Approval handler
-  const openApprovalDialog = (sample: Sample, type: 'agency' | 'importer', action: 'approve' | 'reject') => {
+  const openApprovalDialog = (sample: Sample, type: 'agency' | 'importer' | 'importer_on_behalf', action: 'approve' | 'reject') => {
     setApprovalSample(sample);
     setApprovalType(type);
     setApprovalAction(action);
@@ -341,9 +345,15 @@ export default function SamplesPage() {
     if (!approvalSample) return;
     setIsSubmitting(true);
     try {
-      const endpoint = approvalType === 'agency'
-        ? `/samples/${approvalSample.id}/agency-${approvalAction}`
-        : `/samples/${approvalSample.id}/importer-${approvalAction}`;
+      let endpoint: string;
+      if (approvalType === 'agency') {
+        endpoint = `/samples/${approvalSample.id}/agency-${approvalAction}`;
+      } else if (approvalType === 'importer_on_behalf') {
+        // Delegation is approve-only by design; no reject-on-behalf endpoint.
+        endpoint = `/samples/${approvalSample.id}/importer-approve-on-behalf`;
+      } else {
+        endpoint = `/samples/${approvalSample.id}/importer-${approvalAction}`;
+      }
 
       await api.post(endpoint, {
         reason: approvalComments,
@@ -830,6 +840,7 @@ export default function SamplesPage() {
                 onDelete={handleDeleteSample}
                 canApproveAgency={canApproveAsAgency(selectedSample)}
                 canApproveImporter={canApproveAsImporter(selectedSample)}
+                canApproveOnBehalfOfImporter={canApproveOnBehalfOfImporter(selectedSample)}
                 canResubmit={canResubmitSample(selectedSample)}
                 canDelete={canDeleteSample(selectedSample)}
               />
@@ -846,7 +857,11 @@ export default function SamplesPage() {
               </DialogTitle>
               <DialogDescription>
                 {approvalAction === 'approve'
-                  ? `Approve this sample as ${approvalType === 'agency' ? 'Agency' : 'Importer'}`
+                  ? approvalType === 'agency'
+                    ? 'Approve this sample as Agency'
+                    : approvalType === 'importer_on_behalf'
+                      ? 'Approve this sample on behalf of the Importer'
+                      : 'Approve this sample as Importer'
                   : `Reject this sample as ${approvalType === 'agency' ? 'Agency' : 'Importer'}`
                 }
               </DialogDescription>

@@ -93,6 +93,7 @@ class DefaultRolesSeeder extends Seeder
             'sample.view_own',
             'sample.agency_approve',
             'sample.approve_agency',
+            'sample.approve_as_importer_on_behalf',
             'sample.reject',
             // Production Permissions
             'production.view_own',
