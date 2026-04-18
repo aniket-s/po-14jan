@@ -75,7 +75,30 @@ class Style extends Model
         'ex_factory_date' => 'date',
     ];
 
-    protected $appends = ['quantity'];
+    protected $appends = ['quantity', 'color_name'];
+
+    /**
+     * Resolve a display label for the style's colour, regardless of whether
+     * the Color relation is populated. PDF-imported styles often only have
+     * the free-text `color` column set (no color_id), in which case eager-
+     * loading the Color relation overwrites the string with null during
+     * serialization. This accessor picks whichever is available.
+     */
+    public function getColorNameAttribute(): ?string
+    {
+        if ($this->relationLoaded('color')) {
+            $rel = $this->getRelation('color');
+            if ($rel && !empty($rel->name)) {
+                return $rel->name;
+            }
+        }
+
+        $raw = $this->attributes['color'] ?? null;
+        if (is_string($raw) && $raw !== '') {
+            return $raw;
+        }
+        return null;
+    }
 
     protected $hidden = [
         'season_id',

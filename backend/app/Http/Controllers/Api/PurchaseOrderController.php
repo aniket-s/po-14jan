@@ -329,6 +329,8 @@ class PurchaseOrderController extends Controller
                         'company' => $agencyRel->company,
                     ] : null,
                     'po_date' => $po->po_date?->format('Y-m-d'),
+                    'ex_factory_date' => $po->ex_factory_date?->format('Y-m-d'),
+                    'etd_date' => $po->etd_date?->format('Y-m-d'),
                     'total_quantity' => $po->total_quantity,
                     'total_value' => $po->total_value,
                     'currency' => ($po->relationLoaded('currency') ? $po->getRelation('currency')?->code : null) ?? $po->getAttributes()['currency'] ?? 'USD',
