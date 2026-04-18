@@ -312,6 +312,8 @@ export interface ExcelAnalysisResult {
   suggested_mappings: Record<string, number | null>;
   row_count: number;
   temp_file_path: string;
+  header_row?: number;
+  data_start_row?: number;
   row_images?: Record<number, string>;
   has_images?: boolean;
   total_images?: number;
@@ -363,6 +365,8 @@ export const analyzeExcelForStandaloneImport = async (file: File): Promise<Excel
     suggested_mappings: analysis.suggested_mappings,
     row_count: analysis.total_rows,
     temp_file_path,
+    header_row: analysis.header_row,
+    data_start_row: analysis.data_start_row,
     row_images: analysis.row_images,
     has_images: analysis.has_images,
     total_images: analysis.total_images,
