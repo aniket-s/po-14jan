@@ -287,6 +287,41 @@ class PurchaseOrder extends Model
     }
 
     /**
+     * Earliest assignment date for a given factory user — used as the
+     * "factory PO date" shown to factory users (when the agency placed the
+     * order with them), distinct from the buyer/importer PO date.
+     */
+    public function factoryPoDateFor(int $factoryUserId): ?string
+    {
+        $assignedAt = \Illuminate\Support\Facades\DB::table('purchase_order_style')
+            ->where('purchase_order_id', $this->id)
+            ->where('assigned_factory_id', $factoryUserId)
+            ->whereNotNull('assigned_at')
+            ->min('assigned_at');
+
+        if (!$assignedAt) {
+            return null;
+        }
+
+        return \Carbon\Carbon::parse($assignedAt)->format('Y-m-d');
+    }
+
+    /**
+     * Earliest factory ex-factory date (from pivot) for a given factory user.
+     * Used as the anchor for the factory's sample schedule.
+     */
+    public function factoryExFactoryDateFor(int $factoryUserId): ?string
+    {
+        $date = \Illuminate\Support\Facades\DB::table('purchase_order_style')
+            ->where('purchase_order_id', $this->id)
+            ->where('assigned_factory_id', $factoryUserId)
+            ->whereNotNull('factory_ex_factory_date')
+            ->min('factory_ex_factory_date');
+
+        return $date ?: null;
+    }
+
+    /**
      * Update totals from styles, wrapped in a transaction for consistency
      */
     public function updateTotals(): void

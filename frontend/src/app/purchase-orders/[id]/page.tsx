@@ -59,6 +59,8 @@ export default function PurchaseOrderDetailPage() {
   const poId = params.id as string;
   const { user, hasRole, can } = useAuth();
   const { getSetting, loading: settingsLoading } = useSystemSettings();
+  const isFactory = hasRole('Factory');
+  const [factorySampleSchedules, setFactorySampleSchedules] = useState<any[] | null>(null);
 
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null);
   const [styles, setStyles] = useState<Style[]>([]);
@@ -76,7 +78,21 @@ export default function PurchaseOrderDetailPage() {
   useEffect(() => {
     fetchPurchaseOrder();
     fetchStyles();
-  }, [poId]);
+    if (isFactory) {
+      fetchFactorySampleSchedules();
+    }
+  }, [poId, isFactory]);
+
+  const fetchFactorySampleSchedules = async () => {
+    try {
+      const response = await api.get(`/purchase-orders/${poId}/sample-schedule`);
+      if (response.data?.mode === 'factory_ex_factory_anchored') {
+        setFactorySampleSchedules(response.data.per_style_schedules || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch factory sample schedule:', error);
+    }
+  };
 
   const fetchPurchaseOrder = async () => {
     try {
@@ -368,18 +384,20 @@ export default function PurchaseOrderDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(purchaseOrder.total_value, purchaseOrder.currency)}
-              </div>
-              <p className="text-xs text-muted-foreground">{purchaseOrder.currency}</p>
-            </CardContent>
-          </Card>
+          {!isFactory && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Value</CardTitle>
+                <Package className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {formatCurrency(purchaseOrder.total_value, purchaseOrder.currency)}
+                </div>
+                <p className="text-xs text-muted-foreground">{purchaseOrder.currency}</p>
+              </CardContent>
+            </Card>
+          )}
 
         </div>
 
@@ -414,7 +432,13 @@ export default function PurchaseOrderDetailPage() {
                   )}
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">PO Date</span>
-                    <span className="text-sm font-medium">{formatDate(purchaseOrder.po_date)}</span>
+                    <span className="text-sm font-medium">
+                      {formatDate(
+                        isFactory
+                          ? (purchaseOrder as any).factory_po_date || purchaseOrder.po_date
+                          : purchaseOrder.po_date
+                      )}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Currency</span>
@@ -689,8 +713,14 @@ export default function PurchaseOrderDetailPage() {
                         <TableHead>Color</TableHead>
                         <TableHead>Description</TableHead>
                         <TableHead className="text-right">Total Qty</TableHead>
-                        <TableHead className="text-right">Unit Price</TableHead>
-                        <TableHead className="text-right">Total Cost</TableHead>
+                        {isFactory ? (
+                          <TableHead className="text-right">Your Price</TableHead>
+                        ) : (
+                          <>
+                            <TableHead className="text-right">Unit Price (Agency)</TableHead>
+                            <TableHead className="text-right">Total Cost</TableHead>
+                          </>
+                        )}
                         <TableHead>Pack Details</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -698,58 +728,80 @@ export default function PurchaseOrderDetailPage() {
                     <TableBody>
                       {!styles || styles.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center text-muted-foreground">
+                          <TableCell colSpan={isFactory ? 7 : 8} className="text-center text-muted-foreground">
                             No styles added yet
                           </TableCell>
                         </TableRow>
                       ) : (
-                        styles.map((style) => (
-                          <TableRow key={style.id}>
-                            <TableCell className="font-medium">{style.style_number}</TableCell>
-                            <TableCell>{style.color?.name || '-'}</TableCell>
-                            <TableCell>{style.description || '-'}</TableCell>
-                            <TableCell className="text-right">
-                              {style.quantity ? style.quantity.toLocaleString() : '-'}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(style.unit_price, purchaseOrder.currency)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(style.total_price, purchaseOrder.currency)}
-                            </TableCell>
-                            <TableCell>
-                              {style.packing_details && style.packing_details.packs ? (
-                                <div className="text-xs space-y-1">
-                                  {style.packing_details.packs.map((pack, idx) => (
-                                    <div key={idx} className="flex gap-2">
-                                      <span className="font-medium">{pack.pack_size}:</span>
-                                      <span>{Object.entries(pack.size_breakdown).map(([size, qty]) => `${size}:${qty}`).join(', ')}</span>
-                                      <span className="text-muted-foreground">({pack.quantity} pcs)</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : style.size_breakdown ? (
-                                <div className="text-xs">
-                                  {Object.entries(style.size_breakdown).map(([size, qty]) => `${size}:${qty}`).join(', ')}
-                                </div>
+                        styles.map((style) => {
+                          const pivotQty = (style as any).pivot?.quantity_in_po ?? style.quantity ?? 0;
+                          const agencyUnitPrice = (style as any).pivot?.unit_price_in_po ?? style.unit_price;
+                          const factoryUnitPrice = (style as any).pivot?.factory_unit_price;
+                          const agencyTotalCost = pivotQty && agencyUnitPrice != null
+                            ? pivotQty * Number(agencyUnitPrice)
+                            : null;
+                          return (
+                            <TableRow key={style.id}>
+                              <TableCell className="font-medium">{style.style_number}</TableCell>
+                              <TableCell>{style.color?.name || '-'}</TableCell>
+                              <TableCell>{style.description || '-'}</TableCell>
+                              <TableCell className="text-right">
+                                {pivotQty ? Number(pivotQty).toLocaleString() : '-'}
+                              </TableCell>
+                              {isFactory ? (
+                                <TableCell className="text-right">
+                                  {factoryUnitPrice != null
+                                    ? formatCurrency(Number(factoryUnitPrice), purchaseOrder.currency)
+                                    : '-'}
+                                </TableCell>
                               ) : (
-                                '-'
+                                <>
+                                  <TableCell className="text-right">
+                                    {agencyUnitPrice != null
+                                      ? formatCurrency(Number(agencyUnitPrice), purchaseOrder.currency)
+                                      : '-'}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {agencyTotalCost != null
+                                      ? formatCurrency(agencyTotalCost, purchaseOrder.currency)
+                                      : '-'}
+                                  </TableCell>
+                                </>
                               )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {can('style.edit') && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleDeleteStyle(style.id)}
-                                  title="Remove style from PO"
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))
+                              <TableCell>
+                                {style.packing_details && style.packing_details.packs ? (
+                                  <div className="text-xs space-y-1">
+                                    {style.packing_details.packs.map((pack, idx) => (
+                                      <div key={idx} className="flex gap-2">
+                                        <span className="font-medium">{pack.pack_size}:</span>
+                                        <span>{Object.entries(pack.size_breakdown).map(([size, qty]) => `${size}:${qty}`).join(', ')}</span>
+                                        <span className="text-muted-foreground">({pack.quantity} pcs)</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : style.size_breakdown ? (
+                                  <div className="text-xs">
+                                    {Object.entries(style.size_breakdown).map(([size, qty]) => `${size}:${qty}`).join(', ')}
+                                  </div>
+                                ) : (
+                                  '-'
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {can('style.edit') && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDeleteStyle(style.id)}
+                                    title="Remove style from PO"
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
                       )}
                     </TableBody>
                   </Table>
@@ -839,10 +891,71 @@ export default function PurchaseOrderDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Samples</CardTitle>
-                <CardDescription>Track sample submissions and approvals</CardDescription>
+                <CardDescription>
+                  {isFactory
+                    ? 'Per-style schedule anchored to the ex-factory date given to you'
+                    : 'Track sample submissions and approvals'}
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                {!styles || styles.length === 0 ? (
+                {isFactory ? (
+                  !factorySampleSchedules || factorySampleSchedules.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      No styles assigned to you on this PO yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-6">
+                      {factorySampleSchedules.map((entry) => (
+                        <div key={entry.style_id} className="space-y-2">
+                          <div className="flex items-baseline gap-3">
+                            <h4 className="font-medium">{entry.style_number}</h4>
+                            <span className="text-sm text-muted-foreground">{entry.description}</span>
+                            <span className="ml-auto text-xs text-muted-foreground">
+                              Ex-Factory:{' '}
+                              <span className="font-medium text-foreground">
+                                {entry.factory_ex_factory_date
+                                  ? formatDate(entry.factory_ex_factory_date)
+                                  : 'Not set'}
+                              </span>
+                            </span>
+                          </div>
+                          {entry.schedule ? (
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Sample Type</TableHead>
+                                  <TableHead>Scheduled Date</TableHead>
+                                  <TableHead>Formula</TableHead>
+                                  <TableHead>Status</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {Object.entries(entry.schedule).map(([key, m]: any) => (
+                                  <TableRow key={key}>
+                                    <TableCell className="font-medium">{m.name}</TableCell>
+                                    <TableCell>
+                                      {m.date ? formatDate(typeof m.date === 'string' ? m.date : m.date.date) : '-'}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-muted-foreground">
+                                      {m.description}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge variant="secondary">Scheduled</Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Factory ex-factory date not set by agency — schedule unavailable.
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ) : !styles || styles.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     No styles added yet. Add styles to track samples.
                   </p>

@@ -63,6 +63,10 @@ export interface PurchaseOrder {
   country_of_origin?: string | null;
   packing_method?: string | null;
   other_terms?: string | null;
+  // Role-aware dates: buyer PO date (importer/agency) vs factory PO date (factory)
+  buyer_po_date?: string | null;
+  factory_po_date?: string | null;
+  factory_ex_factory_date?: string | null;
 }
 
 export interface PackDetail {
@@ -113,11 +117,13 @@ export interface Style {
     target_production_date?: string;
     target_shipment_date?: string;
     ex_factory_date?: string;
+    factory_ex_factory_date?: string;
     estimated_ex_factory_date?: string;
     production_status?: string;
     shipping_approval_status?: string;
     status?: string;
     notes?: string;
+    factory_unit_price?: number | null;
   };
 }
 
