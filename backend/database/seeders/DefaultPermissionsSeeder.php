@@ -54,6 +54,7 @@ class DefaultPermissionsSeeder extends Seeder
             ['name' => 'sample.agency_approve', 'category' => 'Samples', 'description' => 'Approve samples as agency'],
             ['name' => 'sample.approve_agency', 'category' => 'Samples', 'description' => 'Approve samples as agency (alt)'],
             ['name' => 'sample.approve_final', 'category' => 'Samples', 'description' => 'Final sample approval as importer'],
+            ['name' => 'sample.approve_as_importer_on_behalf', 'category' => 'Samples', 'description' => 'Approve samples on behalf of the importer (agency delegation)'],
             ['name' => 'sample.reject', 'category' => 'Samples', 'description' => 'Reject samples'],
             ['name' => 'sample.create_auto_rule', 'category' => 'Samples', 'description' => 'Create auto-approval rules'],
             ['name' => 'sample.bulk_approve', 'category' => 'Samples', 'description' => 'Bulk approve samples'],

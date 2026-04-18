@@ -476,6 +476,64 @@ class SampleController extends Controller
     }
 
     /**
+     * Agency approves sample on behalf of the Importer
+     *
+     * Allows an Agency user with the `sample.approve_as_importer_on_behalf`
+     * permission to complete the importer-side approval as a delegated action.
+     * The sample is flagged in metadata so auditors can tell this was done
+     * on behalf of the importer rather than by the importer directly.
+     */
+    public function importerApproveOnBehalf(Request $request, $id)
+    {
+        $user = $request->user();
+        $sample = Sample::with(['style'])->findOrFail($id);
+
+        if (!$this->canApproveOnBehalfOfImporter($user, $sample)) {
+            return response()->json([
+                'message' => 'You do not have permission to approve this sample on behalf of the importer',
+            ], 403);
+        }
+
+        if ($sample->agency_status !== 'approved') {
+            return response()->json([
+                'message' => 'Sample must be approved by agency first',
+            ], 422);
+        }
+
+        if ($sample->importer_status !== 'pending') {
+            return response()->json([
+                'message' => 'Sample has already been reviewed by importer',
+            ], 422);
+        }
+
+        $sample->importerApproveOnBehalf($user->id);
+
+        $this->sendImporterApprovedNotification($sample);
+
+        $this->activityLog->log(
+            'sample_importer_approved_on_behalf',
+            'Sample',
+            $sample->id,
+            "Agency {$user->name} approved sample {$sample->sample_reference} on behalf of importer",
+            [
+                'sample_type' => $sample->sampleType->name,
+                'style_number' => $sample->style->style_number,
+                'acted_by_role' => 'Agency',
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Sample approved on behalf of importer successfully',
+            'sample' => [
+                'id' => $sample->id,
+                'importer_status' => $sample->importer_status,
+                'final_status' => $sample->final_status,
+                'approved_on_behalf_of_importer' => true,
+            ],
+        ]);
+    }
+
+    /**
      * Agency bulk approve/reject samples via Excel upload
      */
     public function bulkApproveExcel(Request $request)
@@ -626,6 +684,27 @@ class SampleController extends Controller
         }
 
         return $po->importer_id === $user->id || $user->hasRole('Super Admin');
+    }
+
+    /**
+     * Check if an Agency user may approve the importer step on behalf of the importer.
+     *
+     * Requires the delegation permission AND the user being the PO's assigned
+     * agency (or a Super Admin). The same agency must already be assigned to
+     * the PO so an unrelated agency cannot approve someone else's samples.
+     */
+    private function canApproveOnBehalfOfImporter(User $user, Sample $sample): bool
+    {
+        if (!$user->hasPermissionTo('sample.approve_as_importer_on_behalf')) {
+            return false;
+        }
+
+        $po = $sample->style->getEffectivePurchaseOrder();
+        if (!$po) {
+            return false;
+        }
+
+        return $po->agency_id === $user->id || $user->hasRole('Super Admin');
     }
 
     /**

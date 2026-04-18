@@ -579,6 +579,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/samples/{id}/agency-approve', [SampleController::class, 'agencyApprove']);
     Route::post('/samples/{id}/agency-reject', [SampleController::class, 'agencyReject']);
     Route::post('/samples/{id}/importer-approve', [SampleController::class, 'importerApprove']);
+    Route::post('/samples/{id}/importer-approve-on-behalf', [SampleController::class, 'importerApproveOnBehalf']);
     Route::post('/samples/{id}/importer-reject', [SampleController::class, 'importerReject']);
     Route::get('/samples/{id}', [SampleController::class, 'showSample']);
     Route::get('/samples/{id}/timeline', [SampleController::class, 'timeline']);
