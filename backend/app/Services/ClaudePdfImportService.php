@@ -514,10 +514,16 @@ PROMPT;
         $header = $parsedData['po_header'] ?? [];
         $result = [];
 
-        // Map ship_date → etd_date if etd_date is not explicitly set
+        // Map ship_date → etd_date if etd_date is not explicitly set.
+        // Fall back to cancel_date when neither ETD nor SHIP is present (common
+        // in SCI-style POs that only carry ISSUE DATE + CANCEL) so the user
+        // sees a workable date and the sample schedule can auto-generate.
         $etdDate = $header['etd_date'] ?? null;
         if ($etdDate === null && isset($header['ship_date'])) {
             $etdDate = $header['ship_date'];
+        }
+        if ($etdDate === null && isset($header['cancel_date'])) {
+            $etdDate = $header['cancel_date'];
         }
         $header['etd_date'] = $etdDate;
 
@@ -589,11 +595,19 @@ PROMPT;
             ];
         }
 
-        // Normalize shipping_term to FOB/DDP if possible
+        // Normalize shipping_term — extract the first recognized Incoterm token from
+        // anywhere in the value (e.g. "Terms: DDP", "DDP (Delivered Duty Paid)").
+        // If no recognized token is found, mark the field as missing so the UI
+        // doesn't claim "Parsed" with a value the <Select> can't render.
         if ($result['shipping_term']['value'] !== null) {
-            $term = strtoupper(trim($result['shipping_term']['value']));
-            if (in_array($term, ['FOB', 'DDP'])) {
-                $result['shipping_term']['value'] = $term;
+            $raw = (string) $result['shipping_term']['value'];
+            if (preg_match('/\b(FOB|DDP|CIF|CFR|EXW|FCA|DAP|CIP)\b/i', $raw, $m)) {
+                $result['shipping_term']['value'] = strtoupper($m[1]);
+                $result['shipping_term']['status'] = 'parsed';
+            } else {
+                $result['shipping_term']['value'] = null;
+                $result['shipping_term']['status'] = 'missing';
+                $result['shipping_term']['confidence'] = 'low';
             }
         }
 

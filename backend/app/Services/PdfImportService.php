@@ -497,12 +497,17 @@ class PdfImportService
             ]
         );
 
-        // ── Shipping Term (FOB / DDP) ──
+        // ── Shipping Term ──
+        // Match the first recognized Incoterm anywhere in the text. Upstream
+        // consumers (and the front-end <Select>) only accept the canonical
+        // uppercase code, so we strip any surrounding phrasing here.
         $header['shipping_term'] = ['value' => null, 'status' => 'missing'];
-        if (preg_match('/\bDDP\b/i', $fullText)) {
-            $header['shipping_term'] = ['value' => 'DDP', 'status' => 'parsed', 'confidence' => 'high'];
-        } elseif (preg_match('/\bFOB\b/i', $fullText)) {
-            $header['shipping_term'] = ['value' => 'FOB', 'status' => 'parsed', 'confidence' => 'high'];
+        if (preg_match('/\b(FOB|DDP|CIF|CFR|EXW|FCA|DAP|CIP)\b/i', $fullText, $m)) {
+            $header['shipping_term'] = [
+                'value' => strtoupper($m[1]),
+                'status' => 'parsed',
+                'confidence' => 'high',
+            ];
         }
 
         // ── Ship To / Warehouse ──
