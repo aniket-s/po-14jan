@@ -72,6 +72,7 @@ interface PurchaseOrder {
   po_number: string;
   headline?: string | null;
   ex_factory_date?: string | null;
+  etd_date?: string | null;
   importer_id?: number | null;
   importer?: { id: number; name: string; company?: string } | null;
 }
@@ -90,6 +91,7 @@ interface POStyle {
   po_id?: number;
   po_number?: string;
   color?: { id: number; name: string; code?: string | null; pantone_code?: string | null } | null;
+  color_name?: string | null;
   pivot?: {
     quantity_in_po?: number;
     unit_price_in_po?: number | string | null;
@@ -416,13 +418,19 @@ export default function InvitationsPage() {
     return d.toISOString().split('T')[0];
   };
 
+  // Best-available "PO finish" date for buffer math — prefer the explicit
+  // ex-factory date, fall back to the shipping (ETD) date so SCI-style POs
+  // that only carry a ship date still produce a workable default.
+  const faPOAnchorDate = (po?: PurchaseOrder): string | null =>
+    po?.ex_factory_date || po?.etd_date || null;
+
   // Build the default pricing/date entry for a freshly-checked style row.
   const faDefaultPricingEntry = (style: POStyle): { price: string; date: string; dateEdited: boolean } => {
     const po = purchaseOrders.find((p) => p.id === style.po_id);
     const defaultPrice = style.pivot?.unit_price_in_po != null
       ? String(style.pivot.unit_price_in_po)
       : '';
-    const defaultDate = faComputeFactoryDate(po?.ex_factory_date ?? null, faBufferDays);
+    const defaultDate = faComputeFactoryDate(faPOAnchorDate(po), faBufferDays);
     return { price: defaultPrice, date: defaultDate, dateEdited: false };
   };
 
@@ -569,7 +577,7 @@ export default function InvitationsPage() {
         if (entry.dateEdited) continue;
         const [poIdStr] = key.split(':');
         const po = purchaseOrders.find((p) => p.id.toString() === poIdStr);
-        out[key] = { ...entry, date: faComputeFactoryDate(po?.ex_factory_date ?? null, nextBuffer) };
+        out[key] = { ...entry, date: faComputeFactoryDate(faPOAnchorDate(po), nextBuffer) };
       }
       return out;
     });
@@ -1320,15 +1328,16 @@ export default function InvitationsPage() {
                             const marginPrice = !Number.isNaN(poPriceNum) && !Number.isNaN(factoryPriceNum)
                               ? poPriceNum - factoryPriceNum
                               : null;
+                            const poAnchor = faPOAnchorDate(po);
                             let marginDays: number | null = null;
-                            if (po?.ex_factory_date && entry?.date) {
-                              const d1 = new Date(po.ex_factory_date).getTime();
+                            if (poAnchor && entry?.date) {
+                              const d1 = new Date(poAnchor).getTime();
                               const d2 = new Date(entry.date).getTime();
                               if (!Number.isNaN(d1) && !Number.isNaN(d2)) {
                                 marginDays = Math.round((d1 - d2) / (1000 * 60 * 60 * 24));
                               }
                             }
-                            const colorName = style.color?.name || '-';
+                            const colorName = style.color_name || style.color?.name || '-';
                             const colorCode = style.color?.code || null;
                             return (
                               <TableRow key={key} className="hover:bg-muted/50">
@@ -1358,7 +1367,7 @@ export default function InvitationsPage() {
                                   {Number.isNaN(poPriceNum) ? '-' : poPriceNum.toFixed(2)}
                                 </TableCell>
                                 <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-muted-foreground cursor-pointer">
-                                  {po?.ex_factory_date || '-'}
+                                  {poAnchor || '-'}
                                 </TableCell>
                                 <TableCell>
                                   <Input
