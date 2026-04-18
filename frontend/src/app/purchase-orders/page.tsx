@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -49,7 +49,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 // New redesigned components
 import { POKPICards } from '@/components/purchase-orders/POKPICards';
-import { POFilterBar, POFilters } from '@/components/purchase-orders/POFilterBar';
+import { POFilterBar, POFilters, DEFAULT_PO_FILTERS } from '@/components/purchase-orders/POFilterBar';
 import { POTableView } from '@/components/purchase-orders/POTableView';
 import { POCreateWizard } from '@/components/purchase-orders/POCreateWizard';
 
@@ -74,14 +74,13 @@ export default function PurchaseOrdersPage() {
   });
 
   // Filters
-  const [filters, setFilters] = useState<POFilters>({
-    search: '',
-    status: 'all',
-    shippingTerm: 'all',
-    season: 'all',
-    dateRange: 'all',
-  });
+  const [filters, setFilters] = useState<POFilters>(DEFAULT_PO_FILTERS);
   const [kpiFilter, setKpiFilter] = useState<string>('');
+
+  const handleFiltersChange = useCallback((next: POFilters) => {
+    setFilters(next);
+    setCurrentPage(1);
+  }, []);
 
   // Dialogs
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -111,6 +110,7 @@ export default function PurchaseOrdersPage() {
   const [buyers, setBuyers] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [importers, setImporters] = useState<any[]>([]);
+  const [factories, setFactories] = useState<any[]>([]);
 
   // Fetch data
   useEffect(() => {
@@ -122,11 +122,36 @@ export default function PurchaseOrdersPage() {
       fetchPurchaseOrders();
     }, filters.search ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [currentPage, filters.search, filters.status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentPage,
+    filters.search,
+    filters.status,
+    filters.shippingTerm,
+    filters.season,
+    filters.dateRange,
+    filters.retailer,
+    filters.importer,
+    filters.agency,
+    filters.buyer,
+    filters.country,
+    filters.warehouse,
+    filters.factory,
+    filters.etdFrom,
+    filters.etdTo,
+    filters.exFactoryFrom,
+    filters.exFactoryTo,
+    filters.valueMin,
+    filters.valueMax,
+    filters.quantityMin,
+    filters.quantityMax,
+    filters.revisedOnly,
+    filters.overdueEtd,
+  ]);
 
   const fetchMasterData = async () => {
     try {
-      const [seasonsRes, retailersRes, countriesRes, warehousesRes, currenciesRes, paymentTermsRes, buyersRes, agentsRes, importersRes] = await Promise.all([
+      const [seasonsRes, retailersRes, countriesRes, warehousesRes, currenciesRes, paymentTermsRes, buyersRes, agentsRes, importersRes, factoriesRes] = await Promise.all([
         api.get('/master-data/seasons?all=true'),
         api.get('/master-data/retailers?all=true'),
         api.get('/master-data/countries?all=true'),
@@ -136,6 +161,7 @@ export default function PurchaseOrdersPage() {
         api.get('/master-data/buyers?all=true'),
         api.get('/master-data/agents?all=true'),
         api.get('/importers'),
+        api.get('/factories'),
       ]);
       setSeasons(seasonsRes.data || []);
       setRetailers(retailersRes.data || []);
@@ -146,6 +172,7 @@ export default function PurchaseOrdersPage() {
       setBuyers(buyersRes.data || []);
       setAgents(agentsRes.data || []);
       setImporters(importersRes.data || []);
+      setFactories(factoriesRes.data || []);
     } catch (error) {
       console.error('Failed to fetch master data:', error);
     }
@@ -157,6 +184,53 @@ export default function PurchaseOrdersPage() {
       const params: any = { page: currentPage, per_page: perPage };
       if (filters.search) params.search = filters.search;
       if (filters.status !== 'all') params.status = filters.status;
+      if (filters.shippingTerm !== 'all') params.shipping_term = filters.shippingTerm;
+      if (filters.season !== 'all') params.season_id = filters.season;
+      if (filters.retailer !== 'all') params.retailer_id = filters.retailer;
+      if (filters.importer !== 'all') params.importer_id = filters.importer;
+      if (filters.agency !== 'all') {
+        params.agency_id = filters.agency === 'unassigned' ? 'null' : filters.agency;
+      }
+      if (filters.buyer !== 'all') params.buyer_id = filters.buyer;
+      if (filters.country !== 'all') params.country_id = filters.country;
+      if (filters.warehouse !== 'all') params.warehouse_id = filters.warehouse;
+      if (filters.factory !== 'all') params.factory_id = filters.factory;
+
+      // PO Date preset → date_from/date_to (backend already supports these)
+      if (filters.dateRange !== 'all') {
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        let startDate: Date;
+        switch (filters.dateRange) {
+          case 'today':
+            startDate = startOfDay;
+            break;
+          case 'week':
+            startDate = new Date(startOfDay);
+            startDate.setDate(startDate.getDate() - startOfDay.getDay());
+            break;
+          case 'month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            break;
+          case 'quarter':
+            startDate = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+            break;
+          default:
+            startDate = new Date(0);
+        }
+        params.date_from = startDate.toISOString().split('T')[0];
+      }
+
+      if (filters.etdFrom) params.etd_date_from = filters.etdFrom;
+      if (filters.etdTo) params.etd_date_to = filters.etdTo;
+      if (filters.exFactoryFrom) params.ex_factory_date_from = filters.exFactoryFrom;
+      if (filters.exFactoryTo) params.ex_factory_date_to = filters.exFactoryTo;
+      if (filters.valueMin) params.total_value_min = filters.valueMin;
+      if (filters.valueMax) params.total_value_max = filters.valueMax;
+      if (filters.quantityMin) params.total_quantity_min = filters.quantityMin;
+      if (filters.quantityMax) params.total_quantity_max = filters.quantityMax;
+      if (filters.revisedOnly) params.revised = 1;
+      if (filters.overdueEtd) params.overdue_etd = 1;
 
       const response = await api.get<PaginatedResponse<PurchaseOrder>>('/purchase-orders', { params });
       setPurchaseOrders(response.data.data || []);
@@ -171,11 +245,10 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  // Apply local filters (shipping term, season, date range, KPI)
+  // Local KPI filter only — all other filters are applied server-side
   const filteredPOs = useMemo(() => {
     let result = purchaseOrders;
 
-    // KPI filter
     if (kpiFilter === 'upcoming_etd') {
       const now = new Date();
       const thirtyDays = new Date();
@@ -187,36 +260,8 @@ export default function PurchaseOrdersPage() {
       });
     }
 
-    // Shipping term
-    if (filters.shippingTerm !== 'all') {
-      result = result.filter(po => po.shipping_term === filters.shippingTerm);
-    }
-
-    // Season
-    if (filters.season !== 'all') {
-      result = result.filter(po => po.season_id?.toString() === filters.season);
-    }
-
-    // Date range
-    if (filters.dateRange !== 'all') {
-      const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      let startDate: Date;
-      switch (filters.dateRange) {
-        case 'today': startDate = startOfDay; break;
-        case 'week':
-          startDate = new Date(startOfDay);
-          startDate.setDate(startDate.getDate() - startOfDay.getDay());
-          break;
-        case 'month': startDate = new Date(now.getFullYear(), now.getMonth(), 1); break;
-        case 'quarter': startDate = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1); break;
-        default: startDate = new Date(0);
-      }
-      result = result.filter(po => new Date(po.po_date) >= startDate);
-    }
-
     return result;
-  }, [purchaseOrders, kpiFilter, filters.shippingTerm, filters.season, filters.dateRange]);
+  }, [purchaseOrders, kpiFilter]);
 
   // Delete
   const handleDelete = (id: number) => {
@@ -397,8 +442,15 @@ export default function PurchaseOrdersPage() {
         {/* Filter Bar */}
         <POFilterBar
           filters={filters}
-          onFiltersChange={setFilters}
+          onFiltersChange={handleFiltersChange}
           seasons={seasons}
+          retailers={retailers}
+          importers={importers}
+          agencies={agents}
+          buyers={buyers}
+          countries={countries}
+          warehouses={warehouses}
+          factories={factories}
         />
 
         {/* Table */}
