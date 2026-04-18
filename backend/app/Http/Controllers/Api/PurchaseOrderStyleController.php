@@ -73,6 +73,7 @@ class PurchaseOrderStyleController extends Controller
         $query->with([
             'brand',
             'season',
+            'color:id,name,code,pantone_code',
             'prepacks',
             'sampleProcesses',
         ]);
