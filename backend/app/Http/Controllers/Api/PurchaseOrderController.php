@@ -117,7 +117,8 @@ class PurchaseOrderController extends Controller
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('po_number', 'like', "%{$search}%");
+                $q->where('po_number', 'like', "%{$search}%")
+                  ->orWhere('headline', 'like', "%{$search}%");
             });
         }
 
@@ -128,6 +129,68 @@ class PurchaseOrderController extends Controller
 
         if ($request->has('date_to')) {
             $query->where('po_date', '<=', $request->date_to);
+        }
+
+        // Buyer filter
+        if ($request->filled('buyer_id')) {
+            $query->where('buyer_id', $request->buyer_id);
+        }
+
+        // Warehouse filter
+        if ($request->filled('warehouse_id')) {
+            $query->where('warehouse_id', $request->warehouse_id);
+        }
+
+        // Factory filter — match POs that have styles assigned to the given factory
+        if ($request->filled('factory_id')) {
+            $factoryId = $request->factory_id;
+            $query->whereHas('styles', function ($q) use ($factoryId) {
+                $q->where('purchase_order_style.assigned_factory_id', $factoryId);
+            });
+        }
+
+        // ETD date range
+        if ($request->filled('etd_date_from')) {
+            $query->where('etd_date', '>=', $request->etd_date_from);
+        }
+        if ($request->filled('etd_date_to')) {
+            $query->where('etd_date', '<=', $request->etd_date_to);
+        }
+
+        // Ex-factory date range
+        if ($request->filled('ex_factory_date_from')) {
+            $query->where('ex_factory_date', '>=', $request->ex_factory_date_from);
+        }
+        if ($request->filled('ex_factory_date_to')) {
+            $query->where('ex_factory_date', '<=', $request->ex_factory_date_to);
+        }
+
+        // Total value range
+        if ($request->filled('total_value_min')) {
+            $query->where('total_value', '>=', $request->total_value_min);
+        }
+        if ($request->filled('total_value_max')) {
+            $query->where('total_value', '<=', $request->total_value_max);
+        }
+
+        // Total quantity range
+        if ($request->filled('total_quantity_min')) {
+            $query->where('total_quantity', '>=', $request->total_quantity_min);
+        }
+        if ($request->filled('total_quantity_max')) {
+            $query->where('total_quantity', '<=', $request->total_quantity_max);
+        }
+
+        // Revised only (has at least one revision)
+        if ($request->boolean('revised')) {
+            $query->where('revision_number', '>', 0);
+        }
+
+        // Overdue ETD — ETD in the past and PO not completed/cancelled
+        if ($request->boolean('overdue_etd')) {
+            $query->whereNotNull('etd_date')
+                  ->whereDate('etd_date', '<', now()->toDateString())
+                  ->whereNotIn('status', ['completed', 'cancelled']);
         }
 
         // Sorting — handle join-based sorting for related fields
