@@ -89,8 +89,10 @@ interface POStyle {
   total_quantity?: number;
   po_id?: number;
   po_number?: string;
+  color?: { id: number; name: string; code?: string | null; pantone_code?: string | null } | null;
   pivot?: {
     quantity_in_po?: number;
+    unit_price_in_po?: number | string | null;
     assigned_factory_id?: number;
     assigned_importer_id?: number;
   };
@@ -1153,9 +1155,9 @@ export default function InvitationsPage() {
             if (!open) resetAssignForm();
           }}
         >
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[96vw] max-w-[1400px] max-h-[92vh] overflow-y-auto text-base">
             <DialogHeader>
-              <DialogTitle>Assign Styles to Factory</DialogTitle>
+              <DialogTitle className="text-xl">Assign Styles to Factory</DialogTitle>
               <DialogDescription>
                 Select one or more purchase orders, pick styles, and assign them to a factory
               </DialogDescription>
@@ -1276,8 +1278,8 @@ export default function InvitationsPage() {
                       {faAssignStyles.length === 0 ? 'No styles found in selected POs' : 'No styles match your search'}
                     </div>
                   ) : (
-                    <div className="border rounded-md max-h-[320px] overflow-y-auto">
-                      <Table>
+                    <div className="border rounded-md max-h-[420px] overflow-auto">
+                      <Table className="text-base">
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-10">
@@ -1293,10 +1295,15 @@ export default function InvitationsPage() {
                             </TableHead>
                             <TableHead>PO</TableHead>
                             <TableHead>Style #</TableHead>
+                            <TableHead>Color</TableHead>
                             <TableHead>Description</TableHead>
-                            <TableHead>Qty</TableHead>
-                            <TableHead className="w-[110px]">Factory Price</TableHead>
-                            <TableHead className="w-[150px]">Factory Ex-Factory</TableHead>
+                            <TableHead className="text-right">Qty</TableHead>
+                            <TableHead className="text-right">PO Price</TableHead>
+                            <TableHead>PO Ex-Factory</TableHead>
+                            <TableHead className="w-[120px]">Factory Price</TableHead>
+                            <TableHead className="w-[160px]">Factory Ex-Factory</TableHead>
+                            <TableHead className="text-right">Margin $</TableHead>
+                            <TableHead className="text-right">Margin days</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1305,6 +1312,24 @@ export default function InvitationsPage() {
                             const key = faKeyFor(poId, style.id);
                             const isSelected = faSelectedKeys.includes(key);
                             const entry = faPricing[key];
+                            const po = purchaseOrders.find((p) => p.id === poId);
+                            const poPriceNum = style.pivot?.unit_price_in_po != null
+                              ? Number(style.pivot.unit_price_in_po)
+                              : NaN;
+                            const factoryPriceNum = entry?.price ? Number(entry.price) : NaN;
+                            const marginPrice = !Number.isNaN(poPriceNum) && !Number.isNaN(factoryPriceNum)
+                              ? poPriceNum - factoryPriceNum
+                              : null;
+                            let marginDays: number | null = null;
+                            if (po?.ex_factory_date && entry?.date) {
+                              const d1 = new Date(po.ex_factory_date).getTime();
+                              const d2 = new Date(entry.date).getTime();
+                              if (!Number.isNaN(d1) && !Number.isNaN(d2)) {
+                                marginDays = Math.round((d1 - d2) / (1000 * 60 * 60 * 24));
+                              }
+                            }
+                            const colorName = style.color?.name || '-';
+                            const colorCode = style.color?.code || null;
                             return (
                               <TableRow key={key} className="hover:bg-muted/50">
                                 <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="cursor-pointer">
@@ -1313,17 +1338,35 @@ export default function InvitationsPage() {
                                     onCheckedChange={() => toggleFaStyleSelection(poId, style.id)}
                                   />
                                 </TableCell>
-                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-sm text-muted-foreground cursor-pointer">{style.po_number || '-'}</TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-muted-foreground cursor-pointer">{style.po_number || '-'}</TableCell>
                                 <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="font-medium cursor-pointer">{style.style_number}</TableCell>
-                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-sm text-muted-foreground truncate max-w-[200px] cursor-pointer">{style.description || '-'}</TableCell>
-                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-sm cursor-pointer">{style.pivot?.quantity_in_po || style.total_quantity || '-'}</TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="cursor-pointer">
+                                  <div className="flex items-center gap-2">
+                                    {colorCode && (
+                                      <span
+                                        className="inline-block h-4 w-4 rounded-full border border-border shrink-0"
+                                        style={{ backgroundColor: colorCode }}
+                                        title={colorCode}
+                                      />
+                                    )}
+                                    <span>{colorName}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-muted-foreground truncate max-w-[220px] cursor-pointer">{style.description || '-'}</TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-right cursor-pointer">{style.pivot?.quantity_in_po || style.total_quantity || '-'}</TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-right cursor-pointer">
+                                  {Number.isNaN(poPriceNum) ? '-' : poPriceNum.toFixed(2)}
+                                </TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-muted-foreground cursor-pointer">
+                                  {po?.ex_factory_date || '-'}
+                                </TableCell>
                                 <TableCell>
                                   <Input
                                     type="number"
                                     inputMode="decimal"
                                     step="0.01"
                                     min={0}
-                                    className="h-8"
+                                    className="h-9"
                                     placeholder="0.00"
                                     value={entry?.price ?? ''}
                                     disabled={!isSelected}
@@ -1333,11 +1376,25 @@ export default function InvitationsPage() {
                                 <TableCell>
                                   <Input
                                     type="date"
-                                    className="h-8"
+                                    className="h-9"
                                     value={entry?.date ?? ''}
                                     disabled={!isSelected}
                                     onChange={(e) => updateFaDate(key, e.target.value)}
                                   />
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {marginPrice == null ? '-' : (
+                                    <span className={marginPrice < 0 ? 'text-destructive' : ''}>
+                                      {marginPrice.toFixed(2)}
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {marginDays == null ? '-' : (
+                                    <span className={marginDays < 0 ? 'text-destructive' : ''}>
+                                      {marginDays}
+                                    </span>
+                                  )}
                                 </TableCell>
                               </TableRow>
                             );
