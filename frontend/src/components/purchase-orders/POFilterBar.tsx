@@ -13,12 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Search, X, SlidersHorizontal } from 'lucide-react';
+import { Search, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 
 export interface POFilters {
   search: string;
@@ -161,7 +156,8 @@ export function POFilterBar({
   );
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap rounded-lg border bg-card p-3">
+    <div className="rounded-lg border bg-card p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
       {/* Search */}
       <div className="relative flex-1 min-w-[220px]">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -234,21 +230,49 @@ export function POFilterBar({
         </SelectContent>
       </Select>
 
-      {/* More filters */}
-      <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9">
-            <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5" />
-            More filters
-            {advancedActiveCount > 0 && (
-              <Badge variant="secondary" className="ml-2 h-5 px-1.5">
-                {advancedActiveCount}
-              </Badge>
-            )}
+      {/* More filters toggle */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-9"
+        onClick={() => setMoreOpen((v) => !v)}
+        aria-expanded={moreOpen}
+      >
+        <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5" />
+        More filters
+        {advancedActiveCount > 0 && (
+          <Badge variant="secondary" className="ml-2 h-5 px-1.5">
+            {advancedActiveCount}
+          </Badge>
+        )}
+        <ChevronDown
+          className={`ml-1.5 h-3.5 w-3.5 transition-transform ${moreOpen ? 'rotate-180' : ''}`}
+        />
+      </Button>
+
+      {/* Active count + clear */}
+      {activeFilterCount > 0 && (
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="h-6">
+            {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''}
+          </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-muted-foreground"
+            onClick={clearFilters}
+          >
+            <X className="mr-1 h-3 w-3" />
+            Clear
           </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-[640px] max-h-[70vh] overflow-y-auto p-4">
-          <div className="grid grid-cols-2 gap-3">
+        </div>
+      )}
+      </div>
+
+      {/* Advanced filters panel — inline so nothing gets clipped */}
+      {moreOpen && (
+        <div className="mt-3 border-t pt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {renderSelect('Retailer', filters.retailer, (v) => update({ retailer: v }), retailers)}
             {renderSelect('Importer', filters.importer, (v) => update({ importer: v }), importers)}
             {renderSelect(
@@ -264,61 +288,48 @@ export function POFilterBar({
             {renderSelect('Factory', filters.factory, (v) => update({ factory: v }), factories)}
           </div>
 
-          <div className="mt-4 border-t pt-4">
-            <div className="text-xs font-semibold text-muted-foreground mb-2">
-              ETD Date
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">From</Label>
-                <Input
-                  type="date"
-                  className="h-9"
-                  value={filters.etdFrom}
-                  onChange={(e) => update({ etdFrom: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">To</Label>
-                <Input
-                  type="date"
-                  className="h-9"
-                  value={filters.etdTo}
-                  onChange={(e) => update({ etdTo: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 border-t pt-4">
-            <div className="text-xs font-semibold text-muted-foreground mb-2">
-              Ex-Factory Date
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">From</Label>
-                <Input
-                  type="date"
-                  className="h-9"
-                  value={filters.exFactoryFrom}
-                  onChange={(e) => update({ exFactoryFrom: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">To</Label>
-                <Input
-                  type="date"
-                  className="h-9"
-                  value={filters.exFactoryTo}
-                  onChange={(e) => update({ exFactoryTo: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 border-t pt-4 grid grid-cols-2 gap-3">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="flex flex-col gap-1">
-              <Label className="text-xs text-muted-foreground">Total Value Min</Label>
+              <Label className="text-xs text-muted-foreground">ETD From</Label>
+              <Input
+                type="date"
+                className="h-9"
+                value={filters.etdFrom}
+                onChange={(e) => update({ etdFrom: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">ETD To</Label>
+              <Input
+                type="date"
+                className="h-9"
+                value={filters.etdTo}
+                onChange={(e) => update({ etdTo: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">Ex-Factory From</Label>
+              <Input
+                type="date"
+                className="h-9"
+                value={filters.exFactoryFrom}
+                onChange={(e) => update({ exFactoryFrom: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">Ex-Factory To</Label>
+              <Input
+                type="date"
+                className="h-9"
+                value={filters.exFactoryTo}
+                onChange={(e) => update({ exFactoryTo: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">Value Min</Label>
               <Input
                 type="number"
                 inputMode="decimal"
@@ -329,7 +340,7 @@ export function POFilterBar({
               />
             </div>
             <div className="flex flex-col gap-1">
-              <Label className="text-xs text-muted-foreground">Total Value Max</Label>
+              <Label className="text-xs text-muted-foreground">Value Max</Label>
               <Input
                 type="number"
                 inputMode="decimal"
@@ -340,7 +351,7 @@ export function POFilterBar({
               />
             </div>
             <div className="flex flex-col gap-1">
-              <Label className="text-xs text-muted-foreground">Quantity Min</Label>
+              <Label className="text-xs text-muted-foreground">Qty Min</Label>
               <Input
                 type="number"
                 inputMode="numeric"
@@ -351,7 +362,7 @@ export function POFilterBar({
               />
             </div>
             <div className="flex flex-col gap-1">
-              <Label className="text-xs text-muted-foreground">Quantity Max</Label>
+              <Label className="text-xs text-muted-foreground">Qty Max</Label>
               <Input
                 type="number"
                 inputMode="numeric"
@@ -363,7 +374,7 @@ export function POFilterBar({
             </div>
           </div>
 
-          <div className="mt-4 border-t pt-4 flex flex-wrap gap-4">
+          <div className="mt-3 flex flex-wrap gap-4">
             <label className="flex items-center gap-2 text-sm">
               <Checkbox
                 checked={filters.revisedOnly}
@@ -383,24 +394,6 @@ export function POFilterBar({
               Overdue ETD
             </label>
           </div>
-        </PopoverContent>
-      </Popover>
-
-      {/* Active count + clear */}
-      {activeFilterCount > 0 && (
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="h-6">
-            {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''}
-          </Badge>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-muted-foreground"
-            onClick={clearFilters}
-          >
-            <X className="mr-1 h-3 w-3" />
-            Clear
-          </Button>
         </div>
       )}
     </div>
