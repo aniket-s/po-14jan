@@ -468,6 +468,26 @@ class StyleController extends Controller
             $query->where('styles.assigned_factory_id', $request->factory_id);
         }
 
+        // Brand filter
+        if ($request->filled('brand_id')) {
+            $query->where('styles.brand_id', $request->brand_id);
+        }
+
+        // Retailer filter
+        if ($request->filled('retailer_id')) {
+            $query->where('styles.retailer_id', $request->retailer_id);
+        }
+
+        // Season filter
+        if ($request->filled('season_id')) {
+            $query->where('styles.season_id', $request->season_id);
+        }
+
+        // Category filter
+        if ($request->filled('category_id')) {
+            $query->where('styles.category_id', $request->category_id);
+        }
+
         // Search filter
         if ($request->has('search')) {
             $search = $request->search;
