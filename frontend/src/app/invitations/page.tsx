@@ -70,6 +70,7 @@ interface Invitation {
 interface PurchaseOrder {
   id: number;
   po_number: string;
+  headline?: string | null;
   importer_id?: number | null;
   importer?: { id: number; name: string; company?: string } | null;
 }
@@ -85,6 +86,8 @@ interface POStyle {
   style_number: string;
   description: string | null;
   total_quantity?: number;
+  po_id?: number;
+  po_number?: string;
   pivot?: {
     quantity_in_po?: number;
     assigned_factory_id?: number;
@@ -151,11 +154,13 @@ export default function InvitationsPage() {
 
   // Agency assignment state
   const [showAssignAgencyDialog, setShowAssignAgencyDialog] = useState(false);
-  const [agcAssignPOId, setAgcAssignPOId] = useState<string>('');
+  const [agcAssignPOIds, setAgcAssignPOIds] = useState<string[]>([]);
   const [agcAssignStyles, setAgcAssignStyles] = useState<POStyle[]>([]);
   const [agcAssignStylesLoading, setAgcAssignStylesLoading] = useState(false);
   const [agcStyleSearch, setAgcStyleSearch] = useState('');
-  const [agcSelectedStyleIds, setAgcSelectedStyleIds] = useState<number[]>([]);
+  const [agcPOSearch, setAgcPOSearch] = useState('');
+  // Composite keys `${po_id}:${style_id}` — a style can belong to multiple POs
+  const [agcSelectedKeys, setAgcSelectedKeys] = useState<string[]>([]);
   const [agencies, setAgencies] = useState<FactoryOption[]>([]);
   const [selectedAgencyId, setSelectedAgencyId] = useState<string>('');
   const [assignAgencyLoading, setAssignAgencyLoading] = useState(false);
@@ -523,62 +528,113 @@ export default function InvitationsPage() {
   };
 
   // --- Agency Assignment functions ---
-  const fetchAgcAssignStyles = async (poId: string) => {
-    if (!poId) { setAgcAssignStyles([]); return; }
+  const keyFor = (poId: number | string, styleId: number | string) => `${poId}:${styleId}`;
+
+  const fetchAgcAssignStylesForPOs = async (poIds: string[]) => {
+    if (poIds.length === 0) { setAgcAssignStyles([]); return; }
     setAgcAssignStylesLoading(true);
     try {
-      const response = await api.get(`/purchase-orders/${poId}/styles`, { params: { per_page: 200 } });
-      const styles = response.data.styles || response.data.data || [];
-      setAgcAssignStyles(Array.isArray(styles) ? styles : []);
-    } catch { setAgcAssignStyles([]); }
-    finally { setAgcAssignStylesLoading(false); }
+      const results = await Promise.all(
+        poIds.map(async (poId) => {
+          try {
+            const response = await api.get(`/purchase-orders/${poId}/styles`, { params: { per_page: 200 } });
+            const list = response.data.styles || response.data.data || [];
+            const po = purchaseOrders.find((p) => p.id.toString() === poId);
+            const poNumber = po?.po_number || poId;
+            return (Array.isArray(list) ? list : []).map((s: any) => ({
+              ...s,
+              po_id: Number(poId),
+              po_number: poNumber,
+            })) as POStyle[];
+          } catch {
+            return [] as POStyle[];
+          }
+        })
+      );
+      setAgcAssignStyles(results.flat());
+    } finally {
+      setAgcAssignStylesLoading(false);
+    }
   };
 
-  const handleAgcAssignPOChange = (poId: string) => {
-    setAgcAssignPOId(poId);
-    setAgcSelectedStyleIds([]);
-    setAgcStyleSearch('');
-    fetchAgcAssignStyles(poId);
+  const toggleAgcPOSelection = (poId: string) => {
+    setAgcAssignPOIds((prev) => {
+      const next = prev.includes(poId) ? prev.filter((id) => id !== poId) : [...prev, poId];
+      // Drop selections that belong to an unselected PO
+      setAgcSelectedKeys((keys) =>
+        keys.filter((k) => next.some((pid) => k.startsWith(`${pid}:`)))
+      );
+      fetchAgcAssignStylesForPOs(next);
+      return next;
+    });
   };
 
   const filteredAgcStyles = agcAssignStyles.filter((style) => {
     if (!agcStyleSearch) return true;
     const s = agcStyleSearch.toLowerCase();
-    return style.style_number.toLowerCase().includes(s) || (style.description || '').toLowerCase().includes(s);
+    return (
+      style.style_number.toLowerCase().includes(s) ||
+      (style.description || '').toLowerCase().includes(s) ||
+      (style.po_number || '').toLowerCase().includes(s)
+    );
   });
 
-  const toggleAgcStyleSelection = (styleId: number) => {
-    setAgcSelectedStyleIds((prev) =>
-      prev.includes(styleId) ? prev.filter((id) => id !== styleId) : [...prev, styleId]
+  const toggleAgcStyleSelection = (poId: number, styleId: number) => {
+    const key = keyFor(poId, styleId);
+    setAgcSelectedKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
   };
 
   const toggleAgcSelectAll = () => {
-    const visibleIds = filteredAgcStyles.map((s) => s.id);
-    const allSelected = visibleIds.every((id) => agcSelectedStyleIds.includes(id));
+    const visibleKeys = filteredAgcStyles
+      .filter((s) => s.po_id != null)
+      .map((s) => keyFor(s.po_id as number, s.id));
+    const allSelected = visibleKeys.length > 0 && visibleKeys.every((k) => agcSelectedKeys.includes(k));
     if (allSelected) {
-      setAgcSelectedStyleIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+      setAgcSelectedKeys((prev) => prev.filter((k) => !visibleKeys.includes(k)));
     } else {
-      setAgcSelectedStyleIds((prev) => [...new Set([...prev, ...visibleIds])]);
+      setAgcSelectedKeys((prev) => Array.from(new Set([...prev, ...visibleKeys])));
     }
   };
 
   const resetAgcAssignForm = () => {
-    setAgcAssignPOId('');
+    setAgcAssignPOIds([]);
     setAgcAssignStyles([]);
     setAgcStyleSearch('');
-    setAgcSelectedStyleIds([]);
+    setAgcPOSearch('');
+    setAgcSelectedKeys([]);
     setSelectedAgencyId('');
   };
 
   const handleAssignAgency = async () => {
-    if (!agcAssignPOId || agcSelectedStyleIds.length === 0 || !selectedAgencyId) return;
+    if (agcAssignPOIds.length === 0 || agcSelectedKeys.length === 0 || !selectedAgencyId) return;
     setAssignAgencyLoading(true);
     try {
-      await api.post(`/purchase-orders/${agcAssignPOId}/styles/bulk-assign-agency`, {
-        style_ids: agcSelectedStyleIds,
-        agency_id: parseInt(selectedAgencyId),
-      });
+      // Group selected style IDs by PO
+      const byPO = new Map<string, number[]>();
+      for (const key of agcSelectedKeys) {
+        const [poId, styleId] = key.split(':');
+        if (!byPO.has(poId)) byPO.set(poId, []);
+        byPO.get(poId)!.push(Number(styleId));
+      }
+
+      const results = await Promise.allSettled(
+        Array.from(byPO.entries()).map(([poId, styleIds]) =>
+          api.post(`/purchase-orders/${poId}/styles/bulk-assign-agency`, {
+            style_ids: styleIds,
+            agency_id: parseInt(selectedAgencyId),
+          })
+        )
+      );
+
+      const failures = results.filter((r) => r.status === 'rejected');
+      if (failures.length > 0) {
+        const first = failures[0] as PromiseRejectedResult;
+        const message = first.reason?.response?.data?.message || 'One or more assignments failed';
+        alert(`${failures.length} of ${results.length} PO assignment(s) failed: ${message}`);
+      }
+
       setShowAssignAgencyDialog(false);
       resetAgcAssignForm();
       fetchPurchaseOrders();
@@ -1734,26 +1790,72 @@ export default function InvitationsPage() {
             <DialogHeader>
               <DialogTitle>Assign Agency to Styles</DialogTitle>
               <DialogDescription>
-                Select a purchase order, pick styles, and assign them to an agency
+                Select one or more purchase orders, pick styles, and assign them to an agency
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-6">
-              <div className="space-y-2">
-                <Label>Purchase Order *</Label>
-                <Select value={agcAssignPOId} onValueChange={handleAgcAssignPOChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a purchase order..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {purchaseOrders.map((po) => (
-                      <SelectItem key={po.id} value={po.id.toString()}>{po.po_number}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-3">
+                <Label>Purchase Orders * ({agcAssignPOIds.length} selected)</Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search POs..."
+                    value={agcPOSearch}
+                    onChange={(e) => setAgcPOSearch(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+                <div className="border rounded-md max-h-[220px] overflow-y-auto">
+                  {(() => {
+                    const visiblePOs = purchaseOrders.filter((po) => {
+                      if (!agcPOSearch) return true;
+                      const s = agcPOSearch.toLowerCase();
+                      return (
+                        po.po_number.toLowerCase().includes(s) ||
+                        (po.headline || '').toLowerCase().includes(s)
+                      );
+                    });
+                    if (visiblePOs.length === 0) {
+                      return (
+                        <div className="text-sm text-muted-foreground py-4 text-center">
+                          No POs match your search
+                        </div>
+                      );
+                    }
+                    return (
+                      <Table>
+                        <TableBody>
+                          {visiblePOs.map((po) => {
+                            const checked = agcAssignPOIds.includes(po.id.toString());
+                            return (
+                              <TableRow
+                                key={po.id}
+                                className="cursor-pointer hover:bg-muted/50"
+                                onClick={() => toggleAgcPOSelection(po.id.toString())}
+                              >
+                                <TableCell className="w-10">
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={() => toggleAgcPOSelection(po.id.toString())}
+                                  />
+                                </TableCell>
+                                <TableCell className="font-medium">{po.po_number}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground truncate max-w-[320px]">
+                                  {po.headline || '-'}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    );
+                  })()}
+                </div>
               </div>
-              {agcAssignPOId && (
+
+              {agcAssignPOIds.length > 0 && (
                 <div className="space-y-3">
-                  <Label>Styles ({agcSelectedStyleIds.length} of {filteredAgcStyles.length} selected)</Label>
+                  <Label>Styles ({agcSelectedKeys.length} of {filteredAgcStyles.length} selected)</Label>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input placeholder="Search styles..." value={agcStyleSearch} onChange={(e) => setAgcStyleSearch(e.target.value)} className="pl-8" />
@@ -1762,7 +1864,7 @@ export default function InvitationsPage() {
                     <div className="text-sm text-muted-foreground py-4 text-center">Loading styles...</div>
                   ) : filteredAgcStyles.length === 0 ? (
                     <div className="text-sm text-muted-foreground py-4 text-center">
-                      {agcAssignStyles.length === 0 ? 'No styles found in this PO' : 'No styles match your search'}
+                      {agcAssignStyles.length === 0 ? 'No styles found in selected POs' : 'No styles match your search'}
                     </div>
                   ) : (
                     <div className="border rounded-md max-h-[300px] overflow-y-auto">
@@ -1770,29 +1872,52 @@ export default function InvitationsPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-10">
-                              <Checkbox checked={filteredAgcStyles.length > 0 && filteredAgcStyles.every((s) => agcSelectedStyleIds.includes(s.id))} onCheckedChange={toggleAgcSelectAll} />
+                              <Checkbox
+                                checked={
+                                  filteredAgcStyles.length > 0 &&
+                                  filteredAgcStyles.every((s) =>
+                                    s.po_id != null && agcSelectedKeys.includes(keyFor(s.po_id, s.id))
+                                  )
+                                }
+                                onCheckedChange={toggleAgcSelectAll}
+                              />
                             </TableHead>
+                            <TableHead>PO</TableHead>
                             <TableHead>Style #</TableHead>
                             <TableHead>Description</TableHead>
                             <TableHead>Qty</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredAgcStyles.map((style) => (
-                            <TableRow key={style.id} className="cursor-pointer hover:bg-muted/50" onClick={() => toggleAgcStyleSelection(style.id)}>
-                              <TableCell><Checkbox checked={agcSelectedStyleIds.includes(style.id)} onCheckedChange={() => toggleAgcStyleSelection(style.id)} /></TableCell>
-                              <TableCell className="font-medium">{style.style_number}</TableCell>
-                              <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{style.description || '-'}</TableCell>
-                              <TableCell className="text-sm">{style.pivot?.quantity_in_po || style.total_quantity || '-'}</TableCell>
-                            </TableRow>
-                          ))}
+                          {filteredAgcStyles.map((style) => {
+                            const poId = style.po_id as number;
+                            const key = keyFor(poId, style.id);
+                            return (
+                              <TableRow
+                                key={key}
+                                className="cursor-pointer hover:bg-muted/50"
+                                onClick={() => toggleAgcStyleSelection(poId, style.id)}
+                              >
+                                <TableCell>
+                                  <Checkbox
+                                    checked={agcSelectedKeys.includes(key)}
+                                    onCheckedChange={() => toggleAgcStyleSelection(poId, style.id)}
+                                  />
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground">{style.po_number || '-'}</TableCell>
+                                <TableCell className="font-medium">{style.style_number}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{style.description || '-'}</TableCell>
+                                <TableCell className="text-sm">{style.pivot?.quantity_in_po || style.total_quantity || '-'}</TableCell>
+                              </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>
                   )}
                 </div>
               )}
-              {agcSelectedStyleIds.length > 0 && (
+              {agcSelectedKeys.length > 0 && (
                 <div className="space-y-2">
                   <Label>Agency *</Label>
                   <Select value={selectedAgencyId} onValueChange={setSelectedAgencyId}>
@@ -1812,8 +1937,8 @@ export default function InvitationsPage() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => { setShowAssignAgencyDialog(false); resetAgcAssignForm(); }}>Cancel</Button>
-              <Button onClick={handleAssignAgency} disabled={agcSelectedStyleIds.length === 0 || !selectedAgencyId || assignAgencyLoading}>
-                {assignAgencyLoading ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />Assigning...</>) : `Assign ${agcSelectedStyleIds.length} Style${agcSelectedStyleIds.length !== 1 ? 's' : ''}`}
+              <Button onClick={handleAssignAgency} disabled={agcSelectedKeys.length === 0 || !selectedAgencyId || assignAgencyLoading}>
+                {assignAgencyLoading ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />Assigning...</>) : `Assign ${agcSelectedKeys.length} Style${agcSelectedKeys.length !== 1 ? 's' : ''}`}
               </Button>
             </DialogFooter>
           </DialogContent>
