@@ -177,7 +177,7 @@ class PdfImportService
      * Extract text from PDF preserving visual layout.
      * Tries multiple strategies in order of quality.
      */
-    private function extractTextPreservingLayout(string $filePath): string
+    public function extractTextPreservingLayout(string $filePath): string
     {
         // Strategy 1: spatie/pdf-to-text with -layout (best quality when available)
         $text = $this->extractWithSpatiePdfToText($filePath);
