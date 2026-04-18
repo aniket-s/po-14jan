@@ -71,6 +71,7 @@ interface PurchaseOrder {
   id: number;
   po_number: string;
   headline?: string | null;
+  ex_factory_date?: string | null;
   importer_id?: number | null;
   importer?: { id: number; name: string; company?: string } | null;
 }
@@ -181,6 +182,11 @@ export default function InvitationsPage() {
   const [faStyleSearch, setFaStyleSearch] = useState('');
   // Composite keys `${po_id}:${style_id}` — a style can belong to multiple POs
   const [faSelectedKeys, setFaSelectedKeys] = useState<string[]>([]);
+  // Per-row (composite-key) factory economics entered by the agency.
+  // `edited` tracks whether the user manually changed the date so a buffer
+  // re-compute won't clobber their value.
+  const [faPricing, setFaPricing] = useState<Record<string, { price: string; date: string; dateEdited: boolean }>>({});
+  const [faBufferDays, setFaBufferDays] = useState<number>(21);
   const [factories, setFactories] = useState<FactoryOption[]>([]);
   const [selectedFactoryId, setSelectedFactoryId] = useState<string>('');
   const [assignNotes, setAssignNotes] = useState('');
@@ -397,6 +403,27 @@ export default function InvitationsPage() {
   // --- Factory Assignment functions (multi-PO → styles) ---
   const faKeyFor = (poId: number | string, styleId: number | string) => `${poId}:${styleId}`;
 
+  // Subtract buffer days from a YYYY-MM-DD date string. Returns '' if the
+  // input isn't a parseable date — the agency can then enter a value
+  // manually for that row.
+  const faComputeFactoryDate = (poExFactoryDate: string | null | undefined, bufferDays: number): string => {
+    if (!poExFactoryDate) return '';
+    const d = new Date(poExFactoryDate);
+    if (Number.isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() - bufferDays);
+    return d.toISOString().split('T')[0];
+  };
+
+  // Build the default pricing/date entry for a freshly-checked style row.
+  const faDefaultPricingEntry = (style: POStyle): { price: string; date: string; dateEdited: boolean } => {
+    const po = purchaseOrders.find((p) => p.id === style.po_id);
+    const defaultPrice = style.pivot?.unit_price_in_po != null
+      ? String(style.pivot.unit_price_in_po)
+      : '';
+    const defaultDate = faComputeFactoryDate(po?.ex_factory_date ?? null, faBufferDays);
+    return { price: defaultPrice, date: defaultDate, dateEdited: false };
+  };
+
   const fetchFaStylesForPOs = async (poIds: string[]) => {
     if (poIds.length === 0) { setFaAssignStyles([]); return; }
     setFaStylesLoading(true);
@@ -427,10 +454,17 @@ export default function InvitationsPage() {
   const toggleFaPOSelection = (poId: string) => {
     setFaAssignPOIds((prev) => {
       const next = prev.includes(poId) ? prev.filter((id) => id !== poId) : [...prev, poId];
-      // Drop style selections that belong to an unselected PO
+      // Drop style selections + pricing rows tied to a PO the user just unchecked
       setFaSelectedKeys((keys) =>
         keys.filter((k) => next.some((pid) => k.startsWith(`${pid}:`)))
       );
+      setFaPricing((prev) => {
+        const out: typeof prev = {};
+        for (const k of Object.keys(prev)) {
+          if (next.some((pid) => k.startsWith(`${pid}:`))) out[k] = prev[k];
+        }
+        return out;
+      });
       fetchFaStylesForPOs(next);
       return next;
     });
@@ -444,6 +478,13 @@ export default function InvitationsPage() {
       : Array.from(new Set([...faAssignPOIds, ...visibleIds]));
     setFaAssignPOIds(next);
     setFaSelectedKeys((keys) => keys.filter((k) => next.some((pid) => k.startsWith(`${pid}:`))));
+    setFaPricing((prev) => {
+      const out: typeof prev = {};
+      for (const k of Object.keys(prev)) {
+        if (next.some((pid) => k.startsWith(`${pid}:`))) out[k] = prev[k];
+      }
+      return out;
+    });
     fetchFaStylesForPOs(next);
   };
 
@@ -459,9 +500,20 @@ export default function InvitationsPage() {
 
   const toggleFaStyleSelection = (poId: number, styleId: number) => {
     const key = faKeyFor(poId, styleId);
-    setFaSelectedKeys((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
-    );
+    setFaSelectedKeys((prev) => {
+      if (prev.includes(key)) {
+        setFaPricing((p) => {
+          const { [key]: _removed, ...rest } = p;
+          return rest;
+        });
+        return prev.filter((k) => k !== key);
+      }
+      const style = faAssignStyles.find((s) => s.po_id === poId && s.id === styleId);
+      if (style) {
+        setFaPricing((p) => ({ ...p, [key]: faDefaultPricingEntry(style) }));
+      }
+      return [...prev, key];
+    });
   };
 
   const toggleFaSelectAllStyles = () => {
@@ -471,9 +523,54 @@ export default function InvitationsPage() {
     const allSelected = visibleKeys.length > 0 && visibleKeys.every((k) => faSelectedKeys.includes(k));
     if (allSelected) {
       setFaSelectedKeys((prev) => prev.filter((k) => !visibleKeys.includes(k)));
+      setFaPricing((p) => {
+        const out = { ...p };
+        for (const k of visibleKeys) delete out[k];
+        return out;
+      });
     } else {
       setFaSelectedKeys((prev) => Array.from(new Set([...prev, ...visibleKeys])));
+      setFaPricing((p) => {
+        const out = { ...p };
+        for (const style of filteredFaStyles) {
+          if (style.po_id == null) continue;
+          const k = faKeyFor(style.po_id, style.id);
+          if (!out[k]) out[k] = faDefaultPricingEntry(style);
+        }
+        return out;
+      });
     }
+  };
+
+  const updateFaPrice = (key: string, price: string) => {
+    setFaPricing((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] ?? { price: '', date: '', dateEdited: false }), price },
+    }));
+  };
+
+  const updateFaDate = (key: string, date: string) => {
+    setFaPricing((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] ?? { price: '', date: '', dateEdited: false }), date, dateEdited: true },
+    }));
+  };
+
+  // When the buffer-days input changes, recompute the default factory
+  // ex-factory date for any row whose date the user hasn't manually edited.
+  const handleFaBufferChange = (nextBuffer: number) => {
+    setFaBufferDays(nextBuffer);
+    setFaPricing((prev) => {
+      const out = { ...prev };
+      for (const key of Object.keys(out)) {
+        const entry = out[key];
+        if (entry.dateEdited) continue;
+        const [poIdStr] = key.split(':');
+        const po = purchaseOrders.find((p) => p.id.toString() === poIdStr);
+        out[key] = { ...entry, date: faComputeFactoryDate(po?.ex_factory_date ?? null, nextBuffer) };
+      }
+      return out;
+    });
   };
 
   // Submit factory assignment
@@ -483,6 +580,19 @@ export default function InvitationsPage() {
     const styleIds = Array.from(new Set(
       faSelectedKeys.map((k) => Number(k.split(':')[1]))
     ));
+    // Collapse per-row pricing into maps keyed by style_id. If the same style
+    // was picked from two POs with different values, last write wins — matches
+    // the backend's first-PO-only assignment behaviour.
+    const prices: Record<string, number> = {};
+    const dates: Record<string, string> = {};
+    for (const key of faSelectedKeys) {
+      const entry = faPricing[key];
+      if (!entry) continue;
+      const styleId = key.split(':')[1];
+      if (entry.price !== '' && !Number.isNaN(Number(entry.price))) prices[styleId] = Number(entry.price);
+      if (entry.date) dates[styleId] = entry.date;
+    }
+
     setAssignLoading(true);
     try {
       await api.post('/factory-assignments/bulk-assign', {
@@ -490,6 +600,8 @@ export default function InvitationsPage() {
         factory_id: parseInt(selectedFactoryId),
         assignment_type: 'via_agency',
         notes: assignNotes || null,
+        factory_unit_prices: Object.keys(prices).length > 0 ? prices : undefined,
+        factory_ex_factory_dates: Object.keys(dates).length > 0 ? dates : undefined,
       });
       setShowAssignDialog(false);
       resetAssignForm();
@@ -508,6 +620,8 @@ export default function InvitationsPage() {
     setFaPOSearch('');
     setFaStyleSearch('');
     setFaSelectedKeys([]);
+    setFaPricing({});
+    setFaBufferDays(21);
     setSelectedFactoryId('');
     setAssignNotes('');
   };
@@ -1126,16 +1240,35 @@ export default function InvitationsPage() {
               {/* Styles picked from selected POs */}
               {faAssignPOIds.length > 0 && (
                 <div className="space-y-3">
-                  <Label>Styles ({faSelectedKeys.length} of {filteredFaStyles.length} selected)</Label>
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search styles..."
-                      value={faStyleSearch}
-                      onChange={(e) => setFaStyleSearch(e.target.value)}
-                      className="pl-8"
-                    />
+                  <div className="flex items-end gap-4 flex-wrap">
+                    <div className="flex-1 min-w-[200px] space-y-1">
+                      <Label>Styles ({faSelectedKeys.length} of {filteredFaStyles.length} selected)</Label>
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Search styles..."
+                          value={faStyleSearch}
+                          onChange={(e) => setFaStyleSearch(e.target.value)}
+                          className="pl-8"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Delivery Buffer (days)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="w-28"
+                        value={faBufferDays}
+                        onChange={(e) => {
+                          const n = Math.max(0, Number(e.target.value) || 0);
+                          handleFaBufferChange(n);
+                        }}
+                      />
+                      <p className="text-[11px] text-muted-foreground">Factory ex-factory = PO ex-factory − buffer</p>
+                    </div>
                   </div>
+
                   {faStylesLoading ? (
                     <div className="text-sm text-muted-foreground py-4 text-center">Loading styles...</div>
                   ) : filteredFaStyles.length === 0 ? (
@@ -1143,7 +1276,7 @@ export default function InvitationsPage() {
                       {faAssignStyles.length === 0 ? 'No styles found in selected POs' : 'No styles match your search'}
                     </div>
                   ) : (
-                    <div className="border rounded-md max-h-[300px] overflow-y-auto">
+                    <div className="border rounded-md max-h-[320px] overflow-y-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -1162,28 +1295,50 @@ export default function InvitationsPage() {
                             <TableHead>Style #</TableHead>
                             <TableHead>Description</TableHead>
                             <TableHead>Qty</TableHead>
+                            <TableHead className="w-[110px]">Factory Price</TableHead>
+                            <TableHead className="w-[150px]">Factory Ex-Factory</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {filteredFaStyles.map((style) => {
                             const poId = style.po_id as number;
                             const key = faKeyFor(poId, style.id);
+                            const isSelected = faSelectedKeys.includes(key);
+                            const entry = faPricing[key];
                             return (
-                              <TableRow
-                                key={key}
-                                className="cursor-pointer hover:bg-muted/50"
-                                onClick={() => toggleFaStyleSelection(poId, style.id)}
-                              >
-                                <TableCell>
+                              <TableRow key={key} className="hover:bg-muted/50">
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="cursor-pointer">
                                   <Checkbox
-                                    checked={faSelectedKeys.includes(key)}
+                                    checked={isSelected}
                                     onCheckedChange={() => toggleFaStyleSelection(poId, style.id)}
                                   />
                                 </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">{style.po_number || '-'}</TableCell>
-                                <TableCell className="font-medium">{style.style_number}</TableCell>
-                                <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{style.description || '-'}</TableCell>
-                                <TableCell className="text-sm">{style.pivot?.quantity_in_po || style.total_quantity || '-'}</TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-sm text-muted-foreground cursor-pointer">{style.po_number || '-'}</TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="font-medium cursor-pointer">{style.style_number}</TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-sm text-muted-foreground truncate max-w-[200px] cursor-pointer">{style.description || '-'}</TableCell>
+                                <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-sm cursor-pointer">{style.pivot?.quantity_in_po || style.total_quantity || '-'}</TableCell>
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="0.01"
+                                    min={0}
+                                    className="h-8"
+                                    placeholder="0.00"
+                                    value={entry?.price ?? ''}
+                                    disabled={!isSelected}
+                                    onChange={(e) => updateFaPrice(key, e.target.value)}
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Input
+                                    type="date"
+                                    className="h-8"
+                                    value={entry?.date ?? ''}
+                                    disabled={!isSelected}
+                                    onChange={(e) => updateFaDate(key, e.target.value)}
+                                  />
+                                </TableCell>
                               </TableRow>
                             );
                           })}

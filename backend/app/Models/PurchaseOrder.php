@@ -178,6 +178,7 @@ class PurchaseOrder extends Model
             ->withPivot([
                 'quantity_in_po',
                 'unit_price_in_po',
+                'factory_unit_price',
                 'assigned_factory_id',
                 'assigned_agency_id',
                 'assigned_importer_id',
@@ -186,6 +187,7 @@ class PurchaseOrder extends Model
                 'target_production_date',
                 'target_shipment_date',
                 'ex_factory_date',
+                'factory_ex_factory_date',
                 'status',
                 'notes',
             ])
