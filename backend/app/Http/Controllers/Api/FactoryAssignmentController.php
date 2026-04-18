@@ -422,6 +422,11 @@ class FactoryAssignmentController extends Controller
             'assignment_type' => 'required|in:direct_to_factory,via_agency',
             'notes' => 'nullable|string',
             'expected_completion_date' => 'nullable|date',
+            // Agency-supplied factory economics, keyed by style_id as a map.
+            'factory_unit_prices' => 'nullable|array',
+            'factory_unit_prices.*' => 'nullable|numeric|min:0',
+            'factory_ex_factory_dates' => 'nullable|array',
+            'factory_ex_factory_dates.*' => 'nullable|date',
         ]);
 
         if ($validator->fails()) {
@@ -484,11 +489,26 @@ class FactoryAssignmentController extends Controller
 
                 // Update pivot table if PO exists
                 if ($po) {
-                    $po->styles()->updateExistingPivot($style->id, [
+                    $pivotUpdate = [
                         'assignment_type' => $request->assignment_type,
                         'assigned_factory_id' => $request->factory_id,
                         'assigned_at' => now(),
-                    ]);
+                    ];
+
+                    // Optional agency-supplied factory economics. Only write
+                    // the fields that were sent so absent keys leave any
+                    // prior values untouched.
+                    $prices = $request->input('factory_unit_prices', []);
+                    $dates = $request->input('factory_ex_factory_dates', []);
+
+                    if (array_key_exists($style->id, $prices) && $prices[$style->id] !== null && $prices[$style->id] !== '') {
+                        $pivotUpdate['factory_unit_price'] = $prices[$style->id];
+                    }
+                    if (array_key_exists($style->id, $dates) && $dates[$style->id] !== null && $dates[$style->id] !== '') {
+                        $pivotUpdate['factory_ex_factory_date'] = $dates[$style->id];
+                    }
+
+                    $po->styles()->updateExistingPivot($style->id, $pivotUpdate);
                 }
 
                 $created[] = [
