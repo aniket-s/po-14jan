@@ -156,6 +156,9 @@ class PdfImportController extends Controller
             'styles.*.style_number' => 'required|string|max:100',
             'styles.*.description' => 'nullable|string|max:500',
             'styles.*.color_name' => 'nullable|string|max:100',
+            'styles.*.colors' => 'nullable|array',
+            'styles.*.colors.*.name' => 'required_with:styles.*.colors|string|max:100',
+            'styles.*.colors.*.code' => 'nullable|string|max:50',
             'styles.*.size_breakdown' => 'nullable|array',
             'styles.*.quantity' => 'required|integer|min:1',
             'styles.*.unit_price' => 'required|numeric|min:0',
@@ -268,21 +271,28 @@ class PdfImportController extends Controller
 
                 foreach ($stylesData as $index => $styleData) {
                     try {
-                        // Attempt to look up color_id from colors table
-                        $colorId = null;
-                        $colorName = $styleData['color_name'] ?? null;
-                        if ($colorName) {
-                            $color = \App\Models\Color::where('name', $colorName)->first();
-                            if ($color) {
-                                $colorId = $color->id;
+                        // Build the full colour list: combine the explicit
+                        // `colors` array (from the PDF parser) with the
+                        // single `color_name` field, de-duped. The first
+                        // entry becomes the primary colour mirrored onto
+                        // styles.color_name / styles.color_id for backward
+                        // compatibility with code that reads single fields.
+                        $colorEntries = $this->collectColorEntries($styleData);
+
+                        $primaryColorName = $colorEntries[0]['name'] ?? null;
+                        $primaryColorId = null;
+                        if ($primaryColorName) {
+                            $primary = \App\Models\Color::where('name', $primaryColorName)->first();
+                            if ($primary) {
+                                $primaryColorId = $primary->id;
                             }
                         }
 
                         $style = Style::create([
                             'style_number' => $styleData['style_number'],
                             'description' => $styleData['description'] ?? null,
-                            'color_name' => $colorName,
-                            'color_id' => $colorId,
+                            'color_name' => $primaryColorName,
+                            'color_id' => $primaryColorId,
                             'size_breakup' => $styleData['size_breakdown'] ?? null,
                             'images' => !empty($styleData['images']) ? $styleData['images'] : null,
                             'total_quantity' => $styleData['quantity'],
@@ -294,6 +304,22 @@ class PdfImportController extends Controller
                             'created_by' => $user->id,
                             'is_active' => true,
                         ]);
+
+                        // Persist EVERY colour from the PDF into the
+                        // style_colors pivot. Without this, only the
+                        // primary colour would survive and additional
+                        // colours listed on the same line item would be
+                        // silently dropped.
+                        foreach ($colorEntries as $position => $entry) {
+                            $colorRecord = \App\Models\Color::where('name', $entry['name'])->first();
+                            $style->colors()->create([
+                                'color_id' => $colorRecord?->id,
+                                'color_name' => $entry['name'],
+                                'color_code' => $entry['code'] ?? null,
+                                'is_primary' => $position === 0,
+                                'display_order' => $position,
+                            ]);
+                        }
 
                         // Attach style to PO via pivot table
                         $pivotData = [
@@ -375,5 +401,61 @@ class PdfImportController extends Controller
                 'message' => 'Failed to create purchase order: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Merge `colors[]` and the legacy `color_name` from a styleData payload
+     * into a single, de-duplicated, ordered list.
+     *
+     * The first colour wins as primary. `color_name` may itself be a
+     * compound string ("WHITE/BLACK") so it is split on common separators
+     * to make sure we don't drop a colour silently when callers only send
+     * the legacy field.
+     */
+    private function collectColorEntries(array $styleData): array
+    {
+        $entries = [];
+        $seen = [];
+
+        $push = function (?string $name, ?string $code) use (&$entries, &$seen): void {
+            if ($name === null) {
+                return;
+            }
+            $name = trim($name);
+            if ($name === '') {
+                return;
+            }
+            // Split a compound name like "001 BLACK" into code + name.
+            if ($code === null && preg_match('/^(\d{1,4})\s+(.+)$/', $name, $m)) {
+                $code = $m[1];
+                $name = trim($m[2]);
+            }
+            $key = strtoupper($name);
+            if (isset($seen[$key])) {
+                return;
+            }
+            $seen[$key] = true;
+            $entries[] = ['name' => $name, 'code' => $code !== null && $code !== '' ? $code : null];
+        };
+
+        if (!empty($styleData['colors']) && is_array($styleData['colors'])) {
+            foreach ($styleData['colors'] as $entry) {
+                if (is_string($entry)) {
+                    $push($entry, null);
+                } elseif (is_array($entry)) {
+                    $push($entry['name'] ?? null, $entry['code'] ?? null);
+                }
+            }
+        }
+
+        $colorName = $styleData['color_name'] ?? null;
+        if (is_string($colorName) && trim($colorName) !== '') {
+            $parts = preg_split('#[/,&]| and #i', $colorName);
+            foreach ($parts as $part) {
+                $push($part, null);
+            }
+        }
+
+        return $entries;
     }
 }
