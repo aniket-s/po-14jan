@@ -171,6 +171,7 @@ class SampleScheduleService
             'fit_samples'         => 'fit_samples',
             'trim_approvals'      => 'trim_approvals',
             'trim_approval'       => 'trim_approvals',
+            'trim_card'           => 'trim_approvals',
             'first_proto'         => 'first_proto_samples',
             'first_proto_submission' => 'first_proto_samples',
             'first_proto_samples' => 'first_proto_samples',
@@ -182,6 +183,7 @@ class SampleScheduleService
             'production_start'    => 'production_start',
             'top_approval'        => 'top_approval',
             'top'                 => 'top_approval',
+            'top_sample'          => 'top_approval',
         ];
     }
 
