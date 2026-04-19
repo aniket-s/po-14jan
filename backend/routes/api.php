@@ -412,6 +412,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/{id}', [PurchaseOrderController::class, 'show']);
             Route::get('/statistics/overview', [PurchaseOrderController::class, 'statistics']);
             Route::get('/{id}/sample-schedule', [PurchaseOrderController::class, 'getSampleSchedule']);
+            Route::get('/{id}/sample-status', [PurchaseOrderController::class, 'getSampleStatus']);
             Route::get('/{id}/tna-chart/download', [PurchaseOrderController::class, 'downloadTNAChart']);
             Route::get('/{id}/spreadsheet-data', [PurchaseOrderController::class, 'spreadsheetData']);
         });

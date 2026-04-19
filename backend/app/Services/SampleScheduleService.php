@@ -119,19 +119,8 @@ class SampleScheduleService
             ? $factoryExFactoryDate
             : Carbon::parse($factoryExFactoryDate);
 
-        $milestones = [
-            'lab_dip'             => ['Lab Dip',            53],
-            'fit_samples'         => ['Fit Samples',        53],
-            'trim_approvals'      => ['Trim Approvals',     50],
-            'first_proto_samples' => ['1st Proto Samples',  50],
-            'bulk_fabric_inhouse' => ['Bulk Fabric In-house', 40],
-            'pp_sample'           => ['PP Sample',          35],
-            'production_start'   => ['Production Start',    30],
-            'top_approval'        => ['TOP Approval',       10],
-        ];
-
         $schedule = [];
-        foreach ($milestones as $key => [$name, $daysBefore]) {
+        foreach (self::exFactoryOffsets() as $key => [$name, $daysBefore]) {
             $schedule[$key] = [
                 'name' => $name,
                 'date' => $anchor->copy()->subDays($daysBefore),
@@ -142,6 +131,58 @@ class SampleScheduleService
         }
 
         return $schedule;
+    }
+
+    /**
+     * Offsets used to anchor every sample milestone to a single ex-factory
+     * date. Kept centralised so frontend labels and any future reporting stay
+     * consistent with the computed dates.
+     *
+     * @return array<string, array{0:string, 1:int}>
+     */
+    public static function exFactoryOffsets(): array
+    {
+        return [
+            'lab_dip'             => ['Lab Dip',             53],
+            'fit_samples'         => ['Fit Samples',         53],
+            'trim_approvals'      => ['Trim Approvals',      50],
+            'first_proto_samples' => ['1st Proto Samples',   50],
+            'bulk_fabric_inhouse' => ['Bulk Fabric In-house', 40],
+            'pp_sample'           => ['PP Sample',           35],
+            'production_start'    => ['Production Start',    30],
+            'top_approval'        => ['TOP Approval',        10],
+        ];
+    }
+
+    /**
+     * Map between `sample_types.name` values and the milestone keys used by
+     * the ex-factory schedule. SampleType names are the canonical source;
+     * this lets us line a Sample submission up with its scheduled milestone.
+     *
+     * @return array<string, string>
+     */
+    public static function sampleTypeNameToKey(): array
+    {
+        return [
+            'lab_dip'             => 'lab_dip',
+            'lab_dip_submission'  => 'lab_dip',
+            'fit_sample'          => 'fit_samples',
+            'fit_sample_submission' => 'fit_samples',
+            'fit_samples'         => 'fit_samples',
+            'trim_approvals'      => 'trim_approvals',
+            'trim_approval'       => 'trim_approvals',
+            'first_proto'         => 'first_proto_samples',
+            'first_proto_submission' => 'first_proto_samples',
+            'first_proto_samples' => 'first_proto_samples',
+            'proto_sample'        => 'first_proto_samples',
+            'bulk_fabric_inhouse' => 'bulk_fabric_inhouse',
+            'bulk_fabric'         => 'bulk_fabric_inhouse',
+            'pp_sample'           => 'pp_sample',
+            'pp_sample_submission' => 'pp_sample',
+            'production_start'    => 'production_start',
+            'top_approval'        => 'top_approval',
+            'top'                 => 'top_approval',
+        ];
     }
 
     /**

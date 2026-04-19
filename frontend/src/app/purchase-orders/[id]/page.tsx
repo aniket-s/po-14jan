@@ -41,7 +41,7 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { DetailPageSkeleton } from '@/components/skeletons';
-import { PurchaseOrder, Style } from '@/types';
+import { PurchaseOrder, Style, SampleStatusResponse, SampleStatusStyle, SampleApprovalStatus } from '@/types';
 import { StyleSelectorDialog } from '@/components/purchase-orders/StyleSelectorDialog';
 import { AssignmentSelector } from '@/components/styles/AssignmentSelector';
 import {
@@ -53,6 +53,38 @@ import {
 } from '@/components/ui/select';
 import { formatDate, calculateDaysRemaining, formatDaysRemaining } from '@/lib/dateUtils';
 
+function renderSampleStatusBadge(status: SampleApprovalStatus) {
+  switch (status) {
+    case 'importer_approved':
+      return (
+        <Badge className="bg-green-100 text-green-800 border-green-200 hover:bg-green-100">
+          Importer Approved
+        </Badge>
+      );
+    case 'agency_approved':
+      return (
+        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100">
+          Agency Approved
+        </Badge>
+      );
+    case 'submitted':
+      return (
+        <Badge className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100">
+          Sent for Approval
+        </Badge>
+      );
+    case 'rejected':
+      return (
+        <Badge className="bg-red-100 text-red-800 border-red-200 hover:bg-red-100">
+          Rejected
+        </Badge>
+      );
+    case 'not_sent':
+    default:
+      return <Badge variant="secondary">Not Sent</Badge>;
+  }
+}
+
 export default function PurchaseOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -61,6 +93,8 @@ export default function PurchaseOrderDetailPage() {
   const { getSetting, loading: settingsLoading } = useSystemSettings();
   const isFactory = hasRole('Factory');
   const [factorySampleSchedules, setFactorySampleSchedules] = useState<any[] | null>(null);
+  const [sampleStatusStyles, setSampleStatusStyles] = useState<SampleStatusStyle[] | null>(null);
+  const [sampleStatusLoading, setSampleStatusLoading] = useState(false);
 
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null);
   const [styles, setStyles] = useState<Style[]>([]);
@@ -78,19 +112,31 @@ export default function PurchaseOrderDetailPage() {
   useEffect(() => {
     fetchPurchaseOrder();
     fetchStyles();
-    if (isFactory) {
-      fetchFactorySampleSchedules();
-    }
+    fetchSampleSchedules();
+    fetchSampleStatus();
   }, [poId, isFactory]);
 
-  const fetchFactorySampleSchedules = async () => {
+  const fetchSampleSchedules = async () => {
     try {
       const response = await api.get(`/purchase-orders/${poId}/sample-schedule`);
-      if (response.data?.mode === 'factory_ex_factory_anchored') {
-        setFactorySampleSchedules(response.data.per_style_schedules || []);
+      if (response.data?.per_style_schedules) {
+        setFactorySampleSchedules(response.data.per_style_schedules);
       }
     } catch (error) {
-      console.error('Failed to fetch factory sample schedule:', error);
+      console.error('Failed to fetch sample schedule:', error);
+    }
+  };
+
+  const fetchSampleStatus = async () => {
+    setSampleStatusLoading(true);
+    try {
+      const response = await api.get<SampleStatusResponse>(`/purchase-orders/${poId}/sample-status`);
+      setSampleStatusStyles(response.data?.styles ?? []);
+    } catch (error) {
+      console.error('Failed to fetch sample status:', error);
+      setSampleStatusStyles([]);
+    } finally {
+      setSampleStatusLoading(false);
     }
   };
 
@@ -556,89 +602,48 @@ export default function PurchaseOrderDetailPage() {
               );
             })()}
 
-            {/* Sample Schedule */}
-            {purchaseOrder.sample_schedule && Object.keys(purchaseOrder.sample_schedule).length > 0 && (
+            {/* Sample Schedule — per-style, anchored to ex-factory date */}
+            {factorySampleSchedules && factorySampleSchedules.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle>Sample Schedule</CardTitle>
-                  <CardDescription>Key milestone dates for sample approvals and production</CardDescription>
+                  <CardDescription>
+                    Milestone dates per style, computed from the ex-factory date the agency set when assigning to the factory
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Sample Submissions Section */}
-                  <div>
-                    <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-                      Sample Submissions
-                    </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {purchaseOrder.sample_schedule.lab_dip_submission && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Lab Dip Submission</p>
-                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.lab_dip_submission)}</p>
-                          <p className="text-[10px] text-muted-foreground/70">PO Date + 7 days</p>
-                        </div>
-                      )}
-                      {purchaseOrder.sample_schedule.fit_sample_submission && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Fit Sample</p>
-                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.fit_sample_submission)}</p>
-                          <p className="text-[10px] text-muted-foreground/70">PO Date + 7 days</p>
-                        </div>
-                      )}
-                      {purchaseOrder.sample_schedule.trim_approvals && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Trim Approvals</p>
-                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.trim_approvals)}</p>
-                          <p className="text-[10px] text-muted-foreground/70">PO Date + 10 days</p>
-                        </div>
-                      )}
-                      {purchaseOrder.sample_schedule.first_proto_submission && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">1st Proto Submission</p>
-                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.first_proto_submission)}</p>
-                          <p className="text-[10px] text-muted-foreground/70">PO Date + 10 days</p>
-                        </div>
-                      )}
-                      {purchaseOrder.sample_schedule.pp_sample_submission && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">PP Sample</p>
-                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.pp_sample_submission)}</p>
-                          <p className="text-[10px] text-muted-foreground/70">ETD − 35 days</p>
-                        </div>
-                      )}
-                      {purchaseOrder.sample_schedule.top_approval && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">TOP Approval</p>
-                          <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.top_approval)}</p>
-                          <p className="text-[10px] text-muted-foreground/70">Ex-Factory − 10 days</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Production Milestones Section */}
-                  {(purchaseOrder.sample_schedule.production_start || purchaseOrder.sample_schedule.bulk_fabric_inhouse) && (
-                    <div>
-                      <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-                        Production Milestones
-                      </h3>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {purchaseOrder.sample_schedule.bulk_fabric_inhouse && (
-                          <div className="space-y-1">
-                            <p className="text-xs text-muted-foreground">Bulk Fabric In-House</p>
-                            <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.bulk_fabric_inhouse)}</p>
-                            <p className="text-[10px] text-muted-foreground/70">ETD − 40 days</p>
-                          </div>
-                        )}
-                        {purchaseOrder.sample_schedule.production_start && (
-                          <div className="space-y-1">
-                            <p className="text-xs text-muted-foreground">Production Start</p>
-                            <p className="text-sm font-medium">{formatDate(purchaseOrder.sample_schedule.production_start)}</p>
-                            <p className="text-[10px] text-muted-foreground/70">ETD − 30 days</p>
-                          </div>
-                        )}
+                  {factorySampleSchedules.map((entry) => (
+                    <div key={entry.style_id} className="space-y-3">
+                      <div className="flex items-baseline gap-3">
+                        <h4 className="font-medium">{entry.style_number}</h4>
+                        <span className="text-sm text-muted-foreground">{entry.description}</span>
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          Ex-Factory:{' '}
+                          <span className="font-medium text-foreground">
+                            {entry.ex_factory_date ? formatDate(entry.ex_factory_date) : 'Not set'}
+                          </span>
+                        </span>
                       </div>
+                      {!entry.schedule ? (
+                        <p className="text-xs text-muted-foreground">
+                          Ex-factory date not set — schedule unavailable.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {Object.entries(entry.schedule).map(([key, m]: any) => {
+                            const dateVal = typeof m.date === 'string' ? m.date : m.date?.date;
+                            return (
+                              <div key={key} className="space-y-1">
+                                <p className="text-xs text-muted-foreground">{m.name}</p>
+                                <p className="text-sm font-medium">{dateVal ? formatDate(dateVal) : '-'}</p>
+                                <p className="text-[10px] text-muted-foreground/70">{m.description}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  )}
+                  ))}
                 </CardContent>
               </Card>
             )}
@@ -892,163 +897,105 @@ export default function PurchaseOrderDetailPage() {
               <CardHeader>
                 <CardTitle>Samples</CardTitle>
                 <CardDescription>
-                  {isFactory
-                    ? 'Per-style schedule anchored to the ex-factory date given to you'
-                    : 'Track sample submissions and approvals'}
+                  Per-style sample approvals — sorted by ex-factory date (earliest first)
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isFactory ? (
-                  !factorySampleSchedules || factorySampleSchedules.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      No styles assigned to you on this PO yet.
-                    </p>
-                  ) : (
-                    <div className="space-y-6">
-                      {factorySampleSchedules.map((entry) => (
-                        <div key={entry.style_id} className="space-y-2">
-                          <div className="flex items-baseline gap-3">
-                            <h4 className="font-medium">{entry.style_number}</h4>
-                            <span className="text-sm text-muted-foreground">{entry.description}</span>
-                            <span className="ml-auto text-xs text-muted-foreground">
-                              Ex-Factory:{' '}
-                              <span className="font-medium text-foreground">
-                                {entry.factory_ex_factory_date
-                                  ? formatDate(entry.factory_ex_factory_date)
-                                  : 'Not set'}
-                              </span>
-                            </span>
-                          </div>
-                          {entry.schedule ? (
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Sample Type</TableHead>
-                                  <TableHead>Scheduled Date</TableHead>
-                                  <TableHead>Formula</TableHead>
-                                  <TableHead>Status</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {Object.entries(entry.schedule).map(([key, m]: any) => (
-                                  <TableRow key={key}>
-                                    <TableCell className="font-medium">{m.name}</TableCell>
-                                    <TableCell>
-                                      {m.date ? formatDate(typeof m.date === 'string' ? m.date : m.date.date) : '-'}
-                                    </TableCell>
-                                    <TableCell className="text-xs text-muted-foreground">
-                                      {m.description}
-                                    </TableCell>
-                                    <TableCell>
-                                      <Badge variant="secondary">Scheduled</Badge>
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              Factory ex-factory date not set by agency — schedule unavailable.
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )
-                ) : !styles || styles.length === 0 ? (
+                {sampleStatusLoading && sampleStatusStyles === null ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
-                    No styles added yet. Add styles to track samples.
+                    Loading sample status…
+                  </p>
+                ) : !sampleStatusStyles || sampleStatusStyles.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    {isFactory
+                      ? 'No styles assigned to you on this PO yet.'
+                      : 'No styles added yet. Add styles to track samples.'}
                   </p>
                 ) : (
-                  <>
-                    {purchaseOrder.sample_schedule && Object.keys(purchaseOrder.sample_schedule).length > 0 ? (
-                      <div className="space-y-4">
-                        <div className="text-sm text-muted-foreground">
-                          Sample schedule dates are configured for this purchase order. Track sample submissions below:
+                  <div className="space-y-6">
+                    {sampleStatusStyles.map((entry) => (
+                      <div key={entry.style_id} className="space-y-2">
+                        <div className="flex items-baseline gap-3">
+                          <h4 className="font-medium">{entry.style_number}</h4>
+                          <span className="text-sm text-muted-foreground">{entry.description}</span>
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            Ex-Factory:{' '}
+                            <span className="font-medium text-foreground">
+                              {entry.ex_factory_date ? formatDate(entry.ex_factory_date) : 'Not set'}
+                            </span>
+                          </span>
                         </div>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Sample Type</TableHead>
-                              <TableHead>Scheduled Date</TableHead>
-                              <TableHead>Formula</TableHead>
-                              <TableHead>Status</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {purchaseOrder.sample_schedule.lab_dip_submission && (
+                        {!entry.ex_factory_date ? (
+                          <p className="text-xs text-muted-foreground">
+                            Ex-factory date not set — schedule unavailable.
+                          </p>
+                        ) : (
+                          <Table>
+                            <TableHeader>
                               <TableRow>
-                                <TableCell className="font-medium">Lab Dip Submission</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.lab_dip_submission)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">PO Date + 7 days</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
+                                <TableHead>Sample Type</TableHead>
+                                <TableHead>Scheduled Date</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Sent On</TableHead>
+                                <TableHead>Approval</TableHead>
                               </TableRow>
-                            )}
-                            {purchaseOrder.sample_schedule.fit_sample_submission && (
-                              <TableRow>
-                                <TableCell className="font-medium">Fit Sample</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.fit_sample_submission)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">PO Date + 7 days</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
-                            {purchaseOrder.sample_schedule.trim_approvals && (
-                              <TableRow>
-                                <TableCell className="font-medium">Trim Approvals</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.trim_approvals)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">PO Date + 10 days</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
-                            {purchaseOrder.sample_schedule.first_proto_submission && (
-                              <TableRow>
-                                <TableCell className="font-medium">1st Proto Submission</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.first_proto_submission)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">PO Date + 10 days</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
-                            {purchaseOrder.sample_schedule.bulk_fabric_inhouse && (
-                              <TableRow>
-                                <TableCell className="font-medium">Bulk Fabric Inhouse</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.bulk_fabric_inhouse)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">ETD − 40 days</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
-                            {purchaseOrder.sample_schedule.pp_sample_submission && (
-                              <TableRow>
-                                <TableCell className="font-medium">PP Sample</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.pp_sample_submission)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">ETD − 35 days</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
-                            {purchaseOrder.sample_schedule.production_start && (
-                              <TableRow>
-                                <TableCell className="font-medium">Production Start</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.production_start)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">ETD − 30 days</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
-                            {purchaseOrder.sample_schedule.top_approval && (
-                              <TableRow>
-                                <TableCell className="font-medium">TOP Approval</TableCell>
-                                <TableCell>{formatDate(purchaseOrder.sample_schedule.top_approval)}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">Ex-Factory − 10 days</TableCell>
-                                <TableCell><Badge variant="secondary">Scheduled</Badge></TableCell>
-                              </TableRow>
-                            )}
-                          </TableBody>
-                        </Table>
+                            </TableHeader>
+                            <TableBody>
+                              {entry.milestones.map((m) => (
+                                <TableRow key={`${entry.style_id}-${m.sample_type_id}`}>
+                                  <TableCell className="font-medium">{m.sample_type}</TableCell>
+                                  <TableCell>
+                                    <div>{m.scheduled_date ? formatDate(m.scheduled_date) : '-'}</div>
+                                    {m.formula && (
+                                      <div className="text-[10px] text-muted-foreground">{m.formula}</div>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>{renderSampleStatusBadge(m.status)}</TableCell>
+                                  <TableCell className="text-xs">
+                                    {m.submitted_at ? (
+                                      <div>
+                                        <div>{formatDate(m.submitted_at)}</div>
+                                        {m.submitted_by && (
+                                          <div className="text-[10px] text-muted-foreground">
+                                            by {m.submitted_by}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-muted-foreground">Not yet sent</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-xs">
+                                    {m.importer_approved_at ? (
+                                      <div>
+                                        <div>Importer: {formatDate(m.importer_approved_at)}</div>
+                                        {m.importer_approved_by && (
+                                          <div className="text-[10px] text-muted-foreground">
+                                            by {m.importer_approved_by}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : m.agency_approved_at ? (
+                                      <div>
+                                        <div>Agency: {formatDate(m.agency_approved_at)}</div>
+                                        {m.agency_approved_by && (
+                                          <div className="text-[10px] text-muted-foreground">
+                                            by {m.agency_approved_by}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-muted-foreground">—</span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        )}
                       </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground text-center py-8">
-                        No sample schedule configured for this purchase order.
-                      </p>
-                    )}
-                  </>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>

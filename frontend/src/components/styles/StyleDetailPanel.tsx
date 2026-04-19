@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -27,6 +28,8 @@ export function StyleDetailPanel({
   canDelete,
 }: StyleDetailPanelProps) {
   const router = useRouter();
+  const { hasRole } = useAuth();
+  const isFactory = hasRole('Factory');
   const images = style.images || [];
   const documents = style.technical_file_paths || [];
 
@@ -111,8 +114,8 @@ export function StyleDetailPanel({
             </>
           )}
 
-          {/* Pricing */}
-          {(style.unit_price || style.fob_price || style.msrp || style.wholesale_price) && (
+          {/* Pricing — hidden from factory role */}
+          {!isFactory && (style.unit_price || style.fob_price || style.msrp || style.wholesale_price) && (
             <>
               <Separator />
               <div className="space-y-2.5">

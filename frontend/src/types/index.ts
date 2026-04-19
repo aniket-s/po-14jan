@@ -69,6 +69,46 @@ export interface PurchaseOrder {
   factory_ex_factory_date?: string | null;
 }
 
+export type SampleApprovalStatus =
+  | 'not_sent'
+  | 'submitted'
+  | 'agency_approved'
+  | 'importer_approved'
+  | 'rejected';
+
+export interface SampleStatusMilestone {
+  key: string | null;
+  sample_type_id: number;
+  sample_type: string;
+  scheduled_date: string | null;
+  formula: string | null;
+  status: SampleApprovalStatus;
+  sample_id: number | null;
+  submitted_at: string | null;
+  submitted_by: string | null;
+  agency_status: string | null;
+  agency_approved_at: string | null;
+  agency_approved_by: string | null;
+  importer_status: string | null;
+  importer_approved_at: string | null;
+  importer_approved_by: string | null;
+  final_status: string | null;
+}
+
+export interface SampleStatusStyle {
+  style_id: number;
+  style_number: string;
+  description: string | null;
+  ex_factory_date: string | null;
+  milestones: SampleStatusMilestone[];
+}
+
+export interface SampleStatusResponse {
+  po_number: string;
+  mode: 'factory' | 'agency_importer';
+  styles: SampleStatusStyle[];
+}
+
 export interface PackDetail {
   pack_size: string;
   width: string;

@@ -12,6 +12,8 @@ use App\Services\DateCalculationService;
 use App\Services\SampleScheduleService;
 use App\Models\Style;
 use App\Models\PurchaseOrderStyle;
+use App\Models\Sample;
+use App\Models\SampleType;
 use App\Services\TNAChartService;
 use App\Jobs\SendPurchaseOrderNotification;
 use Illuminate\Http\Request;
@@ -1210,7 +1212,6 @@ class PurchaseOrderController extends Controller
     public function getSampleSchedule(Request $request, $id = null)
     {
         if ($id) {
-            // Get schedule for existing PO
             $po = PurchaseOrder::with(['styles' => function ($q) {
                 $q->select('styles.id', 'style_number', 'description');
             }])->findOrFail($id);
@@ -1219,50 +1220,51 @@ class PurchaseOrderController extends Controller
             $user = $request->user();
             $isFactory = $user && $user->hasRole('Factory');
 
-            if ($isFactory) {
-                // One schedule per style, anchored to the factory's ex-factory
-                // date from the pivot. Styles with no factory ex-factory date
-                // are reported separately so the caller can render them as
-                // "not yet scheduled".
-                $perStyle = [];
-                foreach ($po->styles as $style) {
-                    if ($style->pivot->assigned_factory_id != $user->id) {
-                        continue;
-                    }
-                    $factoryExFactory = $style->pivot->factory_ex_factory_date
-                        ?? $style->pivot->ex_factory_date;
-                    $perStyle[] = [
-                        'style_id' => $style->id,
-                        'style_number' => $style->style_number,
-                        'description' => $style->description,
-                        'factory_ex_factory_date' => $factoryExFactory?->format('Y-m-d'),
-                        'schedule' => $factoryExFactory
-                            ? $scheduleService->generateScheduleFromExFactory($factoryExFactory)
-                            : null,
-                    ];
+            // All roles get per-style, ex-factory-anchored schedules. For
+            // factory users the anchor is the factory_ex_factory_date the
+            // agency set when assigning the style; for everyone else we fall
+            // back to the pivot's ex_factory_date and finally the PO-level
+            // ex_factory_date. Styles without any usable anchor are returned
+            // with a null schedule so the frontend can show "not yet set".
+            $perStyle = [];
+            foreach ($po->styles as $style) {
+                if ($isFactory && $style->pivot->assigned_factory_id != $user->id) {
+                    continue;
                 }
 
-                return response()->json([
-                    'po_number' => $po->po_number,
-                    'mode' => 'factory_ex_factory_anchored',
-                    'per_style_schedules' => $perStyle,
-                ]);
+                $anchor = $isFactory
+                    ? ($style->pivot->factory_ex_factory_date ?? $style->pivot->ex_factory_date)
+                    : ($style->pivot->ex_factory_date
+                        ?? $style->pivot->factory_ex_factory_date
+                        ?? $po->ex_factory_date);
+
+                $perStyle[] = [
+                    'style_id' => $style->id,
+                    'style_number' => $style->style_number,
+                    'description' => $style->description,
+                    'ex_factory_date' => $anchor?->format('Y-m-d'),
+                    'factory_ex_factory_date' => $isFactory
+                        ? ($style->pivot->factory_ex_factory_date ?? $style->pivot->ex_factory_date)?->format('Y-m-d')
+                        : null,
+                    'schedule' => $anchor
+                        ? $scheduleService->generateScheduleFromExFactory($anchor)
+                        : null,
+                ];
             }
 
-            if (!$po->po_date || !$po->etd_date) {
-                return response()->json([
-                    'message' => 'PO must have both PO date and ETD date to generate schedule',
-                ], 400);
-            }
-
-            $schedule = $scheduleService->generateSchedule($po->po_date, $po->etd_date, $po->ex_factory_date);
-            $validation = $scheduleService->validateSchedule($po->po_date, $po->etd_date);
+            // Sort by ex-factory date ascending so styles with earlier
+            // deadlines surface first; styles with no anchor sort last.
+            usort($perStyle, function ($a, $b) {
+                if ($a['ex_factory_date'] === $b['ex_factory_date']) return 0;
+                if ($a['ex_factory_date'] === null) return 1;
+                if ($b['ex_factory_date'] === null) return -1;
+                return strcmp($a['ex_factory_date'], $b['ex_factory_date']);
+            });
 
             return response()->json([
                 'po_number' => $po->po_number,
-                'mode' => 'po_based',
-                'schedule' => $schedule,
-                'validation' => $validation,
+                'mode' => $isFactory ? 'factory_ex_factory_anchored' : 'ex_factory_anchored',
+                'per_style_schedules' => $perStyle,
             ]);
         } else {
             // Calculate schedule based on provided dates
@@ -1288,6 +1290,133 @@ class PurchaseOrderController extends Controller
                 'validation' => $validation,
             ]);
         }
+    }
+
+    /**
+     * Per-style sample approval status for a PO.
+     *
+     * Returns each style alongside its ex-factory-anchored sample schedule,
+     * merged with any actual Sample submissions so the caller can render
+     * "not sent" / "submitted" / "agency approved" / "importer approved" /
+     * "rejected" per milestone, with submission and approval dates.
+     *
+     * Styles are sorted by ex-factory date ascending so the earliest
+     * deadlines surface first — matches how factory users triage work.
+     */
+    public function getSampleStatus(Request $request, $id)
+    {
+        $user = $request->user();
+        $isFactory = $user && $user->hasRole('Factory');
+
+        $po = PurchaseOrder::with(['styles' => function ($q) {
+            $q->select('styles.id', 'style_number', 'description');
+        }])->findOrFail($id);
+
+        $scheduleService = app(SampleScheduleService::class);
+        $offsets = SampleScheduleService::exFactoryOffsets();
+        $nameToKey = SampleScheduleService::sampleTypeNameToKey();
+
+        // Pull sample types once; we merge by key so custom types the user
+        // added via the admin UI still line up with the canonical milestone
+        // list when possible, and slot in separately otherwise.
+        $sampleTypes = SampleType::where('is_active', true)
+            ->orderBy('display_order')
+            ->get(['id', 'name', 'display_name']);
+
+        // Prefetch all samples for this PO's styles so we can merge without
+        // an N+1 query.
+        $styleIds = $po->styles->pluck('id')->all();
+        $samplesByStyleAndType = Sample::with(['agencyApprovedBy:id,name', 'importerApprovedBy:id,name', 'submittedBy:id,name'])
+            ->whereIn('style_id', $styleIds)
+            ->get()
+            ->groupBy(function ($s) {
+                return $s->style_id . ':' . $s->sample_type_id;
+            });
+
+        $rows = [];
+        foreach ($po->styles as $style) {
+            if ($isFactory && $style->pivot->assigned_factory_id != $user->id) {
+                continue;
+            }
+
+            $anchor = $isFactory
+                ? ($style->pivot->factory_ex_factory_date ?? $style->pivot->ex_factory_date)
+                : ($style->pivot->ex_factory_date
+                    ?? $style->pivot->factory_ex_factory_date
+                    ?? $po->ex_factory_date);
+
+            $schedule = $anchor
+                ? $scheduleService->generateScheduleFromExFactory($anchor)
+                : null;
+
+            $milestones = [];
+            foreach ($sampleTypes as $type) {
+                $milestoneKey = $nameToKey[$type->name] ?? null;
+                $scheduled = ($milestoneKey && $schedule && isset($schedule[$milestoneKey]))
+                    ? $schedule[$milestoneKey]['date']->format('Y-m-d')
+                    : null;
+                $formula = ($milestoneKey && isset($offsets[$milestoneKey]))
+                    ? $offsets[$milestoneKey][1] . ' days before Ex-Factory'
+                    : null;
+
+                $sample = $samplesByStyleAndType->get($style->id . ':' . $type->id)?->first();
+
+                $status = 'not_sent';
+                if ($sample) {
+                    if ($sample->final_status === 'rejected'
+                        || $sample->agency_status === 'rejected'
+                        || $sample->importer_status === 'rejected') {
+                        $status = 'rejected';
+                    } elseif ($sample->importer_status === 'approved') {
+                        $status = 'importer_approved';
+                    } elseif ($sample->agency_status === 'approved') {
+                        $status = 'agency_approved';
+                    } else {
+                        $status = 'submitted';
+                    }
+                }
+
+                $milestones[] = [
+                    'key' => $milestoneKey,
+                    'sample_type_id' => $type->id,
+                    'sample_type' => $type->display_name ?: $type->name,
+                    'scheduled_date' => $scheduled,
+                    'formula' => $formula,
+                    'status' => $status,
+                    'sample_id' => $sample?->id,
+                    'submitted_at' => $sample?->submission_date?->format('Y-m-d'),
+                    'submitted_by' => $sample?->submittedBy?->name,
+                    'agency_status' => $sample?->agency_status,
+                    'agency_approved_at' => $sample?->agency_approved_at?->format('Y-m-d'),
+                    'agency_approved_by' => $sample?->agencyApprovedBy?->name,
+                    'importer_status' => $sample?->importer_status,
+                    'importer_approved_at' => $sample?->importer_approved_at?->format('Y-m-d'),
+                    'importer_approved_by' => $sample?->importerApprovedBy?->name,
+                    'final_status' => $sample?->final_status,
+                ];
+            }
+
+            $rows[] = [
+                'style_id' => $style->id,
+                'style_number' => $style->style_number,
+                'description' => $style->description,
+                'ex_factory_date' => $anchor?->format('Y-m-d'),
+                'milestones' => $milestones,
+            ];
+        }
+
+        usort($rows, function ($a, $b) {
+            if ($a['ex_factory_date'] === $b['ex_factory_date']) return 0;
+            if ($a['ex_factory_date'] === null) return 1;
+            if ($b['ex_factory_date'] === null) return -1;
+            return strcmp($a['ex_factory_date'], $b['ex_factory_date']);
+        });
+
+        return response()->json([
+            'po_number' => $po->po_number,
+            'mode' => $isFactory ? 'factory' : 'agency_importer',
+            'styles' => $rows,
+        ]);
     }
 
     /**
