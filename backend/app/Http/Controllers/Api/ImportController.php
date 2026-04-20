@@ -164,74 +164,119 @@ class ImportController extends Controller
         $header = $request->input('header');
         $styles = $request->input('styles');
 
-        return DB::transaction(function () use ($user, $header, $styles, $request) {
-            $buySheet = BuySheet::create([
-                'buy_sheet_number' => $header['buy_sheet_number'],
-                'buyer_id' => $header['buyer_id'],
-                'retailer_id' => $header['retailer_id'] ?? null,
-                'season_id' => $header['season_id'] ?? null,
-                'name' => $header['name'] ?? null,
-                'date_submitted' => $header['date_submitted'] ?? null,
-                'status' => BuySheet::STATUS_OPEN,
-                'tickets_required' => $header['tickets_required'] ?? null,
-                'buyer_approvals_required' => $header['buyer_approvals_required'] ?? null,
-                'source_file_path' => $request->input('temp_file_path'),
-                'strategy_key' => $request->input('strategy_key'),
-                'metadata' => $request->input('metadata'),
-                'created_by' => $user->id,
-            ]);
-
-            $totalQty = 0; $totalValue = 0.0; $created = 0;
-            foreach ($styles as $s) {
-                $style = Style::firstOrCreate(
-                    ['style_number' => $s['style_number'], 'retailer_id' => $header['retailer_id'] ?? null],
-                    [
-                        'description' => $s['description'] ?? null,
-                        'color_name' => $s['color_name'] ?? null,
-                        'total_quantity' => (int) ($s['quantity'] ?? 0),
-                        'unit_price' => (float) ($s['unit_price'] ?? 0),
-                        'season_id' => $header['season_id'] ?? null,
-                        'created_by' => $user->id,
-                        'is_active' => true,
-                    ]
-                );
-                $qty = (int) ($s['quantity'] ?? 0);
-                $price = (float) ($s['unit_price'] ?? 0);
-                $buySheet->styles()->syncWithoutDetaching([
-                    $style->id => [
-                        'quantity' => $qty,
-                        'unit_price' => $price,
-                        'size_breakdown' => isset($s['size_breakdown']) ? json_encode($s['size_breakdown']) : null,
-                        'packing' => $s['packing'] ?? null,
-                        'label' => $s['label'] ?? null,
-                        'ihd' => $s['ihd'] ?? null,
-                    ],
-                ]);
-                $totalQty += $qty; $totalValue += $qty * $price; $created++;
-            }
-
-            $buySheet->total_styles = $created;
-            $buySheet->total_quantity = $totalQty;
-            $buySheet->total_value = $totalValue;
-            $buySheet->save();
-
-            $this->activityLog->logCreated('BuySheet', $buySheet->id, [
-                'buy_sheet_number' => $buySheet->buy_sheet_number,
-                'source' => 'import',
-                'strategy' => $request->input('strategy_key'),
-            ]);
-
-            if ($path = $request->input('temp_file_path')) {
-                // Keep the source file on disk for reference - path is already recorded
-            }
-
+        // Explicit composite-unique pre-check. The DB index is authoritative (for race
+        // safety we also catch QueryException below), but a friendly 422 is better UX.
+        $duplicate = BuySheet::where('buyer_id', $header['buyer_id'])
+            ->where('buy_sheet_number', $header['buy_sheet_number'])
+            ->exists();
+        if ($duplicate) {
             return response()->json([
-                'success' => true,
-                'kind' => 'buy_sheet',
-                'buy_sheet' => $buySheet->load(['buyer', 'retailer']),
-                'styles_created' => $created,
-            ], 201);
-        });
+                'message' => "Buy sheet #{$header['buy_sheet_number']} already exists for this buyer.",
+                'errors' => ['header.buy_sheet_number' => ['Already exists for this buyer.']],
+            ], 422);
+        }
+
+        // Dedupe styles by style_number (case-insensitive) to avoid losing data when
+        // the pivot's unique (buy_sheet_id, style_id) would otherwise silently collapse
+        // two rows for the same style into the last-write-wins pivot record.
+        $stylesByKey = [];
+        foreach ($styles as $s) {
+            $key = strtoupper(trim($s['style_number']));
+            if (!isset($stylesByKey[$key])) {
+                $stylesByKey[$key] = $s;
+            }
+        }
+        $styles = array_values($stylesByKey);
+
+        try {
+            return DB::transaction(function () use ($user, $header, $styles, $request) {
+                $buySheet = BuySheet::create([
+                    'buy_sheet_number' => $header['buy_sheet_number'],
+                    'buyer_id' => $header['buyer_id'],
+                    'retailer_id' => $header['retailer_id'] ?? null,
+                    'season_id' => $header['season_id'] ?? null,
+                    'name' => $header['name'] ?? null,
+                    'date_submitted' => $header['date_submitted'] ?? null,
+                    'status' => BuySheet::STATUS_OPEN,
+                    'tickets_required' => $header['tickets_required'] ?? null,
+                    'buyer_approvals_required' => $header['buyer_approvals_required'] ?? null,
+                    'source_file_path' => $request->input('temp_file_path'),
+                    'strategy_key' => $request->input('strategy_key'),
+                    'metadata' => $request->input('metadata'),
+                    'created_by' => $user->id,
+                ]);
+
+                $totalQty = 0; $totalValue = 0.0; $created = 0;
+                foreach ($styles as $s) {
+                    $style = Style::firstOrCreate(
+                        ['style_number' => $s['style_number'], 'retailer_id' => $header['retailer_id'] ?? null],
+                        [
+                            'description' => $s['description'] ?? null,
+                            'color_name' => $s['color_name'] ?? null,
+                            'total_quantity' => (int) ($s['quantity'] ?? 0),
+                            'unit_price' => (float) ($s['unit_price'] ?? 0),
+                            'season_id' => $header['season_id'] ?? null,
+                            'created_by' => $user->id,
+                            'is_active' => true,
+                        ]
+                    );
+                    $qty = (int) ($s['quantity'] ?? 0);
+                    $price = (float) ($s['unit_price'] ?? 0);
+                    // size_breakdown must be json_encode'd for the INSERT binding; the
+                    // BuySheetStyle pivot's array cast decodes it on read.
+                    $buySheet->styles()->syncWithoutDetaching([
+                        $style->id => [
+                            'quantity' => $qty,
+                            'unit_price' => $price,
+                            'size_breakdown' => isset($s['size_breakdown']) ? json_encode($s['size_breakdown']) : null,
+                            'packing' => $s['packing'] ?? null,
+                            'label' => $s['label'] ?? null,
+                            'ihd' => $s['ihd'] ?? null,
+                        ],
+                    ]);
+                    $totalQty += $qty; $totalValue += $qty * $price; $created++;
+                }
+
+                $buySheet->total_styles = $created;
+                $buySheet->total_quantity = $totalQty;
+                $buySheet->total_value = $totalValue;
+                $buySheet->save();
+
+                $this->activityLog->logCreated('BuySheet', $buySheet->id, [
+                    'buy_sheet_number' => $buySheet->buy_sheet_number,
+                    'source' => 'import',
+                    'strategy' => $request->input('strategy_key'),
+                ]);
+
+                // Clean up the temp upload. source_file_path recorded above would
+                // dangle after cleanup, so null it; durable archival is a follow-up.
+                if ($tempPath = $request->input('temp_file_path')) {
+                    if (str_starts_with($tempPath, 'temp/imports/') && Storage::disk('local')->exists($tempPath)) {
+                        Storage::disk('local')->delete($tempPath);
+                    }
+                    $buySheet->update(['source_file_path' => null]);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'kind' => 'buy_sheet',
+                    'buy_sheet' => $buySheet->load(['buyer', 'retailer']),
+                    'styles_created' => $created,
+                ], 201);
+            });
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Race: another request inserted the same (buyer_id, buy_sheet_number)
+            // between our pre-check and the INSERT. Unique-constraint codes vary
+            // by driver (23000 for MySQL/Postgres); match by message text for safety.
+            if (str_contains($e->getMessage(), 'buy_sheets_buyer_number_unique')
+                || in_array($e->getCode(), [23000, '23000'], true)) {
+                return response()->json([
+                    'message' => "Buy sheet #{$header['buy_sheet_number']} already exists for this buyer.",
+                    'errors' => ['header.buy_sheet_number' => ['Already exists for this buyer.']],
+                ], 422);
+            }
+            throw $e;
+        }
     }
 
     private function commitPurchaseOrder(Request $request): JsonResponse
@@ -271,6 +316,19 @@ class ImportController extends Controller
         $user = $request->user();
         $h = $request->input('header');
         $stylesData = $request->input('styles');
+
+        // Integrity check: the buy sheet (if any) must belong to the same buyer as the PO.
+        // Without this, a client could supply any buy_sheet_id and link a PO to a
+        // different buyer's sheet, corrupting reporting and status transitions.
+        if (!empty($h['buy_sheet_id'])) {
+            $refSheet = BuySheet::find($h['buy_sheet_id']);
+            if ($refSheet && !empty($h['buyer_id']) && (int) $refSheet->buyer_id !== (int) $h['buyer_id']) {
+                return response()->json([
+                    'message' => 'The selected buy sheet belongs to a different buyer.',
+                    'errors' => ['header.buy_sheet_id' => ['Buyer mismatch.']],
+                ], 422);
+            }
+        }
 
         return DB::transaction(function () use ($request, $user, $h, $stylesData) {
             // "If Buyer is set on the PO the importer/agency linkage is implied"
@@ -406,6 +464,14 @@ class ImportController extends Controller
                         'source' => 'import',
                         'styles_count' => $stylesCreated,
                     ]);
+                }
+            }
+
+            // Clean up the temp upload; the original filename is preserved on
+            // import_source for auditability.
+            if ($tempPath = $request->input('temp_file_path')) {
+                if (str_starts_with($tempPath, 'temp/imports/') && Storage::disk('local')->exists($tempPath)) {
+                    Storage::disk('local')->delete($tempPath);
                 }
             }
 

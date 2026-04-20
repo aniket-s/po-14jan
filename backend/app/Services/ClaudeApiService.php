@@ -14,10 +14,14 @@ class ClaudeApiService
 
     public function __construct()
     {
-        $this->apiKey = config('services.anthropic.api_key', '');
-        $this->model = config('services.anthropic.model', 'claude-haiku-4-5-20251001');
-        $this->maxTokens = config('services.anthropic.max_tokens', 8192);
-        $this->apiUrl = config('services.anthropic.api_url', 'https://api.anthropic.com/v1/messages');
+        // config() returns null when the underlying env var is unset, which would
+        // blow up the typed string property. Coerce so the service is safely
+        // constructible in environments where the key isn't configured; callers
+        // should gate actual API calls on isConfigured().
+        $this->apiKey = (string) (config('services.anthropic.api_key') ?? '');
+        $this->model = (string) (config('services.anthropic.model') ?? 'claude-haiku-4-5-20251001');
+        $this->maxTokens = (int) (config('services.anthropic.max_tokens') ?? 8192);
+        $this->apiUrl = (string) (config('services.anthropic.api_url') ?? 'https://api.anthropic.com/v1/messages');
     }
 
     /**

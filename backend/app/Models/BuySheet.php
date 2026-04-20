@@ -71,6 +71,7 @@ class BuySheet extends Model
     public function styles()
     {
         return $this->belongsToMany(Style::class, 'buy_sheet_style')
+            ->using(BuySheetStyle::class)
             ->withPivot(['quantity', 'unit_price', 'size_breakdown', 'packing', 'label', 'ihd', 'metadata'])
             ->withTimestamps();
     }
