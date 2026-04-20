@@ -29,6 +29,16 @@ class Buyer extends Model
         return $this->hasMany(Style::class);
     }
 
+    public function buySheets()
+    {
+        return $this->hasMany(BuySheet::class);
+    }
+
+    public function purchaseOrders()
+    {
+        return $this->hasMany(PurchaseOrder::class);
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

@@ -254,6 +254,23 @@ export function SampleDetailPanel({
               </>
             )}
 
+            {/* Style CAD images (from the linked style master record) */}
+            {displaySample.style?.images && displaySample.style.images.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    Style CAD
+                  </h4>
+                  <SampleImageGallery
+                    images={displaySample.style.images}
+                    documents={[]}
+                    title=""
+                  />
+                </div>
+              </>
+            )}
+
             {/* Files */}
             {((displaySample.images && displaySample.images.length > 0) ||
               (displaySample.attachment_paths && displaySample.attachment_paths.length > 0)) && (
@@ -261,7 +278,7 @@ export function SampleDetailPanel({
                 <Separator />
                 <div>
                   <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                    Attachments
+                    Sample Attachments
                   </h4>
                   <SampleImageGallery
                     images={displaySample.images || []}

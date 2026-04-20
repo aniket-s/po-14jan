@@ -17,6 +17,10 @@ class PurchaseOrder extends Model
         'creator_id',
         'currency_id',
         'buyer_id',
+        'buy_sheet_id',
+        'buy_sheet_number',
+        'import_source',
+        'fob_date',
         'total_quantity',
         'total_value',
         'payment_terms',
@@ -56,9 +60,12 @@ class PurchaseOrder extends Model
         'creator_id' => 'integer',
         'agency_id' => 'integer',
         'buyer_id' => 'integer',
+        'buy_sheet_id' => 'integer',
         'total_quantity' => 'integer',
         'total_value' => 'decimal:2',
         'metadata' => 'array',
+        'import_source' => 'array',
+        'fob_date' => 'date',
         'revision_date' => 'date',
         'etd_date' => 'date',
         'ex_factory_date' => 'date',
@@ -134,6 +141,14 @@ class PurchaseOrder extends Model
     public function buyer()
     {
         return $this->belongsTo(Buyer::class);
+    }
+
+    /**
+     * Get the buy sheet this PO was created against (if any)
+     */
+    public function buySheet()
+    {
+        return $this->belongsTo(BuySheet::class);
     }
 
     /**

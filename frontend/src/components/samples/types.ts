@@ -25,6 +25,9 @@ export interface Sample {
   } | null;
   style?: {
     style_number: string;
+    images?: string[] | null;
+    color_name?: string | null;
+    description?: string | null;
     purchase_orders?: Array<{
       id: number;
       po_number: string;
