@@ -28,8 +28,10 @@ export default function BuySheetsPage() {
 
   const fetchBuyers = async () => {
     try {
-      const res = await api.get('/master-data/buyers');
-      setBuyers(res.data?.buyers ?? res.data ?? []);
+      const res = await api.get('/master-data/buyers', { params: { all: 1, is_active: true } });
+      // Endpoint returns a bare array when ?all=1, else a paginator with .data
+      const payload = res.data;
+      setBuyers(Array.isArray(payload) ? payload : (payload?.data ?? []));
     } catch { /* noop */ }
   };
 

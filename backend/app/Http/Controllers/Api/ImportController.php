@@ -8,6 +8,7 @@ use App\Models\BuySheet;
 use App\Models\PurchaseOrder;
 use App\Models\Style;
 use App\Services\ActivityLogService;
+use App\Services\Import\DTO\ParsedDocument;
 use App\Services\Import\Registry\ImportStrategyRegistry;
 use App\Services\TNAChartService;
 use Illuminate\Http\JsonResponse;
@@ -130,7 +131,7 @@ class ImportController extends Controller
     public function commit(Request $request): JsonResponse
     {
         $kind = $request->input('kind');
-        if ($kind === ParsedKind::BUY_SHEET) {
+        if ($kind === ParsedDocument::KIND_BUY_SHEET) {
             return $this->commitBuySheet($request);
         }
         return $this->commitPurchaseOrder($request);
@@ -424,11 +425,4 @@ class ImportController extends Controller
             ], 201);
         });
     }
-}
-
-/** Tiny enum shim to keep the controller readable without pulling a library. */
-final class ParsedKind
-{
-    public const PO = 'po';
-    public const BUY_SHEET = 'buy_sheet';
 }

@@ -36,8 +36,9 @@ export default function BuySheetDetailPage() {
   };
   const fetchBuyers = async () => {
     try {
-      const r = await api.get('/master-data/buyers');
-      setBuyers(r.data?.buyers ?? r.data ?? []);
+      const r = await api.get('/master-data/buyers', { params: { all: 1, is_active: true } });
+      const payload = r.data;
+      setBuyers(Array.isArray(payload) ? payload : (payload?.data ?? []));
     } catch { /* noop */ }
   };
 
