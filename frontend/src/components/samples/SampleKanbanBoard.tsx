@@ -142,13 +142,23 @@ export function SampleKanbanBoard({
                       >
                         {/* Card Header */}
                         <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold truncate">
-                              {sample.sample_type?.display_name || sample.sample_type?.name}
-                            </p>
-                            <p className="text-[10px] text-muted-foreground truncate">
-                              {sample.style?.style_number}
-                            </p>
+                          <div className="flex items-start gap-2 min-w-0">
+                            {sample.style?.images && sample.style.images.length > 0 && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={sample.style.images[0]}
+                                alt={sample.style.style_number}
+                                className="h-10 w-10 rounded object-cover border bg-muted shrink-0"
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold truncate">
+                                {sample.sample_type?.display_name || sample.sample_type?.name}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground truncate">
+                                {sample.style?.style_number}
+                              </p>
+                            </div>
                           </div>
                           {aging && (
                             <Badge variant="outline" className={cn('shrink-0 text-[9px] px-1.5 py-0', aging.color)}>

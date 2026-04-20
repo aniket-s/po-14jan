@@ -1,0 +1,284 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { FileUp, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+
+import { ImportTypePicker } from './ImportTypePicker';
+import { BuyerPickerStep } from './BuyerPickerStep';
+import { BuySheetLinkStep } from './BuySheetLinkStep';
+import { ImportReviewPanel } from './ImportReviewPanel';
+import { analyzeImport, commitImport, fetchImportStrategies } from './api';
+import type { AnalyzeResponse, BuySheetSummary, ImportStrategy } from './types';
+
+type Step = 'type' | 'buyer' | 'buy-sheet' | 'upload' | 'review';
+
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+  buyers: Array<{ id: number; name: string; code?: string | null }>;
+  onRefreshBuyers: () => void;
+  onImportComplete: () => void;
+  initialStrategyKey?: string | null;
+}
+
+export function ImportWizardDialog({
+  isOpen, onClose, buyers, onRefreshBuyers, onImportComplete, initialStrategyKey,
+}: Props) {
+  const router = useRouter();
+
+  const [strategies, setStrategies] = useState<ImportStrategy[]>([]);
+  const [loadingStrategies, setLoadingStrategies] = useState(false);
+  const [step, setStep] = useState<Step>('type');
+  const [strategy, setStrategy] = useState<ImportStrategy | null>(null);
+  const [buyerId, setBuyerId] = useState<number | null>(null);
+  const [useBuySheet, setUseBuySheet] = useState<'yes' | 'no' | null>(null);
+  const [buySheet, setBuySheet] = useState<BuySheetSummary | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setLoadingStrategies(true);
+    fetchImportStrategies()
+      .then((s) => {
+        setStrategies(s);
+        if (initialStrategyKey) {
+          const match = s.find((x) => x.key === initialStrategyKey);
+          if (match) {
+            setStrategy(match);
+            setStep('buyer');
+          }
+        }
+      })
+      .catch(() => toast.error('Failed to load import types'))
+      .finally(() => setLoadingStrategies(false));
+  }, [isOpen, initialStrategyKey]);
+
+  const reset = () => {
+    setStep('type');
+    setStrategy(null);
+    setBuyerId(null);
+    setUseBuySheet(null);
+    setBuySheet(null);
+    setFile(null);
+    setAnalysis(null);
+  };
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleAnalyze = async () => {
+    if (!strategy || !buyerId || !file) return;
+    setAnalyzing(true);
+    try {
+      const res = await analyzeImport({
+        strategyKey: strategy.key,
+        buyerId,
+        buySheetId: buySheet?.id ?? null,
+        file,
+      });
+      setAnalysis(res);
+      setStep('review');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Analysis failed');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleCommit = async (header: Record<string, any>, styles: Array<Record<string, any>>) => {
+    if (!strategy || !analysis) return;
+    setCommitting(true);
+    try {
+      const res = await commitImport({
+        kind: analysis.kind,
+        strategy_key: strategy.key,
+        header,
+        styles,
+        temp_file_path: analysis.temp_file_path,
+        original_filename: file?.name,
+      });
+      toast.success(res.kind === 'buy_sheet' ? 'Buy sheet created' : 'Purchase order created');
+      onImportComplete();
+      handleClose();
+      if (res.kind === 'po' && res.purchase_order?.id) {
+        router.push(`/purchase-orders/${res.purchase_order.id}`);
+      } else if (res.kind === 'buy_sheet' && res.buy_sheet?.id) {
+        router.push(`/buy-sheets/${res.buy_sheet.id}`);
+      }
+    } catch (e: any) {
+      const errs = e?.response?.data?.errors;
+      if (errs) {
+        Object.values(errs).forEach((msgs: any) => (Array.isArray(msgs) ? msgs : [msgs]).forEach((m) => toast.error(String(m))));
+      } else {
+        toast.error(e?.response?.data?.message ?? 'Commit failed');
+      }
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  // Step routing helpers
+  const canNext = (): boolean => {
+    if (step === 'type') return !!strategy;
+    if (step === 'buyer') return !!buyerId;
+    if (step === 'buy-sheet') return useBuySheet === 'no' || (useBuySheet === 'yes' && !!buySheet);
+    if (step === 'upload') return !!file;
+    return false;
+  };
+  const next = () => {
+    if (step === 'type') setStep('buyer');
+    else if (step === 'buyer') {
+      if (strategy?.supports_buy_sheet && strategy.document_kind !== 'buy_sheet') setStep('buy-sheet');
+      else setStep('upload');
+    } else if (step === 'buy-sheet') setStep('upload');
+    else if (step === 'upload') handleAnalyze();
+  };
+  const back = () => {
+    if (step === 'review') setStep('upload');
+    else if (step === 'upload') setStep(strategy?.supports_buy_sheet && strategy.document_kind !== 'buy_sheet' ? 'buy-sheet' : 'buyer');
+    else if (step === 'buy-sheet') setStep('buyer');
+    else if (step === 'buyer') setStep('type');
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileUp className="h-5 w-5" />
+            Import {analysis?.kind === 'buy_sheet' ? 'Buy Sheet' : 'Purchase Order'}
+          </DialogTitle>
+          <DialogDescription>
+            {step === 'type' && 'Select the source document type.'}
+            {step === 'buyer' && 'Pick the buyer / importer this document belongs to.'}
+            {step === 'buy-sheet' && 'Optionally link this PO to an existing buy sheet.'}
+            {step === 'upload' && 'Upload the file. We will parse it and show you a review screen.'}
+            {step === 'review' && 'Review the parsed data and edit anything that looks wrong before saving.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-2">
+          <StepIndicator currentStep={step} skipBuySheet={strategy?.document_kind === 'buy_sheet' || !strategy?.supports_buy_sheet} />
+        </div>
+
+        <div className="py-2 min-h-[280px]">
+          {step === 'type' && (
+            <ImportTypePicker
+              strategies={strategies}
+              loading={loadingStrategies}
+              selectedKey={strategy?.key ?? null}
+              onSelect={setStrategy}
+            />
+          )}
+          {step === 'buyer' && (
+            <BuyerPickerStep
+              buyers={buyers}
+              value={buyerId}
+              onChange={setBuyerId}
+              lockedToCode={strategy?.buyer_code ?? null}
+              onRefresh={onRefreshBuyers}
+            />
+          )}
+          {step === 'buy-sheet' && (
+            <BuySheetLinkStep
+              buyerId={buyerId}
+              value={useBuySheet}
+              selectedSheet={buySheet}
+              onChange={(v, s) => { setUseBuySheet(v); setBuySheet(s); }}
+            />
+          )}
+          {step === 'upload' && (
+            <UploadStep
+              format={strategy!.format}
+              file={file}
+              onFileChange={setFile}
+            />
+          )}
+          {step === 'review' && analysis && (
+            <ImportReviewPanel
+              strategy={strategy!}
+              buyerId={buyerId!}
+              buySheet={buySheet}
+              analysis={analysis}
+              submitting={committing}
+              onCancel={() => setStep('upload')}
+              onSubmit={handleCommit}
+            />
+          )}
+        </div>
+
+        {step !== 'review' && (
+          <DialogFooter>
+            <Button variant="outline" onClick={step === 'type' ? handleClose : back} disabled={analyzing}>
+              {step === 'type' ? 'Cancel' : 'Back'}
+            </Button>
+            <Button onClick={next} disabled={!canNext() || analyzing}>
+              {analyzing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {step === 'upload' ? 'Analyze' : 'Next'}
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StepIndicator({ currentStep, skipBuySheet }: { currentStep: Step; skipBuySheet: boolean }) {
+  const steps: Array<{ k: Step; label: string }> = [
+    { k: 'type', label: 'Type' },
+    { k: 'buyer', label: 'Buyer' },
+    ...(!skipBuySheet ? [{ k: 'buy-sheet' as Step, label: 'Buy Sheet' }] : []),
+    { k: 'upload', label: 'Upload' },
+    { k: 'review', label: 'Review' },
+  ];
+  const currentIdx = steps.findIndex((s) => s.k === currentStep);
+  return (
+    <div className="flex items-center gap-2">
+      {steps.map((s, i) => (
+        <div key={s.k} className="flex items-center gap-2">
+          <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-medium ${
+            i < currentIdx ? 'bg-emerald-600 text-white'
+              : i === currentIdx ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground'
+          }`}>
+            {i + 1}
+          </div>
+          <span className={`text-xs ${i === currentIdx ? 'font-medium' : 'text-muted-foreground'}`}>{s.label}</span>
+          {i < steps.length - 1 && <div className="w-4 h-px bg-border" />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UploadStep({ format, file, onFileChange }: { format: 'pdf' | 'excel'; file: File | null; onFileChange: (f: File | null) => void }) {
+  const accept = format === 'pdf' ? 'application/pdf' : '.xlsx,.xls,.csv';
+  return (
+    <div className="space-y-3">
+      <label className="block border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover:border-primary transition-colors">
+        <input
+          type="file"
+          className="hidden"
+          accept={accept}
+          onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+        />
+        <FileUp className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+        <div className="text-sm font-medium">
+          {file ? file.name : `Drop a ${format.toUpperCase()} file here or click to browse`}
+        </div>
+        {file && (
+          <div className="text-xs text-muted-foreground mt-1">
+            {(file.size / 1024 / 1024).toFixed(2)} MB
+          </div>
+        )}
+      </label>
+    </div>
+  );
+}

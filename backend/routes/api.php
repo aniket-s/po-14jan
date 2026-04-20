@@ -502,6 +502,29 @@ Route::middleware('auth:sanctum')->group(function () {
         });
     });
 
+    // Unified Import (strategies-based) + Buy Sheets
+    Route::prefix('imports')->group(function () {
+        Route::get('/strategies', [\App\Http\Controllers\Api\ImportController::class, 'strategies']);
+        Route::get('/buy-sheets', [\App\Http\Controllers\Api\ImportController::class, 'buySheets']);
+        Route::middleware('permission:po.create')->group(function () {
+            Route::post('/analyze', [\App\Http\Controllers\Api\ImportController::class, 'analyze']);
+            Route::post('/commit', [\App\Http\Controllers\Api\ImportController::class, 'commit']);
+        });
+    });
+
+    Route::prefix('buy-sheets')->group(function () {
+        Route::middleware('permission:buy_sheet.view')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Api\BuySheetController::class, 'index']);
+            Route::get('/{id}', [\App\Http\Controllers\Api\BuySheetController::class, 'show']);
+        });
+        Route::middleware('permission:buy_sheet.edit')->group(function () {
+            Route::put('/{id}', [\App\Http\Controllers\Api\BuySheetController::class, 'update']);
+        });
+        Route::middleware('permission:buy_sheet.delete')->group(function () {
+            Route::delete('/{id}', [\App\Http\Controllers\Api\BuySheetController::class, 'destroy']);
+        });
+    });
+
     // Import Mapping Management
     Route::prefix('import-mappings')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\ImportMappingController::class, 'index']);

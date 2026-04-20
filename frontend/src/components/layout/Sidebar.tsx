@@ -61,6 +61,13 @@ const navItems: NavItem[] = [
     requireAny: true,
   },
   {
+    title: 'Buy Sheets',
+    href: '/buy-sheets',
+    icon: ShoppingCart,
+    permissions: ['buy_sheet.view', 'buy_sheet.create', 'buy_sheet.edit'],
+    requireAny: true,
+  },
+  {
     title: 'Styles',
     href: '/styles',
     icon: Package,

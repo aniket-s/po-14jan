@@ -31,11 +31,21 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, FileDown, FileUp, FileText, Loader2, List, Sheet, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, FileDown, FileUp, Loader2, List, Sheet, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { ListPageSkeleton } from '@/components/skeletons';
 import { PurchaseOrder, PaginatedResponse } from '@/types';
 import { PdfImportDialog } from '@/components/purchase-orders/PdfImportDialog';
+import { ImportWizardDialog } from '@/components/imports/ImportWizardDialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ChevronDown } from 'lucide-react';
 import { PoListSpreadsheetView } from '@/components/spreadsheet/PoListSpreadsheetView';
 import { CreateRetailerDialog } from '@/components/master-data/CreateRetailerDialog';
 import { CreateSeasonDialog } from '@/components/master-data/CreateSeasonDialog';
@@ -86,6 +96,8 @@ export default function PurchaseOrdersPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isSelectPODialogOpen, setIsSelectPODialogOpen] = useState(false);
   const [isPdfImportDialogOpen, setIsPdfImportDialogOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardInitialStrategy, setWizardInitialStrategy] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteStylesDialogOpen, setDeleteStylesDialogOpen] = useState(false);
   const [deletePOTarget, setDeletePOTarget] = useState<{ id: number; po_number: string } | null>(null);
@@ -417,10 +429,40 @@ export default function PurchaseOrdersPage() {
               </Button>
             )}
             {can('po.create') && (
-              <Button variant="outline" size="sm" className="h-8" onClick={() => setIsPdfImportDialogOpen(true)}>
-                <FileText className="mr-1.5 h-3.5 w-3.5" />
-                Import PDF
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8">
+                    <FileUp className="mr-1.5 h-3.5 w-3.5" />
+                    Import
+                    <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel>Buyer-specific imports</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => { setWizardInitialStrategy('sci.pdf.po'); setWizardOpen(true); }}>
+                    SCI — PDF PO
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setWizardInitialStrategy('sci.excel.buy_sheet'); setWizardOpen(true); }}>
+                    SCI — Excel Buy Sheet
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setWizardInitialStrategy('massive.excel.ddp.po'); setWizardOpen(true); }}>
+                    Massive — DDP Excel PO
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setWizardInitialStrategy('massive.excel.fob.po'); setWizardOpen(true); }}>
+                    Massive — FOB Excel PO
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setWizardInitialStrategy('rebel_minds.pdf.po'); setWizardOpen(true); }}>
+                    Rebel Minds — PDF PO
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => { setWizardInitialStrategy(null); setWizardOpen(true); }}>
+                    Choose import type…
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsPdfImportDialogOpen(true)}>
+                    Legacy PDF import
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {can('po.create') && (
               <Button size="sm" className="h-8" onClick={() => setIsCreateDialogOpen(true)}>
@@ -617,7 +659,7 @@ export default function PurchaseOrdersPage() {
           </DialogContent>
         </Dialog>
 
-        {/* PDF Import Dialog */}
+        {/* PDF Import Dialog (legacy) */}
         <PdfImportDialog
           isOpen={isPdfImportDialogOpen}
           onClose={() => setIsPdfImportDialogOpen(false)}
@@ -627,6 +669,16 @@ export default function PurchaseOrdersPage() {
           }}
           masterData={{ currencies, paymentTerms, seasons, retailers, countries, warehouses, buyers, agents }}
           onRefreshMasterData={fetchMasterData}
+        />
+
+        {/* Unified Import Wizard (strategy-based) */}
+        <ImportWizardDialog
+          isOpen={wizardOpen}
+          onClose={() => setWizardOpen(false)}
+          buyers={buyers}
+          onRefreshBuyers={fetchMasterData}
+          onImportComplete={fetchPurchaseOrders}
+          initialStrategyKey={wizardInitialStrategy}
         />
 
         {/* Master Data Create Dialogs */}

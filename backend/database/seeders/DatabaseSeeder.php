@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
             DefaultPermissionsSeeder::class,
             DefaultRolesSeeder::class,
             AgencyDelegatedPermissionsSeeder::class,
+            BuySheetImportPermissionsSeeder::class,
         ]);
 
         // Create a super admin user for testing

@@ -388,11 +388,21 @@ function GroupRows({
               </div>
             </TableCell>
             <TableCell>
-              <div>
-                <p className="text-xs">{sample.style?.style_number}</p>
-                <p className="text-[10px] text-muted-foreground">
-                  {sample.style?.purchase_orders?.[0]?.po_number}
-                </p>
+              <div className="flex items-center gap-2">
+                {sample.style?.images && sample.style.images.length > 0 && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={sample.style.images[0]}
+                    alt={sample.style.style_number}
+                    className="h-8 w-8 rounded object-cover border bg-muted"
+                  />
+                )}
+                <div>
+                  <p className="text-xs">{sample.style?.style_number}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {sample.style?.purchase_orders?.[0]?.po_number}
+                  </p>
+                </div>
               </div>
             </TableCell>
             <TableCell>

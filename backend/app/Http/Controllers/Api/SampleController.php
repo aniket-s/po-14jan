@@ -858,7 +858,7 @@ class SampleController extends Controller
 
         $query = Sample::with([
             'style.purchaseOrders:id,po_number',
-            'style:id,style_number',
+            'style:id,style_number,images,color_name,description',
             'sampleType:id,name,display_name',
             'submittedBy:id,name,email',
             'agencyApprovedBy:id,name',

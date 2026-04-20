@@ -161,6 +161,13 @@ class DefaultPermissionsSeeder extends Seeder
             ['name' => 'reports.export', 'category' => 'Reports', 'description' => 'Export reports'],
             ['name' => 'reports.schedule', 'category' => 'Reports', 'description' => 'Schedule automated reports'],
             ['name' => 'report.generate', 'category' => 'Reports', 'description' => 'Generate reports (legacy)'],
+
+            // Buy Sheet Permissions
+            ['name' => 'buy_sheet.view', 'category' => 'Buy Sheets', 'description' => 'View buy sheets'],
+            ['name' => 'buy_sheet.create', 'category' => 'Buy Sheets', 'description' => 'Create buy sheets'],
+            ['name' => 'buy_sheet.edit', 'category' => 'Buy Sheets', 'description' => 'Edit buy sheets'],
+            ['name' => 'buy_sheet.delete', 'category' => 'Buy Sheets', 'description' => 'Delete buy sheets'],
+            ['name' => 'buy_sheet.import', 'category' => 'Buy Sheets', 'description' => 'Import buy sheet from PDF/Excel'],
         ];
 
         foreach ($permissions as $permission) {

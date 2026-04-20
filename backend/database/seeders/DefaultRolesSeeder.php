@@ -41,6 +41,12 @@ class DefaultRolesSeeder extends Seeder
             'style.delete',
             'style.assign_factory',
             'style.bulk_assign',
+            // Buy Sheet Permissions
+            'buy_sheet.view',
+            'buy_sheet.create',
+            'buy_sheet.edit',
+            'buy_sheet.delete',
+            'buy_sheet.import',
             // Invitation Permissions
             'invitation.send',
             'invitation.send_agency',
@@ -69,32 +75,51 @@ class DefaultRolesSeeder extends Seeder
         // Agency - Manage POs, assign factories, review samples
         $agency = Role::where('name', 'Agency')->where('guard_name', 'web')->first()
             ?? Role::create(['name' => 'Agency', 'guard_name' => 'web']);
+        // Agency does operational work in parallel with the Importer.
+        // Per product direction, Agency should have parity with Importer on PO/style/sample
+        // day-to-day actions. Importer still owns final sample approval (sample.approve_final);
+        // Agency retains sample.approve_agency and sample.approve_as_importer_on_behalf.
         $agency->syncPermissions([
             // PO Permissions
             'po.view_own',
             'po.create',
             'po.edit',
+            'po.delete',
+            'po.assign_agency',
             'po.assign_factory',
             'po.bulk_assign',
             'po.import',
             'po.export',
             // Style Permissions
             'style.view_own',
+            'style.create',
             'style.edit',
+            'style.delete',
             'style.assign_factory',
             'style.bulk_assign',
+            // Buy Sheet Permissions
+            'buy_sheet.view',
+            'buy_sheet.create',
+            'buy_sheet.edit',
+            'buy_sheet.delete',
+            'buy_sheet.import',
             // Invitation Permissions
             'invitation.send',
+            'invitation.send_agency',
             'invitation.send_factory',
             'invitation.send_importer',
             'invitation.respond',
             'invitation.cancel',
+            'invitation.view_all',
             // Sample Permissions
-            'sample.view_own',
+            'sample.view',
+            'sample.create',
+            'sample.submit',
             'sample.agency_approve',
             'sample.approve_agency',
             'sample.approve_as_importer_on_behalf',
             'sample.reject',
+            'sample.bulk_approve',
             // Production Permissions
             'production.view_own',
             // Quality Permissions
@@ -102,6 +127,9 @@ class DefaultRolesSeeder extends Seeder
             // Shipment Permissions
             'shipment.view_own',
             'shipment.track',
+            // Report Permissions
+            'reports.view',
+            'reports.export',
         ]);
 
         // Factory - Submit samples, manage production, create shipments
