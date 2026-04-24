@@ -156,6 +156,7 @@ class ImportController extends Controller
             'styles.*.description' => 'nullable|string',
             'styles.*.color_name' => 'nullable|string',
         ]);
+        $v->setAttributeNames($this->attributeNames());
         if ($v->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
         }
@@ -304,11 +305,45 @@ class ImportController extends Controller
             'header.eta_date' => 'nullable|date',
             'header.in_warehouse_date' => 'nullable|date',
             'header.fob_date' => 'nullable|date',
+            // Additional free-form / structured fields that the legacy PDF flow
+            // already persists. Without these rules Laravel silently drops them
+            // before the PurchaseOrder::create() call sees them.
+            'header.headline' => 'nullable|string|max:255',
+            'header.ship_to' => 'nullable|string|max:100',
+            'header.ship_to_address' => 'nullable|string',
+            'header.country_of_origin' => 'nullable|string|max:100',
+            'header.packing_method' => 'nullable|string',
+            'header.packing_guidelines' => 'nullable|string',
+            'header.other_terms' => 'nullable|string',
+            'header.additional_notes' => 'nullable|string',
+            'header.revision_number' => 'nullable|integer',
+            'header.exchange_rate' => 'nullable|numeric|min:0',
+            'header.payment_terms_structured' => 'nullable|array',
+            'header.payment_terms_structured.term' => 'nullable|string',
+            'header.payment_terms_structured.percentage' => 'nullable|numeric|min:0|max:100',
+            'header.sample_schedule' => 'nullable|array',
+            'header.sample_schedule.lab_dip_submission' => 'nullable|date',
+            'header.sample_schedule.fit_sample_submission' => 'nullable|date',
+            'header.sample_schedule.trim_approvals' => 'nullable|date',
+            'header.sample_schedule.first_proto_submission' => 'nullable|date',
+            'header.sample_schedule.bulk_fabric_inhouse' => 'nullable|date',
+            'header.sample_schedule.pp_sample_submission' => 'nullable|date',
+            'header.sample_schedule.production_start' => 'nullable|date',
+            'header.sample_schedule.top_approval' => 'nullable|date',
             'styles' => 'required|array|min:1',
             'styles.*.style_number' => 'required|string|max:100',
             'styles.*.quantity' => 'required|integer|min:1',
             'styles.*.unit_price' => 'required|numeric|min:0',
+            'styles.*.description' => 'nullable|string',
+            'styles.*.color_name' => 'nullable|string',
+            'styles.*.colors' => 'nullable|array',
+            'styles.*.size_breakdown' => 'nullable',
+            'styles.*.ratio' => 'nullable',
+            'styles.*.packing_method' => 'nullable|string',
+            'styles.*.images' => 'nullable|array',
+            'styles.*.images.*' => 'nullable|string',
         ]);
+        $v->setAttributeNames($this->attributeNames());
         if ($v->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
         }
@@ -490,5 +525,41 @@ class ImportController extends Controller
                 'styles_created' => $stylesCreated,
             ], 201);
         });
+    }
+
+    /**
+     * Human-readable names for the nested `header.*` / `styles.*.*` paths so
+     * Laravel's default validation messages don't read as "The header.po number
+     * has already been taken." and similar nonsense to end users.
+     */
+    private function attributeNames(): array
+    {
+        return [
+            'header.po_number' => 'PO Number',
+            'header.po_date' => 'PO Date',
+            'header.buyer_id' => 'Buyer',
+            'header.buy_sheet_id' => 'Buy Sheet',
+            'header.buy_sheet_number' => 'Buy Sheet Number',
+            'header.retailer_id' => 'Retailer',
+            'header.season_id' => 'Season',
+            'header.currency_id' => 'Currency',
+            'header.payment_term_id' => 'Payment Term',
+            'header.country_id' => 'Country',
+            'header.warehouse_id' => 'Warehouse',
+            'header.shipping_term' => 'Shipping Term',
+            'header.etd_date' => 'ETD',
+            'header.ex_factory_date' => 'Ex-Factory Date',
+            'header.eta_date' => 'ETA',
+            'header.in_warehouse_date' => 'In-Warehouse Date',
+            'header.fob_date' => 'FOB Date',
+            'header.name' => 'Name',
+            'header.date_submitted' => 'Date Submitted',
+            'header.tickets_required' => 'Tickets Required',
+            'header.buyer_approvals_required' => 'Buyer Approvals Required',
+            'styles' => 'Styles',
+            'styles.*.style_number' => 'Style Number',
+            'styles.*.quantity' => 'Quantity',
+            'styles.*.unit_price' => 'Unit Price',
+        ];
     }
 }

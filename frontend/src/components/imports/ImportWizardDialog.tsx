@@ -13,8 +13,10 @@ import { ImportTypePicker } from './ImportTypePicker';
 import { BuyerPickerStep } from './BuyerPickerStep';
 import { BuySheetLinkStep } from './BuySheetLinkStep';
 import { ImportReviewPanel } from './ImportReviewPanel';
+import { PdfImportDialog } from '@/components/purchase-orders/PdfImportDialog';
 import { analyzeImport, commitImport, fetchImportStrategies } from './api';
 import type { AnalyzeResponse, BuySheetSummary, ImportStrategy } from './types';
+import type { PdfAnalysisResult } from '@/types';
 
 type Step = 'type' | 'buyer' | 'buy-sheet' | 'upload' | 'review';
 
@@ -25,10 +27,27 @@ interface Props {
   onRefreshBuyers: () => void;
   onImportComplete: () => void;
   initialStrategyKey?: string | null;
+  /**
+   * The full master-data bundle forwarded to PdfImportDialog when this wizard
+   * hands off a PO-kind import to the legacy review UI. When omitted, PO-kind
+   * imports fall back to the compact ImportReviewPanel.
+   */
+  masterData?: {
+    currencies: any[];
+    paymentTerms: any[];
+    seasons: any[];
+    retailers: any[];
+    countries: any[];
+    warehouses: any[];
+    buyers: any[];
+    agents: any[];
+  };
+  onRefreshMasterData?: () => void;
 }
 
 export function ImportWizardDialog({
   isOpen, onClose, buyers, onRefreshBuyers, onImportComplete, initialStrategyKey,
+  masterData, onRefreshMasterData,
 }: Props) {
   const router = useRouter();
 
@@ -43,6 +62,10 @@ export function ImportWizardDialog({
   const [analyzing, setAnalyzing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+  const [commitErrors, setCommitErrors] = useState<Record<string, string[]> | undefined>();
+  // When PO-kind analyze succeeds and we have masterData, we hand off review to
+  // the full-featured PdfImportDialog. This flag drives the swap.
+  const [poReviewOpen, setPoReviewOpen] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -70,6 +93,8 @@ export function ImportWizardDialog({
     setBuySheet(null);
     setFile(null);
     setAnalysis(null);
+    setCommitErrors(undefined);
+    setPoReviewOpen(false);
   };
   const handleClose = () => { reset(); onClose(); };
 
@@ -84,7 +109,15 @@ export function ImportWizardDialog({
         file,
       });
       setAnalysis(res);
-      setStep('review');
+      // PO kind with masterData provided -> delegate the rich review to the
+      // legacy PdfImportDialog (full fields: master data, dates cascade, sample
+      // schedule, additional info, per-style editing with warnings).
+      // Buy-sheet kind stays on the compact ImportReviewPanel.
+      if (res.kind === 'po' && masterData) {
+        setPoReviewOpen(true);
+      } else {
+        setStep('review');
+      }
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Analysis failed');
     } finally {
@@ -95,6 +128,7 @@ export function ImportWizardDialog({
   const handleCommit = async (header: Record<string, any>, styles: Array<Record<string, any>>) => {
     if (!strategy || !analysis) return;
     setCommitting(true);
+    setCommitErrors(undefined);
     try {
       const res = await commitImport({
         kind: analysis.kind,
@@ -114,10 +148,13 @@ export function ImportWizardDialog({
       }
     } catch (e: any) {
       const errs = e?.response?.data?.errors;
-      if (errs) {
-        Object.values(errs).forEach((msgs: any) => (Array.isArray(msgs) ? msgs : [msgs]).forEach((m) => toast.error(String(m))));
-      } else {
-        toast.error(e?.response?.data?.message ?? 'Commit failed');
+      const topMessage = e?.response?.data?.message ?? 'Commit failed';
+      // Show a toast for the headline AND keep the field errors so the review
+      // panel can render them inline. Toast alone is easily missed; the inline
+      // alert makes the failure obvious even if the toaster is off-screen.
+      toast.error(topMessage);
+      if (errs && typeof errs === 'object') {
+        setCommitErrors(errs);
       }
     } finally {
       setCommitting(false);
@@ -148,7 +185,8 @@ export function ImportWizardDialog({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(o) => !o && handleClose()}>
+    <>
+    <Dialog open={isOpen && !poReviewOpen} onOpenChange={(o) => !o && !poReviewOpen && handleClose()}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -210,6 +248,7 @@ export function ImportWizardDialog({
               submitting={committing}
               onCancel={() => setStep('upload')}
               onSubmit={handleCommit}
+              serverErrors={commitErrors}
             />
           )}
         </div>
@@ -227,6 +266,42 @@ export function ImportWizardDialog({
         )}
       </DialogContent>
     </Dialog>
+
+    {/* Full-featured review for PO-kind imports: reuses the legacy dialog so
+        users get master-data dropdowns, date cascade, sample schedule, packing
+        info, per-style editing and zero-price/duplicate warnings. The wizard
+        stays mounted but hidden (poReviewOpen gates its Dialog open prop) so
+        if the user cancels review they return to the wizard. */}
+    {masterData && strategy && analysis && analysis.kind === 'po' && (
+      <PdfImportDialog
+        isOpen={poReviewOpen}
+        onClose={() => {
+          setPoReviewOpen(false);
+          // Return to upload step so they can re-analyze or change their mind.
+          setStep('upload');
+        }}
+        onImportComplete={() => {
+          onImportComplete();
+          setPoReviewOpen(false);
+          handleClose();
+        }}
+        masterData={masterData}
+        onRefreshMasterData={onRefreshMasterData}
+        initialAnalysis={analysis as unknown as PdfAnalysisResult}
+        initialStep="review-header"
+        lockedBuyerId={buyerId}
+        buySheetHint={buySheet ? {
+          id: buySheet.id,
+          buy_sheet_number: buySheet.buy_sheet_number,
+          name: buySheet.name ?? null,
+        } : null}
+        datePolicy={strategy.date_policy}
+        strategyKey={strategy.key}
+        commitTarget="unified"
+        originalFilename={file?.name ?? null}
+      />
+    )}
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -78,6 +78,25 @@ interface PdfImportDialogProps {
     agents: any[];
   };
   onRefreshMasterData?: () => void;
+
+  // ---- Wizard-mode props (optional; when set, this dialog is used as the review
+  // surface for the new strategy-based import wizard) ----
+  /** Skip the upload step and seed the form from this pre-analyzed result. */
+  initialAnalysis?: PdfAnalysisResult | null;
+  /** Start at this step instead of 'upload'. */
+  initialStep?: Step;
+  /** When set, the Buyer dropdown is locked to this id (user already chose it in step 2). */
+  lockedBuyerId?: number | null;
+  /** When set, a chip is shown and buy_sheet_id is sent in the commit payload. */
+  buySheetHint?: { id: number; buy_sheet_number: string; name?: string | null } | null;
+  /** Drives which date-cascade block renders: fob | ddp | massive_fob. Defaults to inferring from shipping_term. */
+  datePolicy?: 'fob' | 'ddp' | 'massive_fob' | 'none' | null;
+  /** Strategy key, sent with the unified commit payload. */
+  strategyKey?: string | null;
+  /** Which backend endpoint to commit against. 'legacy' = /purchase-orders/pdf-import/create, 'unified' = /imports/commit. */
+  commitTarget?: 'legacy' | 'unified';
+  /** Original filename, forwarded to the unified commit for audit metadata. */
+  originalFilename?: string | null;
 }
 
 type Step = 'upload' | 'review-header' | 'review-styles' | 'confirm' | 'result';
@@ -103,12 +122,20 @@ export function PdfImportDialog({
   onImportComplete,
   masterData,
   onRefreshMasterData,
+  initialAnalysis = null,
+  initialStep = 'upload',
+  lockedBuyerId = null,
+  buySheetHint = null,
+  datePolicy = null,
+  strategyKey = null,
+  commitTarget = 'legacy',
+  originalFilename = null,
 }: PdfImportDialogProps) {
-  const [step, setStep] = useState<Step>('upload');
+  const [step, setStep] = useState<Step>(initialStep);
   const [isUploading, setIsUploading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [analysisResult, setAnalysisResult] = useState<PdfAnalysisResult | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<PdfAnalysisResult | null>(initialAnalysis);
   const [createResult, setCreateResult] = useState<PdfCreatePOResult | null>(null);
 
   // Editable form state for PO header
@@ -283,31 +310,11 @@ export function PdfImportDialog({
     }
   };
 
-  // Step 1: Upload and analyze PDF
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.type !== 'application/pdf') {
-      setError('Please select a PDF file');
-      return;
-    }
-
-    if (file.size > 20 * 1024 * 1024) {
-      setError('File size must be less than 20MB');
-      return;
-    }
-
-    setIsUploading(true);
-    setError(null);
-
-    try {
-      const result = await analyzePdfForPOImport(file);
-      setAnalysisResult(result);
-
-      // Initialize editable header form from parsed data
-      const header: Record<string, any> = {};
-      if (result.parsed_data?.po_header) {
+  // Seed headerForm + stylesForm from an analysis result. Extracted so both the
+  // file-upload flow and the wizard-mode flow (initialAnalysis prop) can reuse it.
+  const seedFromAnalysis = useCallback((result: PdfAnalysisResult) => {
+    const header: Record<string, any> = {};
+    if (result.parsed_data?.po_header) {
         const ph = result.parsed_data.po_header;
         header.po_number = ph.po_number?.value || '';
         header.po_date = ph.po_date?.value || new Date().toISOString().split('T')[0];
@@ -326,6 +333,7 @@ export function PdfImportDialog({
         header.ex_factory_date = ph.ex_factory_date?.value || '';
         header.eta_date = ph.eta_date?.value || '';
         header.in_warehouse_date = ph.in_warehouse_date?.value || '';
+      header.fob_date = (ph as any).fob_date?.value || '';
         header.packing_method = ph.packing_method?.value || '';
         header.packing_guidelines = ph.packing_guidelines?.value || '';
         header.other_terms = ph.other_terms?.value || '';
@@ -390,7 +398,22 @@ export function PdfImportDialog({
         };
       });
       setStylesForm(styles);
+  }, [masterData.currencies, masterData.countries]);
 
+  // Step 1: Upload and analyze PDF (legacy path - the wizard path skips this
+  // and passes the analysis via the initialAnalysis prop below).
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') { setError('Please select a PDF file'); return; }
+    if (file.size > 20 * 1024 * 1024) { setError('File size must be less than 20MB'); return; }
+
+    setIsUploading(true);
+    setError(null);
+    try {
+      const result = await analyzePdfForPOImport(file);
+      setAnalysisResult(result);
+      seedFromAnalysis(result);
       setStep('review-header');
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Failed to analyze PDF');
@@ -398,6 +421,26 @@ export function PdfImportDialog({
       setIsUploading(false);
     }
   };
+
+  // Wizard-mode: when the parent passes a pre-analyzed result, seed the form
+  // exactly once on open and jump past the upload step.
+  const seededFromPropRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen) { seededFromPropRef.current = false; return; }
+    if (seededFromPropRef.current) return;
+    if (!initialAnalysis) return;
+    setAnalysisResult(initialAnalysis);
+    seedFromAnalysis(initialAnalysis);
+    setStep(initialStep && initialStep !== 'upload' ? initialStep : 'review-header');
+    seededFromPropRef.current = true;
+  }, [isOpen, initialAnalysis, initialStep, seedFromAnalysis]);
+
+  // Lock buyer field when the wizard pre-selected one.
+  useEffect(() => {
+    if (lockedBuyerId != null) {
+      setHeaderForm(prev => ({ ...prev, buyer_id: lockedBuyerId }));
+    }
+  }, [lockedBuyerId]);
 
   // Update header form field
   const updateHeader = (field: string, value: any) => {
@@ -575,7 +618,37 @@ export function PdfImportDialog({
         temp_file_path: analysisResult?.temp_file_path,
       };
 
-      const result = await createPOFromPdf(request);
+      let result: PdfCreatePOResult;
+      if (commitTarget === 'unified') {
+        // Strategy-based wizard path: translate the legacy request into the
+        // unified /imports/commit payload shape. Reuses the same PdfImportDialog
+        // UI so the user sees the full review regardless of which entry point
+        // they came in from.
+        const unifiedPayload: any = {
+          kind: 'po',
+          strategy_key: strategyKey,
+          header: {
+            ...request.po_header,
+            buyer_id: lockedBuyerId ?? request.po_header.buyer_id,
+            buy_sheet_id: buySheetHint?.id ?? null,
+          },
+          styles: request.styles,
+          temp_file_path: request.temp_file_path,
+          original_filename: originalFilename,
+        };
+        const { data } = await api.post('/imports/commit', unifiedPayload);
+        // Normalise the unified response into the PdfCreatePOResult shape the
+        // result-step UI renders.
+        result = {
+          success: !!data.success,
+          message: data.message ?? 'Purchase order created successfully',
+          purchase_order: data.purchase_order,
+          styles_created: data.styles_created ?? 0,
+          styles_errors: data.styles_errors ?? [],
+        } as PdfCreatePOResult;
+      } else {
+        result = await createPOFromPdf(request);
+      }
       setCreateResult(result);
       setStep('result');
     } catch (err: any) {
@@ -622,17 +695,29 @@ export function PdfImportDialog({
             </DialogDescription>
           </DialogHeader>
 
-          {/* AI Analysis Method Indicator */}
-          {analysisResult?.analysis_method && step !== 'upload' && step !== 'result' && (
-            <div className="flex items-center gap-2">
-              {analysisResult.analysis_method === 'claude_ai' ? (
+          {/* AI Analysis Method Indicator + wizard-mode context chips */}
+          {step !== 'upload' && step !== 'result' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {analysisResult?.analysis_method === 'claude_ai' ? (
                 <Badge variant="default" className="bg-indigo-600 text-white text-xs px-2 py-1">
                   <CheckCircle className="h-3 w-3 mr-1" />
                   Analyzed with Claude AI
                 </Badge>
-              ) : (
+              ) : analysisResult?.analysis_method ? (
                 <Badge variant="secondary" className="text-xs px-2 py-1">
                   Analyzed with text parser
+                </Badge>
+              ) : null}
+              {strategyKey && (
+                <Badge variant="outline" className="text-xs px-2 py-1">Strategy: {strategyKey}</Badge>
+              )}
+              {datePolicy && datePolicy !== 'none' && (
+                <Badge variant="outline" className="text-xs px-2 py-1">Date rule: {datePolicy}</Badge>
+              )}
+              {buySheetHint && (
+                <Badge variant="secondary" className="text-xs px-2 py-1">
+                  Linked to Buy Sheet #{buySheetHint.buy_sheet_number}
+                  {buySheetHint.name ? ` — ${buySheetHint.name}` : ''}
                 </Badge>
               )}
             </div>
@@ -803,9 +888,16 @@ export function PdfImportDialog({
                     <div className="flex items-center gap-2">
                       <Label>Buyer</Label>
                       <StatusBadge status={getFieldStatus('buyer_id')} />
+                      {lockedBuyerId != null && (
+                        <Badge variant="outline" className="text-[10px]">Locked by wizard</Badge>
+                      )}
                     </div>
                     <div className="flex gap-2">
-                      <Select value={String(headerForm.buyer_id || '')} onValueChange={(v) => updateHeader('buyer_id', v)}>
+                      <Select
+                        value={String(headerForm.buyer_id || '')}
+                        onValueChange={(v) => updateHeader('buyer_id', v)}
+                        disabled={lockedBuyerId != null}
+                      >
                         <SelectTrigger className="flex-1"><SelectValue placeholder="Select buyer" /></SelectTrigger>
                         <SelectContent>
                           {masterData.buyers.map((b: any) => (
@@ -999,7 +1091,44 @@ export function PdfImportDialog({
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold">Important Dates</h3>
 
-                {(headerForm.shipping_term || 'FOB') === 'FOB' && (
+                {datePolicy === 'massive_fob' && (
+                  <div className="space-y-3">
+                    <Alert>
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription className="text-xs">
+                        Massive FOB rule: FOB Date is the &quot;Direct to Consolidator&quot; date from the sheet.
+                        Ex-Factory is FOB − 15 days. In-House / ETD / ETA are not tracked for this flow.
+                      </AlertDescription>
+                    </Alert>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Label>FOB Date <span className="text-red-500">*</span></Label>
+                          <StatusBadge status={getFieldStatus('fob_date')} />
+                        </div>
+                        <Input
+                          type="date"
+                          value={headerForm.fob_date || ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            updateHeader('fob_date', v);
+                            if (v) {
+                              const d = new Date(v);
+                              d.setDate(d.getDate() - 15);
+                              updateHeader('ex_factory_date', d.toISOString().split('T')[0]);
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Ex-Factory (FOB − 15 days)</Label>
+                        <Input type="date" value={headerForm.ex_factory_date || ''} disabled className="bg-muted" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {datePolicy !== 'massive_fob' && (headerForm.shipping_term || 'FOB') === 'FOB' && (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
@@ -1035,7 +1164,7 @@ export function PdfImportDialog({
                   </div>
                 )}
 
-                {headerForm.shipping_term === 'DDP' && (
+                {datePolicy !== 'massive_fob' && headerForm.shipping_term === 'DDP' && (
                   <div className="grid grid-cols-4 gap-4">
                     <div className="space-y-1">
                       <Label>In-Warehouse Date *</Label>
