@@ -679,6 +679,8 @@ export default function PurchaseOrdersPage() {
           onRefreshBuyers={fetchMasterData}
           onImportComplete={fetchPurchaseOrders}
           initialStrategyKey={wizardInitialStrategy}
+          masterData={{ currencies, paymentTerms, seasons, retailers, countries, warehouses, buyers, agents }}
+          onRefreshMasterData={fetchMasterData}
         />
 
         {/* Master Data Create Dialogs */}
