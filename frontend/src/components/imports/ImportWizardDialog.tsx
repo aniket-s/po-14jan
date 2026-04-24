@@ -287,7 +287,7 @@ export function ImportWizardDialog({
         }}
         masterData={masterData}
         onRefreshMasterData={onRefreshMasterData}
-        initialAnalysis={analysis as unknown as PdfAnalysisResult}
+        initialAnalysis={toLegacyAnalysisShape(analysis)}
         initialStep="review-header"
         lockedBuyerId={buyerId}
         buySheetHint={buySheet ? {
@@ -303,6 +303,34 @@ export function ImportWizardDialog({
     )}
     </>
   );
+}
+
+/**
+ * Translate the unified /imports/analyze response into the legacy
+ * PdfAnalysisResult shape that PdfImportDialog's seedFromAnalysis consumes.
+ *
+ * Legacy:   { parsed_data: { po_header, styles, totals }, temp_file_path, warnings, errors, analysis_method, raw_text }
+ * Unified:  { po_header, styles, totals, warnings, errors, raw_text, ai_usage, strategy_key, temp_file_path, kind, strategy:{...} }
+ *
+ * Without this adapter, result.parsed_data is undefined and every header
+ * field is read as "Missing" even though Claude extracted them correctly.
+ */
+function toLegacyAnalysisShape(a: AnalyzeResponse): PdfAnalysisResult {
+  return {
+    success: a.success,
+    parsed_data: {
+      po_header: a.po_header,
+      styles: a.styles as any,
+      totals: a.totals,
+    },
+    temp_file_path: a.temp_file_path,
+    warnings: a.warnings ?? [],
+    errors: a.errors ?? [],
+    raw_text: a.raw_text ?? '',
+    // ai_usage being populated means the Claude path succeeded; the legacy
+    // flag drives the "Analyzed with Claude AI" badge.
+    analysis_method: a.ai_usage ? 'claude_ai' : 'regex',
+  } as PdfAnalysisResult;
 }
 
 function StepIndicator({ currentStep, skipBuySheet }: { currentStep: Step; skipBuySheet: boolean }) {
