@@ -12,7 +12,10 @@ return new class extends Migration
             $table->foreignId('buy_sheet_id')->nullable()->after('buyer_id')
                 ->constrained('buy_sheets')->nullOnDelete();
             $table->string('buy_sheet_number', 50)->nullable()->after('buy_sheet_id')->index();
-            $table->json('import_source')->nullable()->after('metadata');
+            // `additional_notes` is a known-present column on every deployment; the
+            // PurchaseOrder model's $fillable lists `metadata` but no migration
+            // actually creates that column, so we cannot anchor against it.
+            $table->json('import_source')->nullable()->after('additional_notes');
             $table->date('fob_date')->nullable()->after('ex_factory_date');
         });
     }
