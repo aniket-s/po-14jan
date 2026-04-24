@@ -43,6 +43,7 @@ export function ImportWizardDialog({
   const [analyzing, setAnalyzing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+  const [commitErrors, setCommitErrors] = useState<Record<string, string[]> | undefined>();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -95,6 +96,7 @@ export function ImportWizardDialog({
   const handleCommit = async (header: Record<string, any>, styles: Array<Record<string, any>>) => {
     if (!strategy || !analysis) return;
     setCommitting(true);
+    setCommitErrors(undefined);
     try {
       const res = await commitImport({
         kind: analysis.kind,
@@ -114,10 +116,13 @@ export function ImportWizardDialog({
       }
     } catch (e: any) {
       const errs = e?.response?.data?.errors;
-      if (errs) {
-        Object.values(errs).forEach((msgs: any) => (Array.isArray(msgs) ? msgs : [msgs]).forEach((m) => toast.error(String(m))));
-      } else {
-        toast.error(e?.response?.data?.message ?? 'Commit failed');
+      const topMessage = e?.response?.data?.message ?? 'Commit failed';
+      // Show a toast for the headline AND keep the field errors so the review
+      // panel can render them inline. Toast alone is easily missed; the inline
+      // alert makes the failure obvious even if the toaster is off-screen.
+      toast.error(topMessage);
+      if (errs && typeof errs === 'object') {
+        setCommitErrors(errs);
       }
     } finally {
       setCommitting(false);
@@ -210,6 +215,7 @@ export function ImportWizardDialog({
               submitting={committing}
               onCancel={() => setStep('upload')}
               onSubmit={handleCommit}
+              serverErrors={commitErrors}
             />
           )}
         </div>

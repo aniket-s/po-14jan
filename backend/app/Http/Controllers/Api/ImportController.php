@@ -156,6 +156,7 @@ class ImportController extends Controller
             'styles.*.description' => 'nullable|string',
             'styles.*.color_name' => 'nullable|string',
         ]);
+        $v->setAttributeNames($this->attributeNames());
         if ($v->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
         }
@@ -309,6 +310,7 @@ class ImportController extends Controller
             'styles.*.quantity' => 'required|integer|min:1',
             'styles.*.unit_price' => 'required|numeric|min:0',
         ]);
+        $v->setAttributeNames($this->attributeNames());
         if ($v->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
         }
@@ -490,5 +492,41 @@ class ImportController extends Controller
                 'styles_created' => $stylesCreated,
             ], 201);
         });
+    }
+
+    /**
+     * Human-readable names for the nested `header.*` / `styles.*.*` paths so
+     * Laravel's default validation messages don't read as "The header.po number
+     * has already been taken." and similar nonsense to end users.
+     */
+    private function attributeNames(): array
+    {
+        return [
+            'header.po_number' => 'PO Number',
+            'header.po_date' => 'PO Date',
+            'header.buyer_id' => 'Buyer',
+            'header.buy_sheet_id' => 'Buy Sheet',
+            'header.buy_sheet_number' => 'Buy Sheet Number',
+            'header.retailer_id' => 'Retailer',
+            'header.season_id' => 'Season',
+            'header.currency_id' => 'Currency',
+            'header.payment_term_id' => 'Payment Term',
+            'header.country_id' => 'Country',
+            'header.warehouse_id' => 'Warehouse',
+            'header.shipping_term' => 'Shipping Term',
+            'header.etd_date' => 'ETD',
+            'header.ex_factory_date' => 'Ex-Factory Date',
+            'header.eta_date' => 'ETA',
+            'header.in_warehouse_date' => 'In-Warehouse Date',
+            'header.fob_date' => 'FOB Date',
+            'header.name' => 'Name',
+            'header.date_submitted' => 'Date Submitted',
+            'header.tickets_required' => 'Tickets Required',
+            'header.buyer_approvals_required' => 'Buyer Approvals Required',
+            'styles' => 'Styles',
+            'styles.*.style_number' => 'Style Number',
+            'styles.*.quantity' => 'Quantity',
+            'styles.*.unit_price' => 'Unit Price',
+        ];
     }
 }

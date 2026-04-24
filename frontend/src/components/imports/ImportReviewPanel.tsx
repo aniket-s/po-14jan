@@ -18,7 +18,36 @@ interface Props {
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (header: Record<string, any>, styles: Array<Record<string, any>>) => Promise<void>;
+  /** Field-path → messages, returned by Laravel (e.g. "header.po_number"). */
+  serverErrors?: Record<string, string[]>;
 }
+
+/** Map Laravel's "header.po_number"-style paths to just the tail field name. */
+const fieldFromPath = (path: string): string => {
+  const last = path.split('.').pop() ?? path;
+  return last;
+};
+const FIELD_LABELS: Record<string, string> = {
+  po_number: 'PO Number',
+  po_date: 'PO Date',
+  buy_sheet_number: 'Buy Sheet Number',
+  buyer_id: 'Buyer',
+  retailer_id: 'Retailer',
+  season_id: 'Season',
+  currency_id: 'Currency',
+  country_id: 'Country',
+  warehouse_id: 'Warehouse',
+  payment_term_id: 'Payment Term',
+  shipping_term: 'Shipping Term',
+  etd_date: 'ETD',
+  ex_factory_date: 'Ex-Factory',
+  eta_date: 'ETA',
+  in_warehouse_date: 'In-Warehouse',
+  fob_date: 'FOB Date',
+  name: 'Name',
+  date_submitted: 'Date Submitted',
+  buy_sheet_id: 'Buy Sheet',
+};
 
 const unwrap = (h: any): any => (h && typeof h === 'object' && 'value' in h ? h.value : h);
 
@@ -30,9 +59,30 @@ export function ImportReviewPanel({
   submitting,
   onCancel,
   onSubmit,
+  serverErrors,
 }: Props) {
   const isBuySheet = analysis.kind === 'buy_sheet';
   const today = new Date().toISOString().slice(0, 10);
+
+  // Reshape Laravel's {"header.po_number":["..."]} into {po_number:["..."]}
+  // keyed by the field name used below.
+  const fieldErrors = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    if (!serverErrors) return out;
+    for (const [path, msgs] of Object.entries(serverErrors)) {
+      out[fieldFromPath(path)] = Array.isArray(msgs) ? msgs : [String(msgs)];
+    }
+    return out;
+  }, [serverErrors]);
+
+  const humanizeError = (msg: string): string =>
+    // "The header.po number has already been taken." → "PO Number has already been taken."
+    msg.replace(/^The header\.\w+(?:\s\w+)* /, (m) => {
+      const field = m.slice(4).trimEnd(); // drop "The " prefix
+      const key = field.replace(/\s/g, '_');
+      const label = FIELD_LABELS[key] ?? field;
+      return `${label} `;
+    });
 
   const [header, setHeader] = useState<Record<string, any>>(() => {
     const h = analysis.po_header ?? {};
@@ -144,11 +194,27 @@ export function ImportReviewPanel({
         </Alert>
       )}
 
+      {serverErrors && Object.keys(serverErrors).length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            <div className="text-sm font-medium mb-1">Could not save — please fix the fields below:</div>
+            <ul className="list-disc pl-5 text-sm space-y-1">
+              {Object.entries(serverErrors).flatMap(([path, msgs]) =>
+                (Array.isArray(msgs) ? msgs : [String(msgs)]).map((m, i) => (
+                  <li key={`${path}-${i}`}>{humanizeError(String(m))}</li>
+                ))
+              )}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Header fields */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {isBuySheet ? (
           <>
-            <Field label="Buy Sheet #" required>
+            <Field label="Buy Sheet #" required error={fieldErrors.buy_sheet_number?.[0] && humanizeError(fieldErrors.buy_sheet_number[0])}>
               <Input
                 value={header.buy_sheet_number ?? ''}
                 onChange={(e) => updateHeader('buy_sheet_number', e.target.value)}
@@ -170,13 +236,13 @@ export function ImportReviewPanel({
           </>
         ) : (
           <>
-            <Field label="PO Number" required>
+            <Field label="PO Number" required error={fieldErrors.po_number?.[0] && humanizeError(fieldErrors.po_number[0])}>
               <Input
                 value={header.po_number ?? ''}
                 onChange={(e) => updateHeader('po_number', e.target.value)}
               />
             </Field>
-            <Field label="PO Date" required>
+            <Field label="PO Date" required error={fieldErrors.po_date?.[0] && humanizeError(fieldErrors.po_date[0])}>
               <Input
                 type="date"
                 value={header.po_date ?? ''}
@@ -280,13 +346,24 @@ export function ImportReviewPanel({
   );
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({
+  label,
+  required,
+  children,
+  error,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+  error?: string;
+}) {
   return (
     <div>
       <Label className="text-xs text-muted-foreground">
         {label}{required && <span className="text-red-500 ml-0.5">*</span>}
       </Label>
       {children}
+      {error && <p className="text-xs text-red-600 mt-0.5">{error}</p>}
     </div>
   );
 }
