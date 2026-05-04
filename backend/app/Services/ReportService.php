@@ -494,6 +494,14 @@ class ReportService
             $shipments = $shipmentByPo[$po->id] ?? ['preparing' => 0, 'in_transit' => 0, 'delivered' => 0, 'overdue' => 0, 'total' => 0];
             $quality = $qualityByPo[$po->id] ?? ['passed' => 0, 'failed' => 0, 'pending' => 0, 'total' => 0];
 
+            // purchase_orders has both a string `currency` column (legacy "USD"
+            // text) and a currency_id FK with a Currency relation. Eloquent's
+            // __get returns the column attribute, shadowing the loaded model -
+            // use getRelation() to reach the eager-loaded Currency. Same trap
+            // applies to the legacy `retailer` string column.
+            $currencyModel = $po->relationLoaded('currency') ? $po->getRelation('currency') : null;
+            $retailerModel = $po->relationLoaded('retailer') ? $po->getRelation('retailer') : null;
+
             return [
                 'id' => $po->id,
                 'po_number' => $po->po_number,
@@ -508,8 +516,8 @@ class ReportService
                 'total_quantity' => (int) $po->total_quantity,
                 'total_value' => (float) $po->total_value,
                 'currency_id' => $po->currency_id,
-                'currency_code' => $po->currency?->code,
-                'currency_symbol' => $po->currency?->symbol,
+                'currency_code' => $currencyModel?->code ?? (is_string($po->currency) ? $po->currency : null),
+                'currency_symbol' => $currencyModel?->symbol,
                 'styles_count' => (int) $po->styles_count,
                 'importer_id' => $po->importer_id,
                 'importer_name' => $po->importer?->name,
@@ -519,7 +527,7 @@ class ReportService
                 'buyer_name' => $po->buyer?->name,
                 'buyer_code' => $po->buyer?->code,
                 'retailer_id' => $po->retailer_id,
-                'retailer_name' => $po->retailer?->name,
+                'retailer_name' => $retailerModel?->name ?? (is_string($po->retailer) ? $po->retailer : null),
                 'season_id' => $po->season_id,
                 'season_name' => $po->season?->name,
                 'country_id' => $po->country_id,
