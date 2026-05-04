@@ -358,7 +358,16 @@ class ReportService
      */
     public function getPurchaseOrderReport(User $user, array $filters): array
     {
-        $query = PurchaseOrder::with(['importer:id,name', 'agency:id,name']);
+        $query = PurchaseOrder::with([
+            'importer:id,name',
+            'agency:id,name',
+            'buyer:id,name,code',
+            'retailer:id,name',
+            'season:id,name',
+            'country:id,name,sailing_time_days',
+            'warehouse:id,name',
+            'currency:id,code,symbol',
+        ])->withCount('styles');
 
         // Apply filters
         if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
@@ -373,34 +382,325 @@ class ReportService
             $query->where('importer_id', $filters['importer_id']);
         }
 
+        if (!empty($filters['agency_id'])) {
+            $query->where('agency_id', $filters['agency_id']);
+        }
+
+        if (!empty($filters['buyer_id'])) {
+            $query->where('buyer_id', $filters['buyer_id']);
+        }
+
+        if (!empty($filters['retailer_id'])) {
+            $query->where('retailer_id', $filters['retailer_id']);
+        }
+
+        if (!empty($filters['season_id'])) {
+            $query->where('season_id', $filters['season_id']);
+        }
+
+        if (!empty($filters['country_id'])) {
+            $query->where('country_id', $filters['country_id']);
+        }
+
+        if (!empty($filters['shipping_term'])) {
+            $query->where('shipping_term', $filters['shipping_term']);
+        }
+
+        if (!empty($filters['currency_id'])) {
+            $query->where('currency_id', $filters['currency_id']);
+        }
+
+        if (!empty($filters['factory_id'])) {
+            $query->whereHas('factoryAssignments', function ($q) use ($filters) {
+                $q->where('factory_id', $filters['factory_id']);
+            });
+        }
+
+        if (!empty($filters['etd_overdue'])) {
+            $query->whereNotNull('etd_date')
+                ->whereDate('etd_date', '<', now()->toDateString())
+                ->whereNotIn('status', ['completed', 'cancelled']);
+        }
+
+        if (!empty($filters['search'])) {
+            $s = $filters['search'];
+            $query->where(function ($w) use ($s) {
+                $w->where('po_number', 'LIKE', "%{$s}%")
+                    ->orWhere('headline', 'LIKE', "%{$s}%")
+                    ->orWhere('buy_sheet_number', 'LIKE', "%{$s}%");
+            });
+        }
+
         // Apply user-based access control
         $this->applyPOAccessFilter($query, $user);
 
-        $orders = $query->get()->map(function ($po) {
+        // Snapshot summary BEFORE pagination so KPIs reflect the full filtered set,
+        // not just the current page.
+        $summaryQ = (clone $query);
+        $totalCount = (clone $summaryQ)->count();
+        $totalValue = (float) (clone $summaryQ)->sum('total_value');
+        $totalQuantity = (int) (clone $summaryQ)->sum('total_quantity');
+        $byStatus = (clone $summaryQ)
+            ->select('status', DB::raw('count(*) as count'))
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+        $today = now()->toDateString();
+        $overdueEtdCount = (clone $summaryQ)
+            ->whereNotNull('etd_date')
+            ->whereDate('etd_date', '<', $today)
+            ->whereNotIn('status', ['completed', 'cancelled'])
+            ->count();
+        $upcomingEtdCount = (clone $summaryQ)
+            ->whereNotNull('etd_date')
+            ->whereBetween('etd_date', [$today, now()->addDays(30)->toDateString()])
+            ->whereNotIn('status', ['completed', 'cancelled'])
+            ->count();
+
+        // Order + paginate
+        $sortBy = $filters['sort_by'] ?? 'po_date';
+        $sortDir = ($filters['sort_dir'] ?? 'desc') === 'asc' ? 'asc' : 'desc';
+        $allowedSorts = ['po_date', 'po_number', 'total_value', 'total_quantity', 'etd_date', 'status', 'created_at'];
+        if (!in_array($sortBy, $allowedSorts, true)) $sortBy = 'po_date';
+        $query->orderBy($sortBy, $sortDir);
+
+        $perPage = (int) ($filters['per_page'] ?? 25);
+        $page = (int) ($filters['page'] ?? 1);
+        if ($perPage < 1) $perPage = 25;
+        if ($perPage > 200) $perPage = 200;
+
+        $needsPagination = empty($filters['unpaginated']);
+        if ($needsPagination) {
+            $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+            $rows = $paginator->items();
+        } else {
+            $rows = $query->get()->all();
+            $paginator = null;
+        }
+
+        $poIds = array_map(fn ($po) => $po->id, $rows);
+
+        // Cross-domain aggregates - one query per dimension instead of N+1.
+        $sampleByPo = $this->aggregateSamplesByPo($poIds);
+        $productionByPo = $this->aggregateProductionByPo($poIds);
+        $shipmentByPo = $this->aggregateShipmentsByPo($poIds);
+        $qualityByPo = $this->aggregateQualityByPo($poIds);
+        $factoryByPo = $this->aggregateFactoriesByPo($poIds);
+
+        $orders = collect($rows)->map(function ($po) use ($sampleByPo, $productionByPo, $shipmentByPo, $qualityByPo, $factoryByPo, $today) {
+            $etdStatus = $this->classifyEtd($po->etd_date, $po->status, $today);
+            $samples = $sampleByPo[$po->id] ?? ['pending' => 0, 'approved' => 0, 'rejected' => 0, 'total' => 0];
+            $production = $productionByPo[$po->id] ?? ['not_started' => 0, 'in_progress' => 0, 'completed' => 0, 'total' => 0];
+            $shipments = $shipmentByPo[$po->id] ?? ['preparing' => 0, 'in_transit' => 0, 'delivered' => 0, 'overdue' => 0, 'total' => 0];
+            $quality = $qualityByPo[$po->id] ?? ['passed' => 0, 'failed' => 0, 'pending' => 0, 'total' => 0];
+
             return [
+                'id' => $po->id,
                 'po_number' => $po->po_number,
-                'importer' => $po->importer?->name ?? $po->agency?->name ?? '-',
-                'agency' => $po->agency?->name,
-                'order_date' => $po->po_date ? $po->po_date->format('Y-m-d') : null,
-                'delivery_date' => $po->delivery_date?->format('Y-m-d'),
-                'total_quantity' => $po->total_quantity,
-                'total_value' => $po->total_value,
-                'currency' => $po->currency,
+                'headline' => $po->headline,
                 'status' => $po->status,
-                'payment_terms' => $po->payment_terms,
+                'po_date' => $po->po_date?->format('Y-m-d'),
+                'etd_date' => $po->etd_date instanceof \DateTimeInterface ? $po->etd_date->format('Y-m-d') : $po->etd_date,
+                'eta_date' => $po->eta_date instanceof \DateTimeInterface ? $po->eta_date->format('Y-m-d') : $po->eta_date,
+                'ex_factory_date' => $po->ex_factory_date instanceof \DateTimeInterface ? $po->ex_factory_date->format('Y-m-d') : $po->ex_factory_date,
+                'in_warehouse_date' => $po->in_warehouse_date instanceof \DateTimeInterface ? $po->in_warehouse_date->format('Y-m-d') : $po->in_warehouse_date,
+                'shipping_term' => $po->shipping_term,
+                'total_quantity' => (int) $po->total_quantity,
+                'total_value' => (float) $po->total_value,
+                'currency_id' => $po->currency_id,
+                'currency_code' => $po->currency?->code,
+                'currency_symbol' => $po->currency?->symbol,
+                'styles_count' => (int) $po->styles_count,
+                'importer_id' => $po->importer_id,
+                'importer_name' => $po->importer?->name,
+                'agency_id' => $po->agency_id,
+                'agency_name' => $po->agency?->name,
+                'buyer_id' => $po->buyer_id,
+                'buyer_name' => $po->buyer?->name,
+                'buyer_code' => $po->buyer?->code,
+                'retailer_id' => $po->retailer_id,
+                'retailer_name' => $po->retailer?->name,
+                'season_id' => $po->season_id,
+                'season_name' => $po->season?->name,
+                'country_id' => $po->country_id,
+                'country_name' => $po->country?->name,
+                'warehouse_id' => $po->warehouse_id,
+                'warehouse_name' => $po->warehouse?->name,
+                'buy_sheet_id' => $po->buy_sheet_id,
+                'buy_sheet_number' => $po->buy_sheet_number,
+                'etd_status' => $etdStatus,
+                'samples_summary' => $samples,
+                'production_summary' => $production,
+                'shipments_summary' => $shipments,
+                'quality_summary' => $quality,
+                'factories' => $factoryByPo[$po->id] ?? [],
             ];
-        });
+        })->all();
 
         $summary = [
-            'total_orders' => $orders->count(),
-            'total_value' => $orders->sum('total_value'),
-            'total_quantity' => $orders->sum('total_quantity'),
+            'total_orders' => $totalCount,
+            'total_value' => round($totalValue, 2),
+            'total_quantity' => $totalQuantity,
+            'by_status' => $byStatus,
+            'overdue_etd' => $overdueEtdCount,
+            'upcoming_etd' => $upcomingEtdCount,
         ];
 
-        return [
+        $payload = [
             'summary' => $summary,
             'orders' => $orders,
         ];
+
+        if ($paginator) {
+            $payload['pagination'] = [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+            ];
+        }
+
+        return $payload;
+    }
+
+    /** @param int[] $poIds */
+    private function aggregateSamplesByPo(array $poIds): array
+    {
+        if (empty($poIds)) return [];
+        $rows = DB::table('samples')
+            ->join('purchase_order_style', 'purchase_order_style.style_id', '=', 'samples.style_id')
+            ->select('purchase_order_style.po_id', 'samples.final_status', DB::raw('count(*) as cnt'))
+            ->whereIn('purchase_order_style.po_id', $poIds)
+            ->groupBy('purchase_order_style.po_id', 'samples.final_status')
+            ->get();
+
+        $out = [];
+        foreach ($rows as $r) {
+            $poId = (int) $r->po_id;
+            $status = $r->final_status ?: 'pending';
+            $out[$poId] = $out[$poId] ?? ['pending' => 0, 'approved' => 0, 'rejected' => 0, 'total' => 0];
+            $key = in_array($status, ['pending', 'approved', 'rejected'], true) ? $status : 'pending';
+            $out[$poId][$key] += (int) $r->cnt;
+            $out[$poId]['total'] += (int) $r->cnt;
+        }
+        return $out;
+    }
+
+    /** @param int[] $poIds */
+    private function aggregateProductionByPo(array $poIds): array
+    {
+        if (empty($poIds)) return [];
+        $rows = DB::table('purchase_order_style')
+            ->select('po_id', 'status', DB::raw('count(*) as cnt'))
+            ->whereIn('po_id', $poIds)
+            ->groupBy('po_id', 'status')
+            ->get();
+
+        $out = [];
+        foreach ($rows as $r) {
+            $poId = (int) $r->po_id;
+            $out[$poId] = $out[$poId] ?? ['not_started' => 0, 'in_progress' => 0, 'completed' => 0, 'total' => 0];
+            $bucket = match (true) {
+                in_array($r->status, ['completed', 'shipped', 'delivered'], true) => 'completed',
+                in_array($r->status, ['in_production', 'fabric_inhouse', 'cutting', 'sewing', 'finishing'], true) => 'in_progress',
+                default => 'not_started',
+            };
+            $out[$poId][$bucket] += (int) $r->cnt;
+            $out[$poId]['total'] += (int) $r->cnt;
+        }
+        return $out;
+    }
+
+    /** @param int[] $poIds */
+    private function aggregateShipmentsByPo(array $poIds): array
+    {
+        if (empty($poIds)) return [];
+        if (!\Illuminate\Support\Facades\Schema::hasTable('shipments')) return [];
+
+        $rows = DB::table('shipments')
+            ->select('purchase_order_id', 'status', 'estimated_delivery_date')
+            ->whereIn('purchase_order_id', $poIds)
+            ->get();
+
+        $today = now()->toDateString();
+        $out = [];
+        foreach ($rows as $r) {
+            $poId = (int) $r->purchase_order_id;
+            $out[$poId] = $out[$poId] ?? ['preparing' => 0, 'in_transit' => 0, 'delivered' => 0, 'overdue' => 0, 'total' => 0];
+            $bucket = match ($r->status) {
+                'delivered' => 'delivered',
+                'in_transit', 'customs', 'out_for_delivery' => 'in_transit',
+                default => 'preparing',
+            };
+            $out[$poId][$bucket]++;
+            $out[$poId]['total']++;
+            if ($r->status !== 'delivered' && $r->estimated_delivery_date && $r->estimated_delivery_date < $today) {
+                $out[$poId]['overdue']++;
+            }
+        }
+        return $out;
+    }
+
+    /** @param int[] $poIds */
+    private function aggregateQualityByPo(array $poIds): array
+    {
+        if (empty($poIds)) return [];
+        if (!\Illuminate\Support\Facades\Schema::hasTable('quality_inspections')) return [];
+
+        $rows = DB::table('quality_inspections')
+            ->join('purchase_order_style', 'purchase_order_style.style_id', '=', 'quality_inspections.style_id')
+            ->select('purchase_order_style.po_id', 'quality_inspections.result', DB::raw('count(*) as cnt'))
+            ->whereIn('purchase_order_style.po_id', $poIds)
+            ->groupBy('purchase_order_style.po_id', 'quality_inspections.result')
+            ->get();
+
+        $out = [];
+        foreach ($rows as $r) {
+            $poId = (int) $r->po_id;
+            $out[$poId] = $out[$poId] ?? ['passed' => 0, 'failed' => 0, 'pending' => 0, 'total' => 0];
+            $bucket = match ($r->result) {
+                'passed' => 'passed',
+                'failed' => 'failed',
+                default => 'pending',
+            };
+            $out[$poId][$bucket] += (int) $r->cnt;
+            $out[$poId]['total'] += (int) $r->cnt;
+        }
+        return $out;
+    }
+
+    /** @param int[] $poIds */
+    private function aggregateFactoriesByPo(array $poIds): array
+    {
+        if (empty($poIds)) return [];
+        if (!\Illuminate\Support\Facades\Schema::hasTable('factory_assignments')) return [];
+
+        $rows = DB::table('factory_assignments')
+            ->join('users', 'users.id', '=', 'factory_assignments.factory_id')
+            ->select('factory_assignments.purchase_order_id as po_id', 'users.id', 'users.name')
+            ->whereIn('factory_assignments.purchase_order_id', $poIds)
+            ->distinct()
+            ->get();
+
+        $out = [];
+        foreach ($rows as $r) {
+            $poId = (int) $r->po_id;
+            $out[$poId] = $out[$poId] ?? [];
+            $out[$poId][] = ['id' => (int) $r->id, 'name' => $r->name];
+        }
+        return $out;
+    }
+
+    private function classifyEtd(?string $etdDate, ?string $status, string $today): string
+    {
+        if (!$etdDate) return 'none';
+        if (in_array($status, ['completed', 'cancelled'], true)) return 'on_track';
+        $etd = substr($etdDate, 0, 10);
+        if ($etd < $today) return 'overdue';
+        $diff = (strtotime($etd) - strtotime($today)) / 86400;
+        if ($diff <= 7) return 'urgent';
+        if ($diff <= 30) return 'soon';
+        return 'on_track';
     }
 
     /**
