@@ -37,11 +37,24 @@ import {
   ArrowDown,
   ChevronLeft,
   ChevronRight,
+  Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { StatCardsSkeleton, TableSkeleton } from '@/components/skeletons';
 import { useAuth } from '@/contexts/AuthContext';
+import { POReportKPICards } from '@/components/reports/po/POReportKPICards';
+import { POReportFilterBar } from '@/components/reports/po/POReportFilterBar';
+import { POReportTableView } from '@/components/reports/po/POReportTableView';
+import { POReportDetailPanel } from '@/components/reports/po/POReportDetailPanel';
+import {
+  DEFAULT_PO_REPORT_FILTERS,
+  type POReportFilters,
+  type POReportGroupBy,
+  type POReportItem,
+  type POReportLookups,
+  type POReportResponse,
+} from '@/components/reports/po/types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -364,7 +377,7 @@ export default function ReportsPage() {
   const { hasRole } = useAuth();
 
   // Global filters
-  const [activeTab, setActiveTab] = useState('factory-wise');
+  const [activeTab, setActiveTab] = useState('purchase-orders');
   const [factoryId, setFactoryId] = useState<string>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -381,6 +394,21 @@ export default function ReportsPage() {
   const [delayData, setDelayData] = useState<ReportData<DelayItem> | null>(null);
   const [approvedSamplesData, setApprovedSamplesData] = useState<ReportData<ApprovedSampleItem> | null>(null);
 
+  // ── PO Reports tab state ──────────────────────────────────────────────────
+  const [poReportData, setPoReportData] = useState<POReportResponse | null>(null);
+  const [poReportFilters, setPoReportFilters] = useState<POReportFilters>(DEFAULT_PO_REPORT_FILTERS);
+  const [poReportGroupBy, setPoReportGroupBy] = useState<POReportGroupBy>('none');
+  const [poReportKpiFilter, setPoReportKpiFilter] = useState<string>('');
+  const [poReportSelectedIds, setPoReportSelectedIds] = useState<Set<number>>(new Set());
+  const [poReportDetailItem, setPoReportDetailItem] = useState<POReportItem | null>(null);
+  const [poReportSortBy, setPoReportSortBy] = useState<string>('po_date');
+  const [poReportSortDir, setPoReportSortDir] = useState<'asc' | 'desc'>('desc');
+  const [poReportPage, setPoReportPage] = useState(1);
+  const [poReportLookups, setPoReportLookups] = useState<POReportLookups>({
+    retailers: [], buyers: [], agencies: [], seasons: [], factories: [], countries: [],
+  });
+  const PO_REPORT_PER_PAGE = 25;
+
   // Set default date range
   useEffect(() => {
     const end = new Date();
@@ -394,7 +422,24 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!startDate || !endDate) return;
     fetchActiveTab();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, factoryId, startDate, endDate]);
+
+  // Refetch PO report when its own filters / sort / page / KPI quick-filter change.
+  useEffect(() => {
+    if (activeTab !== 'purchase-orders') return;
+    if (!startDate || !endDate) return;
+    fetchPoReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, poReportFilters, poReportSortBy, poReportSortDir, poReportPage, poReportKpiFilter, startDate, endDate]);
+
+  // Load lookups for the PO filter bar lazily once the tab is opened.
+  useEffect(() => {
+    if (activeTab !== 'purchase-orders') return;
+    if (poReportLookups.retailers.length > 0) return;
+    fetchPoReportLookups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const buildParams = useCallback(() => {
     const params: Record<string, string> = {};
@@ -404,7 +449,73 @@ export default function ReportsPage() {
     return params;
   }, [startDate, endDate, factoryId]);
 
+  const buildPoReportParams = useCallback((): Record<string, string> => {
+    const p: Record<string, string> = {};
+    if (startDate) p.start_date = startDate;
+    if (endDate) p.end_date = endDate;
+    if (poReportFilters.search) p.search = poReportFilters.search;
+    if (poReportFilters.status !== 'all') p.status = poReportFilters.status;
+    if (poReportFilters.retailer_id !== 'all') p.retailer_id = poReportFilters.retailer_id;
+    if (poReportFilters.buyer_id !== 'all') p.buyer_id = poReportFilters.buyer_id;
+    if (poReportFilters.agency_id !== 'all') p.agency_id = poReportFilters.agency_id;
+    if (poReportFilters.season_id !== 'all') p.season_id = poReportFilters.season_id;
+    if (poReportFilters.factory_id !== 'all') p.factory_id = poReportFilters.factory_id;
+    if (poReportFilters.country_id !== 'all') p.country_id = poReportFilters.country_id;
+    if (poReportFilters.shipping_term !== 'all') p.shipping_term = poReportFilters.shipping_term;
+    if (poReportFilters.etd_overdue) p.etd_overdue = '1';
+    if (poReportKpiFilter === 'etd_overdue') p.etd_overdue = '1';
+    if (poReportKpiFilter === 'active') p.status = 'active';
+    p.sort_by = poReportSortBy;
+    p.sort_dir = poReportSortDir;
+    p.page = String(poReportPage);
+    p.per_page = String(PO_REPORT_PER_PAGE);
+    return p;
+  }, [startDate, endDate, poReportFilters, poReportKpiFilter, poReportSortBy, poReportSortDir, poReportPage]);
+
+  const fetchPoReport = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get<POReportResponse>('/reports/purchase-orders', { params: buildPoReportParams() });
+      setPoReportData(res.data);
+    } catch (e) {
+      console.error('Failed to fetch PO report:', e);
+      toast.error('Failed to load purchase orders report.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPoReportLookups = async () => {
+    try {
+      // /agencies, /factories return User[] with a `name`. Master-data endpoints
+      // either return an array directly or a {data: []} envelope - normalize.
+      const unwrap = (d: any): any[] => (Array.isArray(d) ? d : d?.data ?? []);
+      const [retailers, buyers, agencies, seasons, factoriesRes, countries] = await Promise.all([
+        api.get('/master-data/retailers?all=true').then((r) => unwrap(r.data)),
+        api.get('/master-data/buyers?all=true').then((r) => unwrap(r.data)),
+        api.get('/agencies').then((r) => unwrap(r.data)).catch(() => []),
+        api.get('/master-data/seasons?all=true').then((r) => unwrap(r.data)),
+        api.get('/factories').then((r) => unwrap(r.data)).catch(() => []),
+        api.get('/master-data/countries?all=true').then((r) => unwrap(r.data)),
+      ]);
+      setPoReportLookups({
+        retailers: retailers.map((r: any) => ({ id: r.id, name: r.name })),
+        buyers: buyers.map((b: any) => ({ id: b.id, name: b.name, code: b.code })),
+        agencies: agencies.map((a: any) => ({ id: a.id, name: a.name })),
+        seasons: seasons.map((s: any) => ({ id: s.id, name: s.name })),
+        factories: factoriesRes.map((f: any) => ({ id: f.id, name: f.name ?? f.company ?? `Factory #${f.id}` })),
+        countries: countries.map((c: any) => ({ id: c.id, name: c.name })),
+      });
+    } catch (e) {
+      console.error('Failed to load PO report lookups:', e);
+    }
+  };
+
   const fetchActiveTab = async () => {
+    if (activeTab === 'purchase-orders') {
+      // Driven by its own effect below.
+      return;
+    }
     setLoading(true);
     try {
       const params = buildParams();
@@ -445,11 +556,42 @@ export default function ReportsPage() {
     }
   };
 
+  const togglePoReportSort = (key: string) => {
+    if (poReportSortBy === key) {
+      setPoReportSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setPoReportSortBy(key);
+      setPoReportSortDir('desc');
+    }
+    setPoReportPage(1);
+  };
+
+  const togglePoReportSelect = (id: number) => {
+    setPoReportSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const togglePoReportSelectAll = () => {
+    setPoReportSelectedIds((prev) => {
+      const items = poReportData?.orders ?? [];
+      if (prev.size === items.length && items.length > 0) return new Set();
+      return new Set(items.map((o) => o.id));
+    });
+  };
+
   const handleExport = async () => {
     setExporting(true);
     try {
-      const params = { ...buildParams(), format: 'csv' };
+      const isPoReport = activeTab === 'purchase-orders';
+      const params = isPoReport
+        ? { ...buildPoReportParams(), format: 'csv' }
+        : { ...buildParams(), format: 'csv' };
       const endpointMap: Record<string, string> = {
+        'purchase-orders': '/reports/purchase-orders',
         'factory-wise': '/reports/factory-wise',
         'pending-shipments': '/reports/pending-shipments',
         'pending-samples': '/reports/pending-samples',
@@ -1099,16 +1241,22 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        {/* KPI Cards */}
-        {loading && !factoryWiseData && !pendingShipmentsData && !pendingSamplesData && !approvedSamplesData && !delayData ? (
-          <StatCardsSkeleton count={5} />
-        ) : (
-          renderKPICards()
+        {/* KPI Cards - hidden on the PO Reports tab which has its own KPI strip */}
+        {activeTab !== 'purchase-orders' && (
+          loading && !factoryWiseData && !pendingShipmentsData && !pendingSamplesData && !approvedSamplesData && !delayData ? (
+            <StatCardsSkeleton count={5} />
+          ) : (
+            renderKPICards()
+          )
         )}
 
         {/* Report Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v)} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
+            <TabsTrigger value="purchase-orders" className="text-xs sm:text-sm">
+              <Package className="mr-1.5 h-4 w-4 hidden sm:inline" />
+              Purchase Orders
+            </TabsTrigger>
             <TabsTrigger value="factory-wise" className="text-xs sm:text-sm">
               <Factory className="mr-1.5 h-4 w-4 hidden sm:inline" />
               Factory Wise
@@ -1130,6 +1278,130 @@ export default function ReportsPage() {
               Delay Reports
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="purchase-orders" className="space-y-4">
+            <POReportKPICards
+              summary={poReportData?.summary ?? null}
+              activeFilter={poReportKpiFilter}
+              onFilterClick={(k) => {
+                setPoReportKpiFilter(k);
+                setPoReportPage(1);
+              }}
+            />
+            <POReportFilterBar
+              filters={poReportFilters}
+              onFiltersChange={(next) => {
+                setPoReportFilters(next);
+                setPoReportPage(1);
+              }}
+              lookups={poReportLookups}
+              groupBy={poReportGroupBy}
+              onGroupByChange={setPoReportGroupBy}
+            />
+            {/* Bulk-action bar for selected POs */}
+            {poReportSelectedIds.size > 0 && (
+              <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3 animate-in slide-in-from-top-2">
+                <span className="text-sm font-medium">
+                  {poReportSelectedIds.size} PO{poReportSelectedIds.size > 1 ? 's' : ''} selected
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={() => {
+                    const selected = (poReportData?.orders ?? []).filter((o) => poReportSelectedIds.has(o.id));
+                    const csv = [
+                      ['PO Number', 'Status', 'PO Date', 'ETD', 'Retailer', 'Buyer', 'Agency', 'Quantity', 'Value', 'Currency'].join(','),
+                      ...selected.map((o) =>
+                        [
+                          o.po_number,
+                          o.status,
+                          o.po_date ?? '',
+                          o.etd_date ?? '',
+                          o.retailer_name ?? '',
+                          o.buyer_name ?? '',
+                          o.agency_name ?? '',
+                          o.total_quantity,
+                          o.total_value,
+                          o.currency_code ?? '',
+                        ]
+                          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+                          .join(','),
+                      ),
+                    ].join('\n');
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `purchase_orders_selected_${selected.length}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast.success(`Exported ${selected.length} POs.`);
+                  }}
+                >
+                  <FileDown className="mr-1 h-3.5 w-3.5" />
+                  Export Selected
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 ml-auto"
+                  onClick={() => setPoReportSelectedIds(new Set())}
+                >
+                  Clear
+                </Button>
+              </div>
+            )}
+
+            {loading && !poReportData ? (
+              <TableSkeleton columns={10} rows={8} />
+            ) : (
+              <POReportTableView
+                items={poReportData?.orders ?? []}
+                groupBy={poReportGroupBy}
+                selectedIds={poReportSelectedIds}
+                onToggleSelect={togglePoReportSelect}
+                onToggleSelectAll={togglePoReportSelectAll}
+                onOpenDetail={setPoReportDetailItem}
+                selectedDetailId={poReportDetailItem?.id ?? null}
+                sortBy={poReportSortBy}
+                sortDir={poReportSortDir}
+                onSort={togglePoReportSort}
+              />
+            )}
+
+            {/* Pagination for the PO report */}
+            {poReportData?.pagination && poReportData.pagination.last_page > 1 && (
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-sm text-muted-foreground">
+                  Showing page {poReportData.pagination.current_page} of {poReportData.pagination.last_page}
+                  {' · '}
+                  {poReportData.pagination.total.toLocaleString()} POs total
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={poReportPage <= 1}
+                    onClick={() => setPoReportPage((p) => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-sm font-medium">
+                    {poReportPage} / {poReportData.pagination.last_page}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={poReportPage >= poReportData.pagination.last_page}
+                    onClick={() => setPoReportPage((p) => p + 1)}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </TabsContent>
 
           {loading ? (
             <TableSkeleton columns={8} rows={8} />
@@ -1154,6 +1426,11 @@ export default function ReportsPage() {
           )}
         </Tabs>
       </div>
+
+      {/* Slide-in detail panel for the selected PO */}
+      {poReportDetailItem && (
+        <POReportDetailPanel item={poReportDetailItem} onClose={() => setPoReportDetailItem(null)} />
+      )}
     </DashboardLayout>
   );
 }

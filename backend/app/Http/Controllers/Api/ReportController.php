@@ -58,6 +58,20 @@ class ReportController extends Controller
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'status' => 'nullable|string',
             'importer_id' => 'nullable|exists:users,id',
+            'agency_id' => 'nullable|exists:users,id',
+            'buyer_id' => 'nullable|exists:buyers,id',
+            'retailer_id' => 'nullable|exists:retailers,id',
+            'season_id' => 'nullable|exists:seasons,id',
+            'country_id' => 'nullable|exists:countries,id',
+            'currency_id' => 'nullable|exists:currencies,id',
+            'factory_id' => 'nullable|exists:users,id',
+            'shipping_term' => 'nullable|in:FOB,DDP',
+            'etd_overdue' => 'nullable|boolean',
+            'search' => 'nullable|string|max:100',
+            'sort_by' => 'nullable|string',
+            'sort_dir' => 'nullable|in:asc,desc',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:200',
             'format' => 'nullable|string|in:json,csv,excel',
         ]);
 
@@ -68,10 +82,20 @@ class ReportController extends Controller
             ], 422);
         }
 
-        $filters = $request->only(['start_date', 'end_date', 'status', 'importer_id']);
-        $report = $this->reportService->getPurchaseOrderReport($user, $filters);
+        $filters = $request->only([
+            'start_date', 'end_date', 'status', 'importer_id', 'agency_id', 'buyer_id',
+            'retailer_id', 'season_id', 'country_id', 'currency_id', 'factory_id',
+            'shipping_term', 'etd_overdue', 'search', 'sort_by', 'sort_dir', 'page', 'per_page',
+        ]);
 
         $format = $request->input('format', 'json');
+
+        // CSV/Excel exports want every matching row, not a single page.
+        if (in_array($format, ['csv', 'excel'], true)) {
+            $filters['unpaginated'] = true;
+        }
+
+        $report = $this->reportService->getPurchaseOrderReport($user, $filters);
 
         if ($format === 'csv') {
             return $this->exportToCsv($report['orders'], 'purchase_orders_report.csv');

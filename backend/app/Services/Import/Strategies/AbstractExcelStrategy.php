@@ -186,6 +186,9 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
     /** Shape a mapped row as the frontend-expected style item. */
     protected function wrapStyleForFrontend(array $m): array
     {
+        $ihdRaw = $m['ihd'] ?? null;
+        $ihd = $ihdRaw !== null ? $this->normalizeDate((string) $ihdRaw) ?? $ihdRaw : null;
+
         return [
             'style_number' => ['value' => $m['style_number'] ?? null, 'status' => 'parsed', 'confidence' => 'high'],
             'description' => ['value' => $m['description'] ?? null, 'status' => 'parsed'],
@@ -194,11 +197,13 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
             'label' => ['value' => $m['label'] ?? null, 'status' => 'parsed'],
             'fabric' => ['value' => $m['fabric'] ?? null, 'status' => 'parsed'],
             'fit' => ['value' => $m['fit'] ?? null, 'status' => 'parsed'],
-            'size_breakdown' => $m['size_breakdown'] ?? null,
+            'notes' => ['value' => $m['notes'] ?? null, 'status' => 'parsed'],
+            'size_breakdown' => ['value' => $m['size_breakdown'] ?? null, 'status' => 'parsed'],
+            'pre_pack_inner' => ['value' => $m['pre_pack_inner'] ?? null, 'status' => 'parsed'],
             'quantity' => ['value' => $m['quantity'] ?? 0, 'status' => 'parsed', 'confidence' => 'high'],
             'unit_price' => ['value' => $m['unit_price'] ?? 0, 'status' => 'parsed', 'confidence' => 'high'],
             'packing' => ['value' => $m['packing'] ?? null, 'status' => 'parsed'],
-            'ihd' => ['value' => $m['ihd'] ?? null, 'status' => 'parsed'],
+            'ihd' => ['value' => $ihd, 'status' => 'parsed'],
             'images' => $m['images'] ?? [],
         ];
     }
@@ -280,15 +285,28 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
         return ['buy_sheet_number' => null, 'buy_sheet_name' => $cell];
     }
 
-    /** Scan top N rows for a label-adjacent value. Returns the first non-empty cell to the right / below the label. */
-    protected function findLabelledValue(array $allRows, string $label, int $maxRow = 15): ?string
+    /**
+     * Scan top N rows for a label-adjacent value. Returns the first non-empty cell to the right / below the label.
+     * Pass an array to try multiple label variants (e.g. `['BUYER APPROVALS REQUIRED', 'BUYER APPROVAL REQUIRED']`)
+     * for templates that aren't quite uniform across customers.
+     *
+     * @param string|array<string> $label
+     */
+    protected function findLabelledValue(array $allRows, $label, int $maxRow = 15): ?string
     {
-        $labelLc = strtolower($label);
+        $labels = is_array($label) ? $label : [$label];
+        $labelsLc = array_map(fn($l) => strtolower($l), $labels);
+
         foreach ($allRows as $r => $row) {
             if ($r > $maxRow) break;
             foreach ($row as $c => $cell) {
                 $str = strtolower(trim((string) $cell));
-                if ($str === '' || !str_contains($str, $labelLc)) continue;
+                if ($str === '') continue;
+                $matched = false;
+                foreach ($labelsLc as $needle) {
+                    if (str_contains($str, $needle)) { $matched = true; break; }
+                }
+                if (!$matched) continue;
                 // Try immediate right, then two right, then below
                 foreach ([[$r, $c + 1], [$r, $c + 2], [$r, $c + 3], [$r + 1, $c]] as [$rr, $cc]) {
                     $v = $allRows[$rr][$cc] ?? null;
@@ -301,8 +319,22 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
 
     protected function normalizeDate(?string $v): ?string
     {
-        if (!$v) return null;
+        if ($v === null) return null;
         $v = trim($v);
+        if ($v === '') return null;
+
+        // PhpSpreadsheet returns typed-date cells as numeric serials when toArray()
+        // is called with formatData=false. Translate before falling through to the
+        // string-format ladder so IHD / DATE SUBMITTED don't end up as "46070".
+        if (is_numeric($v) && (float) $v > 20000 && (float) $v < 80000) {
+            try {
+                $d = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $v);
+                return $d->format('Y-m-d');
+            } catch (\Throwable $e) {
+                // fall through to string parsing
+            }
+        }
+
         $formats = ['m/d/Y', 'm/d/y', 'n/j/Y', 'n/j/y', 'Y-m-d', 'd/m/Y', 'd-m-Y'];
         foreach ($formats as $f) {
             $d = \DateTimeImmutable::createFromFormat($f, $v);

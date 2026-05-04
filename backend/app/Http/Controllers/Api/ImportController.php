@@ -223,6 +223,17 @@ class ImportController extends Controller
                     );
                     $qty = (int) ($s['quantity'] ?? 0);
                     $price = (float) ($s['unit_price'] ?? 0);
+
+                    // Style-grid columns the SCI buy-sheet template carries that the
+                    // pivot doesn't have first-class columns for - parked in metadata
+                    // so they're preserved without widening the schema.
+                    $extraMeta = array_filter([
+                        'fabric' => $s['fabric'] ?? null,
+                        'fit' => $s['fit'] ?? null,
+                        'notes' => $s['notes'] ?? null,
+                        'pre_pack_inner' => $s['pre_pack_inner'] ?? null,
+                    ], fn ($v) => $v !== null && $v !== '');
+
                     // size_breakdown must be json_encode'd for the INSERT binding; the
                     // BuySheetStyle pivot's array cast decodes it on read.
                     $buySheet->styles()->syncWithoutDetaching([
@@ -233,6 +244,7 @@ class ImportController extends Controller
                             'packing' => $s['packing'] ?? null,
                             'label' => $s['label'] ?? null,
                             'ihd' => $s['ihd'] ?? null,
+                            'metadata' => !empty($extraMeta) ? json_encode($extraMeta) : null,
                         ],
                     ]);
                     $totalQty += $qty; $totalValue += $qty * $price; $created++;
