@@ -318,7 +318,9 @@ export function PdfImportDialog({
         const ph = result.parsed_data.po_header;
         header.po_number = ph.po_number?.value || '';
         header.po_date = ph.po_date?.value || new Date().toISOString().split('T')[0];
-        header.headline = '';
+        // Strategies that ship a parsed headline (e.g. Massive's MODEL/DESCRIPTION
+        // cell) get it pre-filled instead of leaving the user a blank box.
+        header.headline = (ph as any).headline?.value || '';
         header.retailer_id = ph.retailer_id?.value || '';
         header.season_id = ph.season_id?.value || '';
         header.currency_id = ph.currency_id?.value || masterData.currencies.find((c: any) => c.code === 'USD')?.id || '';
@@ -881,6 +883,9 @@ export function PdfImportDialog({
                         <Plus className="h-4 w-4" />
                       </Button>
                     </div>
+                    {headerForm._customer_name && getFieldStatus('retailer_id') === 'unrecognized' && (
+                      <p className="text-xs text-yellow-600">Retailer &quot;{headerForm._customer_name}&quot; not found in system. Click + to create.</p>
+                    )}
                   </div>
 
                   {/* Buyer */}

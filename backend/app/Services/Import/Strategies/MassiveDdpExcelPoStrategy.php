@@ -41,15 +41,25 @@ class MassiveDdpExcelPoStrategy extends AbstractExcelStrategy
 
     protected function extractDocumentMeta(Worksheet $sheet, array $allRows): array
     {
-        $contract = $this->findLabelledValue($allRows, 'CONTRACT#');
+        $contract = $this->findLabelledValue($allRows, ['CONTRACT#', 'CONTRACT #', 'CONTRACT NO']);
         $customer = $this->findLabelledValue($allRows, 'CUSTOMER');
-        $supplier = $this->findLabelledValue($allRows, 'SUPPLIER');
-        $model = $this->findLabelledValue($allRows, 'MODEL/DESCRIPTION');
-        $docDate = $this->findLabelledValue($allRows, 'DATE');
-        $inHouse = $this->findLabelledValue($allRows, 'IN-HOUSE')
-            ?? $this->findLabelledValue($allRows, 'DIRECT TO CONSOLIDATOR');
+        $supplier = $this->findLabelledValue($allRows, ['SUPPLIER', 'VENDOR']);
+        $model = $this->findLabelledValue($allRows, ['MODEL/DESCRIPTION', 'MODEL / DESCRIPTION', 'STYLE NAME']);
+        $docDate = $this->findLabelledValue($allRows, [
+            'DATE',
+            'PO DATE',
+            'ORDER DATE',
+            'ISSUE DATE',
+            'CONTRACT DATE',
+            'PO ISSUE DATE',
+        ]);
+        $inHouse = $this->findLabelledValue($allRows, ['IN-HOUSE', 'IN HOUSE', 'IHD'])
+            ?? $this->findLabelledValue($allRows, ['DIRECT TO CONSOLIDATOR', 'CONSOLIDATOR']);
         $etd = $this->findLabelledValue($allRows, 'ETD');
         $eta = $this->findLabelledValue($allRows, 'ETA');
+        $country = $this->findLabelledValue($allRows, [
+            'COUNTRY OF ORIGIN', 'COUNTRY', 'SUPPLIED BY', 'ORIGIN',
+        ]);
 
         return [
             'po_number' => $contract,
@@ -58,12 +68,15 @@ class MassiveDdpExcelPoStrategy extends AbstractExcelStrategy
             'retailer_name' => $customer,
             'vendor_name' => $supplier,
             'agent_name' => $supplier,
+            'headline' => $model,
             'additional_notes' => $model,
             'po_date' => $this->normalizeDate($docDate),
             'in_warehouse_date' => $this->normalizeDate($inHouse),
             'etd_date' => $this->normalizeDate($etd),
             'eta_date' => $this->normalizeDate($eta),
             'shipping_term' => 'DDP',
+            'currency_raw' => 'USD',
+            'country_of_origin' => $country,
         ];
     }
 
