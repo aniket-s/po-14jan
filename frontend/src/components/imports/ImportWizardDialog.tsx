@@ -20,6 +20,25 @@ import type { PdfAnalysisResult } from '@/types';
 
 type Step = 'type' | 'buyer' | 'buy-sheet' | 'upload' | 'review';
 
+// /imports/analyze returns po_header/styles/totals at the top level, but the
+// legacy PdfImportDialog (which we hand PO-kind imports off to) reads them from
+// a nested parsed_data wrapper. Adapt here so seedFromAnalysis populates fields.
+function toLegacyAnalysisShape(res: AnalyzeResponse): PdfAnalysisResult {
+  return {
+    success: res.success,
+    parsed_data: {
+      po_header: (res.po_header ?? {}) as PdfAnalysisResult['parsed_data']['po_header'],
+      styles: (res.styles ?? []) as PdfAnalysisResult['parsed_data']['styles'],
+      totals: (res.totals ?? { total_quantity: 0, total_value: 0 }) as PdfAnalysisResult['parsed_data']['totals'],
+    },
+    temp_file_path: res.temp_file_path,
+    warnings: res.warnings ?? [],
+    errors: res.errors ?? [],
+    raw_text: res.raw_text ?? '',
+    analysis_method: res.ai_usage ? 'claude_ai' : 'regex',
+  };
+}
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -287,7 +306,7 @@ export function ImportWizardDialog({
         }}
         masterData={masterData}
         onRefreshMasterData={onRefreshMasterData}
-        initialAnalysis={analysis as unknown as PdfAnalysisResult}
+        initialAnalysis={toLegacyAnalysisShape(analysis)}
         initialStep="review-header"
         lockedBuyerId={buyerId}
         buySheetHint={buySheet ? {
