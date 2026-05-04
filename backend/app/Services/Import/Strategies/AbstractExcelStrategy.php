@@ -33,6 +33,39 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
     public function documentKind(): string { return 'po'; }
     public function supportsBuySheetReference(): bool { return false; }
 
+    /**
+     * Cell text fragments that mark the boundary between the style grid and the
+     * Excel template's footer block. When any cell in a row contains one of
+     * these, row iteration stops - otherwise things like `SPECIAL NOTES/DETAILS`
+     * and `BUTTONS:` get hoovered up into the style-number column and turned
+     * into phantom style rows.
+     */
+    protected const FOOTER_KEYWORDS = [
+        'special notes', 'special instructions',
+        'buttons:', 'main label', 'hang tag', 'pre-tkting', 'pre-ticket',
+        'packing instruction', 'carton requirement', 'carton- height',
+        'customer requirement', 'customer rqrments',
+        'do not ship', 'deadmans fold', 'no staples',
+        'total pcs', 'grand total',
+        'accessories:', 'supplied by',
+        'direct to consolidator',
+    ];
+
+    /**
+     * Common per-size column labels found in the sub-header row beneath a
+     * merged "SIZE SPECIFICATIONS" cell. The order doesn't matter - only
+     * matching against the cell text does.
+     */
+    protected const SIZE_LABELS = [
+        'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL',
+        '2X', '3X', '4X', '5X', '6X', '7X',
+        '2XL', '3XL', '4XL', '5XL', '6XL', '7XL',
+        'OS', 'OSFA',
+    ];
+
+    /** @var array<int,string>|null Set during analyze() once the size sub-header is detected. */
+    private ?array $sizeColumnMap = null;
+
     /** @return array<string, string[]> */
     abstract protected function headerAliases(): array;
 
@@ -63,6 +96,17 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
 
             $fieldForColumn = $this->mapColumnsToFields($allRows[$headerRow]);
 
+            // The Massive template uses a merged "SIZE SPECIFICATIONS" header
+            // with S / M / L / XL labels in the row beneath. detectSizeColumnMap
+            // returns an empty array when no sub-header is present, so SCI's
+            // single-cell "SIZE SCALE / PREPACK" path stays untouched.
+            $this->sizeColumnMap = $this->detectSizeColumnMap($allRows, $headerRow);
+            // Where the sub-header sits, so iteration starts after it.
+            $sizeSubHeaderRow = !empty($this->sizeColumnMap)
+                ? $this->locateSizeSubHeader($allRows, $headerRow)
+                : null;
+            $firstDataRow = $sizeSubHeaderRow !== null ? $sizeSubHeaderRow + 1 : $headerRow + 1;
+
             // Extract images for row-based CAD preview
             $imageByRow = [];
             try {
@@ -78,12 +122,15 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
             $totalQty = 0;
             $totalValue = 0.0;
 
-            for ($i = $headerRow + 1; $i < count($allRows); $i++) {
+            for ($i = $firstDataRow; $i < count($allRows); $i++) {
                 $row = $allRows[$i];
                 if ($this->isEmptyRow($row)) continue;
 
+                // Hard stop at the template's footer block.
+                if ($this->isFooterRow($row)) break;
+
                 $mapped = $this->mapRow($row, $fieldForColumn);
-                if (empty($mapped['style_number'])) continue;
+                if (!$this->isUsableStyleRow($mapped)) continue;
 
                 // Attach CAD images (phpspreadsheet rows are 1-indexed)
                 $excelRow = $i + 1;
@@ -173,7 +220,116 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
         if (isset($mapped['unit_price'])) {
             $mapped['unit_price'] = (float) preg_replace('/[^0-9.]/', '', (string) $mapped['unit_price']);
         }
+
+        // Structured size_breakdown from per-size sub-header columns. When
+        // present, this overrides the single-cell text we may have captured
+        // via headerAliases (the merged "SIZE SPECIFICATIONS" cell carries no
+        // numeric data of its own). Sum-fallback fills quantity if the QTY
+        // column was empty.
+        if (!empty($this->sizeColumnMap)) {
+            $breakdown = [];
+            $sum = 0;
+            foreach ($this->sizeColumnMap as $colIdx => $sizeName) {
+                $raw = $row[$colIdx] ?? null;
+                if ($raw === null || $raw === '') continue;
+                $cleaned = preg_replace('/[^0-9.]/', '', (string) $raw);
+                if ($cleaned === '' || !is_numeric($cleaned)) continue;
+                $n = (int) round((float) $cleaned);
+                if ($n <= 0) continue;
+                $breakdown[$sizeName] = $n;
+                $sum += $n;
+            }
+            if (!empty($breakdown)) {
+                $mapped['size_breakdown'] = $breakdown;
+                if (empty($mapped['quantity'])) {
+                    $mapped['quantity'] = $sum;
+                }
+            }
+        }
+
         return $mapped;
+    }
+
+    /**
+     * Look at the 2 rows after the main header for size labels (S, M, L, XL,
+     * etc.). When at least 2 are found, build a column-index → size-name map
+     * so per-size cells can be read directly. Empty array when the template
+     * doesn't use a sub-header (e.g. SCI's free-text "SIZE SCALE / PREPACK").
+     *
+     * @return array<int,string>
+     */
+    protected function detectSizeColumnMap(array $allRows, int $headerRow): array
+    {
+        $candidates = array_map('strtoupper', self::SIZE_LABELS);
+
+        for ($probe = $headerRow + 1; $probe <= $headerRow + 2; $probe++) {
+            $row = $allRows[$probe] ?? null;
+            if ($row === null) continue;
+
+            $found = [];
+            foreach ($row as $colIdx => $cell) {
+                $txt = strtoupper(trim((string) $cell));
+                if ($txt === '') continue;
+                // Cells like "S/M/L" or noise sneak in - only accept exact
+                // matches against the known size labels.
+                if (in_array($txt, $candidates, true)) {
+                    $found[$colIdx] = $txt;
+                }
+            }
+            if (count($found) >= 2) {
+                return $found;
+            }
+        }
+        return [];
+    }
+
+    /** Returns the absolute row index where the size sub-header sits, or null. */
+    protected function locateSizeSubHeader(array $allRows, int $headerRow): ?int
+    {
+        $candidates = array_map('strtoupper', self::SIZE_LABELS);
+        for ($probe = $headerRow + 1; $probe <= $headerRow + 2; $probe++) {
+            $row = $allRows[$probe] ?? null;
+            if ($row === null) continue;
+            $hits = 0;
+            foreach ($row as $cell) {
+                $txt = strtoupper(trim((string) $cell));
+                if ($txt !== '' && in_array($txt, $candidates, true)) $hits++;
+            }
+            if ($hits >= 2) return $probe;
+        }
+        return null;
+    }
+
+    /** True if the row contains a known footer label - signals end-of-grid. */
+    protected function isFooterRow(array $row): bool
+    {
+        foreach ($row as $cell) {
+            if ($cell === null) continue;
+            $txt = strtolower(trim((string) $cell));
+            if ($txt === '') continue;
+            foreach (self::FOOTER_KEYWORDS as $kw) {
+                if (str_contains($txt, $kw)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Reject rows where the parser snagged something footer-shaped in the
+     * style-number column. Real style codes don't have spaces or trailing
+     * colons, and almost always include at least one digit.
+     */
+    protected function isUsableStyleRow(array $mapped): bool
+    {
+        $sn = $mapped['style_number'] ?? null;
+        if ($sn === null || $sn === '') return false;
+        $sn = trim((string) $sn);
+        if ($sn === '') return false;
+        if (str_ends_with($sn, ':')) return false;
+        // "SPECIAL NOTES/DETAILS" has internal spaces and matches no style code.
+        if (preg_match('/\s/', $sn)) return false;
+        if (!preg_match('/\d/', $sn)) return false;
+        return true;
     }
 
     protected function isEmptyRow(array $row): bool
