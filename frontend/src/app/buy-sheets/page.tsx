@@ -3,14 +3,14 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Plus, FileUp } from 'lucide-react';
+import { Search, FileUp, AlertTriangle, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { ImportWizardDialog } from '@/components/imports/ImportWizardDialog';
 import type { BuySheetSummary } from '@/components/imports/types';
@@ -18,9 +18,11 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function BuySheetsPage() {
   const { can } = useAuth();
+  const router = useRouter();
   const [sheets, setSheets] = useState<BuySheetSummary[]>([]);
   const [buyers, setBuyers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [buyerFilter, setBuyerFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -37,6 +39,7 @@ export default function BuySheetsPage() {
 
   const fetchSheets = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const params: any = { per_page: 50 };
       if (search) params.search = search;
@@ -44,8 +47,18 @@ export default function BuySheetsPage() {
       if (statusFilter !== 'all') params.status = statusFilter;
       const res = await api.get('/buy-sheets', { params });
       setSheets(res.data?.data ?? res.data ?? []);
-    } catch {
+    } catch (e: any) {
       setSheets([]);
+      const status = e?.response?.status;
+      if (status === 403) {
+        setErrorMessage(
+          'You do not have the buy_sheet.view permission. Run `php artisan migrate` on the backend to apply the migration that grants this permission, or ask an admin to grant it to your role.',
+        );
+      } else if (status === 401) {
+        setErrorMessage('Your session has expired. Please log in again.');
+      } else {
+        setErrorMessage(e?.response?.data?.message || e?.message || 'Failed to load buy sheets.');
+      }
     } finally {
       setLoading(false);
     }
@@ -110,6 +123,13 @@ export default function BuySheetsPage() {
           </Select>
         </div>
 
+        {errorMessage && (
+          <div className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+            <div className="text-sm text-red-800 dark:text-red-300">{errorMessage}</div>
+          </div>
+        )}
+
         <div className="border rounded-md">
           <Table>
             <TableHeader>
@@ -122,26 +142,34 @@ export default function BuySheetsPage() {
                 <TableHead className="text-right">Styles</TableHead>
                 <TableHead className="text-right">Units</TableHead>
                 <TableHead>Date</TableHead>
+                <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
               ) : sheets.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No buy sheets yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                  {errorMessage ? 'Could not load buy sheets — see message above.' : 'No buy sheets yet.'}
+                </TableCell></TableRow>
               ) : (
                 sheets.map((s) => (
-                  <TableRow key={s.id} className="cursor-pointer hover:bg-muted/40">
-                    <TableCell className="font-mono font-medium">
-                      <Link href={`/buy-sheets/${s.id}`}>{s.buy_sheet_number}</Link>
-                    </TableCell>
+                  <TableRow
+                    key={s.id}
+                    className="cursor-pointer hover:bg-muted/40"
+                    onClick={() => router.push(`/buy-sheets/${s.id}`)}
+                  >
+                    <TableCell className="font-mono font-medium text-primary">{s.buy_sheet_number}</TableCell>
                     <TableCell>{s.name ?? <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell>{s.buyer?.name ?? '—'}</TableCell>
                     <TableCell>{s.retailer?.name ?? '—'}</TableCell>
                     <TableCell>{statusBadge(s.status)}</TableCell>
                     <TableCell className="text-right">{s.total_styles}</TableCell>
-                    <TableCell className="text-right">{s.total_quantity.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{Number(s.total_quantity ?? 0).toLocaleString()}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{s.date_submitted ?? '—'}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <ChevronRight className="h-4 w-4" />
+                    </TableCell>
                   </TableRow>
                 ))
               )}
