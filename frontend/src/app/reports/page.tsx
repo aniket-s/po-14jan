@@ -49,6 +49,7 @@ import { POReportTableView } from '@/components/reports/po/POReportTableView';
 import { POReportDetailPanel } from '@/components/reports/po/POReportDetailPanel';
 import {
   DEFAULT_PO_REPORT_FILTERS,
+  normalizePOReportResponse,
   type POReportFilters,
   type POReportGroupBy,
   type POReportItem,
@@ -475,8 +476,8 @@ export default function ReportsPage() {
   const fetchPoReport = async () => {
     setLoading(true);
     try {
-      const res = await api.get<POReportResponse>('/reports/purchase-orders', { params: buildPoReportParams() });
-      setPoReportData(res.data);
+      const res = await api.get('/reports/purchase-orders', { params: buildPoReportParams() });
+      setPoReportData(normalizePOReportResponse(res.data));
     } catch (e) {
       console.error('Failed to fetch PO report:', e);
       toast.error('Failed to load purchase orders report.');

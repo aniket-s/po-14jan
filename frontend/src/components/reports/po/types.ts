@@ -101,6 +101,80 @@ export interface POReportResponse {
   pagination?: POReportPagination;
 }
 
+const EMPTY_SAMPLE_SUMMARY: POReportSampleSummary = { pending: 0, approved: 0, rejected: 0, total: 0 };
+const EMPTY_PRODUCTION_SUMMARY: POReportProductionSummary = { not_started: 0, in_progress: 0, completed: 0, total: 0 };
+const EMPTY_SHIPMENT_SUMMARY: POReportShipmentSummary = { preparing: 0, in_transit: 0, delivered: 0, overdue: 0, total: 0 };
+const EMPTY_QUALITY_SUMMARY: POReportQualitySummary = { passed: 0, failed: 0, pending: 0, total: 0 };
+
+// Defensive normalization at the API boundary - older backend responses (or
+// rows that pre-date the aggregation join) may not carry every field. This
+// keeps the table/detail-panel from null-deref crashing when that happens.
+export function normalizePOReportItem(raw: any): POReportItem {
+  return {
+    id: raw?.id,
+    po_number: raw?.po_number ?? '',
+    headline: raw?.headline ?? null,
+    status: raw?.status ?? 'draft',
+    po_date: raw?.po_date ?? null,
+    etd_date: raw?.etd_date ?? null,
+    eta_date: raw?.eta_date ?? null,
+    ex_factory_date: raw?.ex_factory_date ?? null,
+    in_warehouse_date: raw?.in_warehouse_date ?? null,
+    shipping_term: raw?.shipping_term ?? null,
+    total_quantity: Number(raw?.total_quantity ?? 0),
+    total_value: Number(raw?.total_value ?? 0),
+    currency_id: raw?.currency_id ?? null,
+    currency_code: raw?.currency_code ?? null,
+    currency_symbol: raw?.currency_symbol ?? null,
+    styles_count: Number(raw?.styles_count ?? 0),
+    importer_id: raw?.importer_id ?? null,
+    importer_name: raw?.importer_name ?? null,
+    agency_id: raw?.agency_id ?? null,
+    agency_name: raw?.agency_name ?? null,
+    buyer_id: raw?.buyer_id ?? null,
+    buyer_name: raw?.buyer_name ?? null,
+    buyer_code: raw?.buyer_code ?? null,
+    retailer_id: raw?.retailer_id ?? null,
+    retailer_name: raw?.retailer_name ?? null,
+    season_id: raw?.season_id ?? null,
+    season_name: raw?.season_name ?? null,
+    country_id: raw?.country_id ?? null,
+    country_name: raw?.country_name ?? null,
+    warehouse_id: raw?.warehouse_id ?? null,
+    warehouse_name: raw?.warehouse_name ?? null,
+    buy_sheet_id: raw?.buy_sheet_id ?? null,
+    buy_sheet_number: raw?.buy_sheet_number ?? null,
+    etd_status: (raw?.etd_status ?? 'none') as POEtdStatus,
+    samples_summary: { ...EMPTY_SAMPLE_SUMMARY, ...(raw?.samples_summary ?? {}) },
+    production_summary: { ...EMPTY_PRODUCTION_SUMMARY, ...(raw?.production_summary ?? {}) },
+    shipments_summary: { ...EMPTY_SHIPMENT_SUMMARY, ...(raw?.shipments_summary ?? {}) },
+    quality_summary: { ...EMPTY_QUALITY_SUMMARY, ...(raw?.quality_summary ?? {}) },
+    factories: Array.isArray(raw?.factories) ? raw.factories : [],
+  };
+}
+
+export function normalizePOReportResponse(raw: any): POReportResponse {
+  return {
+    summary: {
+      total_orders: Number(raw?.summary?.total_orders ?? 0),
+      total_value: Number(raw?.summary?.total_value ?? 0),
+      total_quantity: Number(raw?.summary?.total_quantity ?? 0),
+      by_status: raw?.summary?.by_status ?? {},
+      overdue_etd: Number(raw?.summary?.overdue_etd ?? 0),
+      upcoming_etd: Number(raw?.summary?.upcoming_etd ?? 0),
+    },
+    orders: Array.isArray(raw?.orders) ? raw.orders.map(normalizePOReportItem) : [],
+    pagination: raw?.pagination
+      ? {
+          current_page: Number(raw.pagination.current_page ?? 1),
+          per_page: Number(raw.pagination.per_page ?? 25),
+          total: Number(raw.pagination.total ?? 0),
+          last_page: Number(raw.pagination.last_page ?? 1),
+        }
+      : undefined,
+  };
+}
+
 export interface POReportFilters {
   search: string;
   status: string;
