@@ -413,7 +413,11 @@ function GroupBlock({
   return (
     <>
       {showHeader && (
-        <TableRow className="bg-muted/40 hover:bg-muted/60 cursor-pointer" onClick={onToggle}>
+        <TableRow
+          key={`${group.key}-header`}
+          className="bg-muted/40 hover:bg-muted/60 cursor-pointer"
+          onClick={onToggle}
+        >
           <TableCell colSpan={3}>
             <div className="flex items-center gap-2">
               {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -439,12 +443,16 @@ function GroupBlock({
       )}
 
       {!isCollapsed &&
-        group.rows.map((item) => {
+        group.rows.map((item, idx) => {
           const isSelected = selectedDetailId === item.id;
           const checked = selectedIds.has(item.id);
+          // Fall back to a positional key so a row missing its id (defensive
+          // against unexpected backend payloads) doesn't trigger React's
+          // "each child should have a unique key" warning.
+          const rowKey = item.id != null ? `po-${item.id}` : `${group.key}-row-${idx}`;
           return (
             <TableRow
-              key={item.id}
+              key={rowKey}
               className={cn(
                 'cursor-pointer transition-colors',
                 isSelected && 'bg-primary/5 hover:bg-primary/10',
