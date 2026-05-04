@@ -8,6 +8,7 @@ use App\Models\Currency;
 use App\Models\PaymentTerm;
 use App\Models\Retailer;
 use App\Models\Season;
+use App\Models\User;
 use App\Services\ExcelImageExtractionService;
 use App\Services\Import\Contracts\PoImportStrategy;
 use App\Services\Import\DTO\ParsedDocument;
@@ -227,7 +228,7 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
             'retailer_name', 'buyer_name', 'customer_name', 'vendor_name', 'agent_name',
             'shipping_term', 'currency_raw', 'season_raw', 'country_of_origin',
             'ship_to', 'ship_to_address', 'packing_method', 'packing_guidelines',
-            'other_terms', 'additional_notes',
+            'other_terms', 'additional_notes', 'headline', 'payment_terms_raw',
         ] as $f) {
             $h[$f] = $wrap($meta[$f] ?? null);
         }
@@ -259,6 +260,35 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
         }
         $header['country_id'] = $fuzzyMatch(Country::class, 'name', $meta['country_of_origin'] ?? null);
         $header['payment_term_id'] = $fuzzyMatch(PaymentTerm::class, 'name', $meta['payment_terms_raw'] ?? null);
+
+        // "Agent" on a PO maps to a User row with the Agency role - the supplier
+        // name extracted from the spreadsheet is matched against User.name first,
+        // then User.company so e.g. "CRYSTAL APPAREL" finds either form.
+        $header['agency_id'] = $this->matchAgencyUser($meta['agent_name'] ?? null);
+    }
+
+    /** Match an extracted supplier/agent string against existing Agency users. */
+    protected function matchAgencyUser(?string $raw): array
+    {
+        if (!$raw) return ['value' => null, 'status' => 'missing'];
+        $clean = trim($raw);
+
+        $base = User::role('Agency');
+        $exact = (clone $base)->where(function ($q) use ($clean) {
+            $q->where('name', $clean)->orWhere('company', $clean);
+        })->first();
+        if ($exact) {
+            return ['value' => $exact->id, 'raw_text' => $raw, 'status' => 'matched', 'confidence' => 'high'];
+        }
+
+        $like = (clone $base)->where(function ($q) use ($clean) {
+            $q->where('name', 'LIKE', "%{$clean}%")->orWhere('company', 'LIKE', "%{$clean}%");
+        })->first();
+        if ($like) {
+            return ['value' => $like->id, 'raw_text' => $raw, 'status' => 'matched', 'confidence' => 'medium'];
+        }
+
+        return ['value' => null, 'raw_text' => $raw, 'status' => 'unrecognized', 'confidence' => 'low'];
     }
 
     protected function resolveSailingDays(array $header): ?int
@@ -286,13 +316,14 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
     }
 
     /**
-     * Scan top N rows for a label-adjacent value. Returns the first non-empty cell to the right / below the label.
-     * Pass an array to try multiple label variants (e.g. `['BUYER APPROVALS REQUIRED', 'BUYER APPROVAL REQUIRED']`)
+     * Scan the top N rows for a label-adjacent value. Returns the first non-empty
+     * neighbouring cell (right / down / left). Pass an array to try multiple label
+     * variants (e.g. `['BUYER APPROVALS REQUIRED', 'BUYER APPROVAL REQUIRED']`)
      * for templates that aren't quite uniform across customers.
      *
      * @param string|array<string> $label
      */
-    protected function findLabelledValue(array $allRows, $label, int $maxRow = 15): ?string
+    protected function findLabelledValue(array $allRows, $label, int $maxRow = 25): ?string
     {
         $labels = is_array($label) ? $label : [$label];
         $labelsLc = array_map(fn($l) => strtolower($l), $labels);
@@ -307,10 +338,31 @@ abstract class AbstractExcelStrategy implements PoImportStrategy
                     if (str_contains($str, $needle)) { $matched = true; break; }
                 }
                 if (!$matched) continue;
-                // Try immediate right, then two right, then below
-                foreach ([[$r, $c + 1], [$r, $c + 2], [$r, $c + 3], [$r + 1, $c]] as [$rr, $cc]) {
+                // Probe right (1-4 cells), then below, then left (1-3 cells).
+                // Right-leaning templates dominate but Massive's header puts
+                // the value cell to the right with a few merged spacers in
+                // between, hence the wider right reach.
+                foreach ([
+                    [$r, $c + 1], [$r, $c + 2], [$r, $c + 3], [$r, $c + 4],
+                    [$r + 1, $c], [$r + 1, $c + 1],
+                    [$r, $c - 1], [$r, $c - 2], [$r, $c - 3],
+                ] as [$rr, $cc]) {
+                    if ($cc < 0) continue;
                     $v = $allRows[$rr][$cc] ?? null;
-                    if ($v !== null && trim((string) $v) !== '') return (string) $v;
+                    if ($v === null) continue;
+                    $vStr = trim((string) $v);
+                    if ($vStr === '') continue;
+                    // Skip cells that look like another label (end with `:`) or
+                    // contain the same label substring - both would shadow the
+                    // real value cell we're after.
+                    if (str_ends_with($vStr, ':')) continue;
+                    $vLc = strtolower($vStr);
+                    $isAnotherLabel = false;
+                    foreach ($labelsLc as $needle) {
+                        if (str_contains($vLc, $needle)) { $isAnotherLabel = true; break; }
+                    }
+                    if ($isAnotherLabel) continue;
+                    return $vStr;
                 }
             }
         }

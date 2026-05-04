@@ -42,13 +42,28 @@ class MassiveFobExcelPoStrategy extends AbstractExcelStrategy
 
     protected function extractDocumentMeta(Worksheet $sheet, array $allRows): array
     {
-        $contract = $this->findLabelledValue($allRows, 'CONTRACT#');
+        $contract = $this->findLabelledValue($allRows, ['CONTRACT#', 'CONTRACT #', 'CONTRACT NO']);
         $customer = $this->findLabelledValue($allRows, 'CUSTOMER');
-        $supplier = $this->findLabelledValue($allRows, 'SUPPLIER');
-        $model = $this->findLabelledValue($allRows, 'MODEL/DESCRIPTION');
-        $docDate = $this->findLabelledValue($allRows, 'DATE');
-        $consolidator = $this->findLabelledValue($allRows, 'DIRECT TO CONSOLIDATOR');
+        $supplier = $this->findLabelledValue($allRows, ['SUPPLIER', 'VENDOR']);
+        $model = $this->findLabelledValue($allRows, ['MODEL/DESCRIPTION', 'MODEL / DESCRIPTION', 'STYLE NAME']);
+        // The Massive template puts the issue date under a plain "DATE" label,
+        // but other variants of the template call it "PO DATE" / "ISSUE DATE" /
+        // "ORDER DATE". Try all of them so we don't fall back to today's date.
+        $docDate = $this->findLabelledValue($allRows, [
+            'DATE',
+            'PO DATE',
+            'ORDER DATE',
+            'ISSUE DATE',
+            'CONTRACT DATE',
+            'PO ISSUE DATE',
+        ]);
+        $consolidator = $this->findLabelledValue($allRows, ['DIRECT TO CONSOLIDATOR', 'CONSOLIDATOR']);
         $fobPrice = $this->findLabelledValue($allRows, 'FOB');
+        // The accessory "SUPPLIED BY: INDIA" cell is the only country signal in
+        // this template - take it as country of origin so the form auto-resolves.
+        $country = $this->findLabelledValue($allRows, [
+            'COUNTRY OF ORIGIN', 'COUNTRY', 'SUPPLIED BY', 'ORIGIN',
+        ]);
 
         return [
             'po_number' => $contract,
@@ -57,10 +72,16 @@ class MassiveFobExcelPoStrategy extends AbstractExcelStrategy
             'retailer_name' => $customer,
             'vendor_name' => $supplier,
             'agent_name' => $supplier,
+            'headline' => $model,
             'additional_notes' => $model,
             'po_date' => $this->normalizeDate($docDate),
             'fob_date' => $this->normalizeDate($consolidator),
             'shipping_term' => 'FOB',
+            // Massive's template hard-codes USD pricing (the FOB cell uses a $
+            // sign), so seed currency_raw rather than letting it default silently
+            // to USD on the frontend without a "matched" status.
+            'currency_raw' => 'USD',
+            'country_of_origin' => $country,
             'fob_price_raw' => $fobPrice,
         ];
     }
