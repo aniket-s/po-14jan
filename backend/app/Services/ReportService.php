@@ -567,11 +567,14 @@ class ReportService
     private function aggregateSamplesByPo(array $poIds): array
     {
         if (empty($poIds)) return [];
+        // The pivot's PO foreign key is purchase_order_id (Laravel default for
+        // a belongsToMany on PurchaseOrder). Alias to po_id here so the loop
+        // body below reads naturally.
         $rows = DB::table('samples')
             ->join('purchase_order_style', 'purchase_order_style.style_id', '=', 'samples.style_id')
-            ->select('purchase_order_style.po_id', 'samples.final_status', DB::raw('count(*) as cnt'))
-            ->whereIn('purchase_order_style.po_id', $poIds)
-            ->groupBy('purchase_order_style.po_id', 'samples.final_status')
+            ->select('purchase_order_style.purchase_order_id as po_id', 'samples.final_status', DB::raw('count(*) as cnt'))
+            ->whereIn('purchase_order_style.purchase_order_id', $poIds)
+            ->groupBy('purchase_order_style.purchase_order_id', 'samples.final_status')
             ->get();
 
         $out = [];
@@ -591,9 +594,9 @@ class ReportService
     {
         if (empty($poIds)) return [];
         $rows = DB::table('purchase_order_style')
-            ->select('po_id', 'status', DB::raw('count(*) as cnt'))
-            ->whereIn('po_id', $poIds)
-            ->groupBy('po_id', 'status')
+            ->select('purchase_order_id as po_id', 'status', DB::raw('count(*) as cnt'))
+            ->whereIn('purchase_order_id', $poIds)
+            ->groupBy('purchase_order_id', 'status')
             ->get();
 
         $out = [];
@@ -649,9 +652,9 @@ class ReportService
 
         $rows = DB::table('quality_inspections')
             ->join('purchase_order_style', 'purchase_order_style.style_id', '=', 'quality_inspections.style_id')
-            ->select('purchase_order_style.po_id', 'quality_inspections.result', DB::raw('count(*) as cnt'))
-            ->whereIn('purchase_order_style.po_id', $poIds)
-            ->groupBy('purchase_order_style.po_id', 'quality_inspections.result')
+            ->select('purchase_order_style.purchase_order_id as po_id', 'quality_inspections.result', DB::raw('count(*) as cnt'))
+            ->whereIn('purchase_order_style.purchase_order_id', $poIds)
+            ->groupBy('purchase_order_style.purchase_order_id', 'quality_inspections.result')
             ->get();
 
         $out = [];
