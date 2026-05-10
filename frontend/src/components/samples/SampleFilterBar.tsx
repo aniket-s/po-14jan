@@ -110,6 +110,20 @@ export function SampleFilterBar({
         </SelectContent>
       </Select>
 
+      {/* Sort */}
+      <Select
+        value={filters.sort ?? 'ex_factory_asc'}
+        onValueChange={(value) => onFiltersChange({ ...filters, sort: value as 'ex_factory_asc' | 'created_desc' })}
+      >
+        <SelectTrigger className="w-[200px] h-9">
+          <SelectValue placeholder="Sort by" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ex_factory_asc">Ex-Factory (most urgent first)</SelectItem>
+          <SelectItem value="created_desc">Newest submissions first</SelectItem>
+        </SelectContent>
+      </Select>
+
       {/* Quick filter button */}
       {hasQuickFilter && onQuickFilter && (
         <Button

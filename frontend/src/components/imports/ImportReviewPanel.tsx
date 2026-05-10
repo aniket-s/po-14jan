@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertTriangle, CheckCircle, Loader2, Trash2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { AnalyzeResponse, BuySheetSummary, ImportStrategy } from './types';
+import { isWednesday, nearestWednesdaysAround, formatDate } from '@/lib/dateUtils';
 
 interface Props {
   strategy: ImportStrategy;
@@ -293,6 +294,7 @@ export function ImportReviewPanel({
                 <TableHead className="w-[90px]">Color</TableHead>
                 <TableHead className="w-[80px]">Qty</TableHead>
                 <TableHead className="w-[90px]">Unit Price</TableHead>
+                {isBuySheet && <TableHead className="w-[200px]">IHD</TableHead>}
                 <TableHead className="w-[40px]" />
               </TableRow>
             </TableHeader>
@@ -314,6 +316,14 @@ export function ImportReviewPanel({
                   <TableCell>
                     <Input type="number" step="0.01" value={s.unit_price ?? 0} onChange={(e) => updateStyle(i, 'unit_price', Number(e.target.value))} className="h-8" />
                   </TableCell>
+                  {isBuySheet && (
+                    <TableCell>
+                      <IhdField
+                        value={s.ihd ?? ''}
+                        onChange={(v) => updateStyle(i, 'ihd', v)}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeStyle(i)}>
                       <Trash2 className="h-4 w-4" />
@@ -366,6 +376,51 @@ function Field({
       </Label>
       {children}
       {error && <p className="text-xs text-red-600 mt-0.5">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * IHD date input that warns when the chosen date isn't a Wednesday and lets
+ * the user snap to the nearest Wednesday before or after. The original date
+ * is allowed to stand if the user dismisses the suggestion.
+ */
+function IhdField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const showWarning = !!value && !isWednesday(value);
+  const { previous, next } = nearestWednesdaysAround(value);
+  return (
+    <div className="space-y-1">
+      <Input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-8"
+      />
+      {showWarning && (
+        <div className="text-[11px] text-amber-700 dark:text-amber-400 space-y-0.5">
+          <div>Not a Wednesday. Use:</div>
+          <div className="flex gap-2 flex-wrap">
+            {previous && (
+              <button
+                type="button"
+                className="underline hover:text-amber-900 dark:hover:text-amber-300"
+                onClick={() => onChange(previous)}
+              >
+                Wed {formatDate(previous, '')} (before)
+              </button>
+            )}
+            {next && (
+              <button
+                type="button"
+                className="underline hover:text-amber-900 dark:hover:text-amber-300"
+                onClick={() => onChange(next)}
+              >
+                Wed {formatDate(next, '')} (after)
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

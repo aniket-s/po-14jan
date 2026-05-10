@@ -402,7 +402,8 @@ class FactoryAssignmentController extends Controller
             });
         }
 
-        // Factories see the earliest ex-factory first; others default to newest
+        // Factories see the earliest factory-agreed ex-factory first (no
+        // fallback to the buyer's PO ex-factory). Others default to newest
         // assignment first.
         if ($isFactory) {
             $query->leftJoin('purchase_order_style as pos', function ($join) {
@@ -410,8 +411,8 @@ class FactoryAssignmentController extends Controller
                     ->on('pos.style_id', '=', 'factory_assignments.style_id')
                     ->on('pos.assigned_factory_id', '=', 'factory_assignments.factory_id');
             })
-            ->orderByRaw('COALESCE(pos.factory_ex_factory_date, pos.ex_factory_date) IS NULL')
-            ->orderByRaw('COALESCE(pos.factory_ex_factory_date, pos.ex_factory_date) ASC')
+            ->orderByRaw('pos.factory_ex_factory_date IS NULL')
+            ->orderByRaw('pos.factory_ex_factory_date ASC')
             ->orderBy('factory_assignments.created_at', 'desc')
             ->select('factory_assignments.*');
         } else {
@@ -452,7 +453,7 @@ class FactoryAssignmentController extends Controller
 
         $enriched = $items->map(function ($a) use ($pivots, $samples, $sampleTypes, $isFactory) {
             $pivot = $pivots->get($a->purchase_order_id.'-'.$a->style_id.'-'.$a->factory_id);
-            $factoryExFactoryDate = $pivot->factory_ex_factory_date ?? $pivot->ex_factory_date ?? null;
+            $factoryExFactoryDate = $pivot->factory_ex_factory_date ?? null;
             $factoryPoDate = $pivot->assigned_at ?? null;
 
             // Approvals grid: one entry per active sample type, with the most

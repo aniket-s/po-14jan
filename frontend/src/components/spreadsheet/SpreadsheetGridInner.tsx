@@ -16,6 +16,7 @@ import '@glideapps/glide-data-grid/dist/index.css';
 
 import { SpreadsheetRow, SpreadsheetSelection, SpreadsheetColumnDef } from '@/types/spreadsheet';
 import { SPREADSHEET_COLUMNS, colIndexToLetter, cellAddress } from './hooks/useSpreadsheetColumns';
+import { formatDate } from '@/lib/dateUtils';
 
 /** Excel-like green theme */
 const EXCEL_THEME: Partial<Theme> = {
@@ -149,7 +150,7 @@ export default function SpreadsheetGridInner({
           return {
             kind: GridCellKind.Text,
             data: str,
-            displayData: str ? new Date(str + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '',
+            displayData: str ? formatDate(str + 'T00:00:00', '') : '',
             allowOverlay: editable,
             readonly: !editable,
           };

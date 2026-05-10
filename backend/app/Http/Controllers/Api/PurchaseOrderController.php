@@ -1220,31 +1220,32 @@ class PurchaseOrderController extends Controller
             $isFactory = $user && $user->hasRole('Factory');
 
             if ($isFactory) {
-                // One schedule per style, anchored to the factory's ex-factory
-                // date from the pivot. Styles with no factory ex-factory date
-                // are reported separately so the caller can render them as
-                // "not yet scheduled".
+                // One schedule per style, anchored to the Factory PO Date
+                // (pivot.assigned_at). Styles without an assigned_at are
+                // reported with schedule=null so the caller can render them
+                // as "not yet scheduled".
                 $perStyle = [];
                 foreach ($po->styles as $style) {
                     if ($style->pivot->assigned_factory_id != $user->id) {
                         continue;
                     }
-                    $factoryExFactory = $style->pivot->factory_ex_factory_date
-                        ?? $style->pivot->ex_factory_date;
+                    $factoryPoDate = $style->pivot->assigned_at;
+                    $factoryExFactory = $style->pivot->factory_ex_factory_date;
                     $perStyle[] = [
                         'style_id' => $style->id,
                         'style_number' => $style->style_number,
                         'description' => $style->description,
+                        'factory_po_date' => $factoryPoDate?->format('Y-m-d'),
                         'factory_ex_factory_date' => $factoryExFactory?->format('Y-m-d'),
-                        'schedule' => $factoryExFactory
-                            ? $scheduleService->generateScheduleFromExFactory($factoryExFactory)
+                        'schedule' => $factoryPoDate
+                            ? $scheduleService->generateScheduleFromFactoryPoDate($factoryPoDate)
                             : null,
                     ];
                 }
 
                 return response()->json([
                     'po_number' => $po->po_number,
-                    'mode' => 'factory_ex_factory_anchored',
+                    'mode' => 'factory_po_date_anchored',
                     'per_style_schedules' => $perStyle,
                 ]);
             }

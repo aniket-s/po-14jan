@@ -223,6 +223,36 @@ class Sample extends Model
     }
 
     /**
+     * Persist files an approver attached when reviewing the sample. Stored in
+     * metadata under "{$role}_approval_files" so reviewers can later see what
+     * the approver/rejecter uploaded.
+     *
+     * @param string $role  one of 'agency', 'importer', 'importer_on_behalf'
+     * @param array  $images       array of image URLs
+     * @param array  $attachments  array of document URLs
+     */
+    public function recordApprovalAttachments(string $role, array $images, array $attachments): void
+    {
+        if (empty($images) && empty($attachments)) {
+            return;
+        }
+
+        $metadata = $this->metadata ?? [];
+        $bucket = $metadata["{$role}_approval_files"] ?? [];
+
+        foreach ($images as $url) {
+            $bucket[] = ['url' => $url, 'type' => 'image', 'uploaded_at' => now()->toIso8601String()];
+        }
+        foreach ($attachments as $url) {
+            $bucket[] = ['url' => $url, 'type' => 'document', 'uploaded_at' => now()->toIso8601String()];
+        }
+
+        $metadata["{$role}_approval_files"] = $bucket;
+        $this->metadata = $metadata;
+        $this->save();
+    }
+
+    /**
      * Update final status based on agency + importer approvals
      */
     private function updateFinalStatus(): void

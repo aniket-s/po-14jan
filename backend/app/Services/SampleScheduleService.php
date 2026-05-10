@@ -92,23 +92,8 @@ class SampleScheduleService
     }
 
     /**
-     * Generate a sample schedule anchored entirely to a factory ex-factory date.
-     *
-     * Used for factory users: when the agency assigns a PO to a factory, it
-     * provides a factory ex-factory date; all milestones are computed as
-     * offsets from that single anchor so the factory's timeline is independent
-     * of the buyer PO date and shipping ETD.
-     *
-     * Offsets preserve the spacing of the PO-based schedule assuming a 40-day
-     * PO→ETD lead time and a 7-day ETD→ex-factory buffer:
-     * - Lab Dip:          ex_factory − 53
-     * - Fit Samples:      ex_factory − 53
-     * - Trim Approvals:   ex_factory − 50
-     * - 1st Proto:        ex_factory − 50
-     * - Bulk Fabric:      ex_factory − 40
-     * - PP Sample:        ex_factory − 35
-     * - Production Start: ex_factory − 30
-     * - TOP Approval:     ex_factory − 10
+     * @deprecated Use generateScheduleFromFactoryPoDate(). Retained until all
+     * callers migrate to the factory-PO-date anchor.
      *
      * @param Carbon|string $factoryExFactoryDate
      * @return array
@@ -138,6 +123,54 @@ class SampleScheduleService
                 'description' => "{$daysBefore} days before Ex-Factory",
                 'days_before_ex_factory' => $daysBefore,
                 'type' => 'ex_factory_anchored',
+            ];
+        }
+
+        return $schedule;
+    }
+
+    /**
+     * Generate a sample schedule anchored to the Factory PO Date (the date the
+     * agency assigned the PO to the factory — i.e. purchase_order_style.assigned_at).
+     *
+     * Offsets are days AFTER Factory PO Date:
+     * - Lab Dip:       +7
+     * - Fit Sample:    +7
+     * - 1st Proto:     +10
+     * - Trim Approval: +10
+     * - 2nd Proto:     +18
+     * - Bulk Fabric:   +30
+     * - PP Sample:     +35
+     * - TOP:           +50
+     *
+     * @param Carbon|string $factoryPoDate
+     * @return array
+     */
+    public function generateScheduleFromFactoryPoDate($factoryPoDate): array
+    {
+        $anchor = $factoryPoDate instanceof Carbon
+            ? $factoryPoDate
+            : Carbon::parse($factoryPoDate);
+
+        $milestones = [
+            'lab_dip'              => ['Lab Dip',        7],
+            'fit_samples'          => ['Fit Sample',     7],
+            'first_proto_samples'  => ['1st Proto',     10],
+            'trim_approvals'       => ['Trim Approval', 10],
+            'second_proto_samples' => ['2nd Proto',     18],
+            'bulk_fabric_inhouse'  => ['Bulk Fabric',   30],
+            'pp_sample'            => ['PP Sample',     35],
+            'top_approval'         => ['TOP',           50],
+        ];
+
+        $schedule = [];
+        foreach ($milestones as $key => [$name, $daysAfter]) {
+            $schedule[$key] = [
+                'name' => $name,
+                'date' => $anchor->copy()->addDays($daysAfter),
+                'description' => "{$daysAfter} days after Factory PO Date",
+                'days_after_factory_po' => $daysAfter,
+                'type' => 'factory_po_anchored',
             ];
         }
 

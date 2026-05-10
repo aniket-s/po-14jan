@@ -42,6 +42,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatDate } from '@/lib/dateUtils';
 
 interface Invitation {
   id: number;
@@ -970,14 +971,6 @@ export default function InvitationsPage() {
     return labels[type] || type;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
   const getAvailableInvitationTypes = () => {
     const types = [];
 
@@ -1347,7 +1340,7 @@ export default function InvitationsPage() {
                             <TableHead>Color</TableHead>
                             <TableHead>Description</TableHead>
                             <TableHead className="text-right">Qty</TableHead>
-                            <TableHead className="text-right">PO Price</TableHead>
+                            <TableHead className="text-right">Buyer PO Price</TableHead>
                             <TableHead>PO Ex-Factory</TableHead>
                             <TableHead className="w-[120px]">Factory Price</TableHead>
                             <TableHead className="w-[160px]">Factory Ex-Factory</TableHead>
@@ -1408,7 +1401,7 @@ export default function InvitationsPage() {
                                   {Number.isNaN(poPriceNum) ? '-' : poPriceNum.toFixed(2)}
                                 </TableCell>
                                 <TableCell onClick={() => toggleFaStyleSelection(poId, style.id)} className="text-muted-foreground cursor-pointer">
-                                  {poAnchor || '-'}
+                                  {poAnchor ? formatDate(poAnchor, '-') : '-'}
                                 </TableCell>
                                 <TableCell>
                                   <Input

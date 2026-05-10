@@ -27,6 +27,7 @@ import {
 import { Sample, SampleType } from './types';
 import { SampleProgressTracker } from './SampleProgressTracker';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/dateUtils';
 
 interface SampleTableViewProps {
   samples: Sample[];
@@ -422,9 +423,7 @@ function GroupRows({
             </TableCell>
             <TableCell>
               <span className="text-xs text-muted-foreground">
-                {(sample.submission_date || sample.created_at)
-                  ? new Date(sample.submission_date || sample.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                  : '-'}
+                {formatDate(sample.submission_date || sample.created_at, '-')}
               </span>
             </TableCell>
             <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>

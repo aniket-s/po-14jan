@@ -14,6 +14,7 @@ import { ArrowLeft, FileUp } from 'lucide-react';
 import api from '@/lib/api';
 import { ImportWizardDialog } from '@/components/imports/ImportWizardDialog';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatDate } from '@/lib/dateUtils';
 
 export default function BuySheetDetailPage() {
   const params = useParams<{ id: string }>();
@@ -79,7 +80,7 @@ export default function BuySheetDetailPage() {
           <Stat label="Styles" value={sheet.total_styles} />
           <Stat label="Total Units" value={Number(sheet.total_quantity).toLocaleString()} />
           <Stat label="Total Value" value={Number(sheet.total_value).toLocaleString(undefined, { style: 'currency', currency: 'USD' })} />
-          <Stat label="Date Submitted" value={sheet.date_submitted ?? '—'} />
+          <Stat label="Date Submitted" value={formatDate(sheet.date_submitted, '—')} />
         </div>
 
         <Card>
@@ -106,7 +107,7 @@ export default function BuySheetDetailPage() {
                     <TableCell>{s.description ?? '—'}</TableCell>
                     <TableCell className="text-right">{s.pivot?.quantity ?? s.total_quantity}</TableCell>
                     <TableCell className="text-right">${s.pivot?.unit_price ?? s.unit_price}</TableCell>
-                    <TableCell>{s.pivot?.ihd ?? '—'}</TableCell>
+                    <TableCell>{formatDate(s.pivot?.ihd, '—')}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -133,7 +134,7 @@ export default function BuySheetDetailPage() {
                     <TableRow key={po.id}>
                       <TableCell><Link href={`/purchase-orders/${po.id}`} className="text-primary hover:underline font-mono">{po.po_number}</Link></TableCell>
                       <TableCell>{po.status}</TableCell>
-                      <TableCell>{po.po_date ?? '—'}</TableCell>
+                      <TableCell>{formatDate(po.po_date, '—')}</TableCell>
                       <TableCell className="text-right">{Number(po.total_quantity).toLocaleString()}</TableCell>
                       <TableCell className="text-right">${Number(po.total_value).toLocaleString()}</TableCell>
                     </TableRow>

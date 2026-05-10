@@ -84,4 +84,12 @@ export interface SampleFilters {
   status: string;
   sampleType: string;
   dateRange: string;
+  /** Server-side sort. Default 'ex_factory_asc' = most-urgent buyer-PO ex-factory first. */
+  sort?: 'ex_factory_asc' | 'created_desc';
 }
+
+export type ApprovalFile = {
+  url: string;
+  type: 'image' | 'document';
+  uploaded_at: string;
+};
