@@ -341,6 +341,7 @@ class ImportController extends Controller
             'header.sample_schedule.second_proto_submission' => 'nullable|date',
             'header.sample_schedule.bulk_fabric_inhouse' => 'nullable|date',
             'header.sample_schedule.pp_sample_submission' => 'nullable|date',
+            'header.sample_schedule.production_start' => 'nullable|date',
             'header.sample_schedule.top_approval' => 'nullable|date',
             'styles' => 'required|array|min:1',
             'styles.*.style_number' => 'required|string|max:100',

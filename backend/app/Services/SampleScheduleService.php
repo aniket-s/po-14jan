@@ -167,7 +167,7 @@ class SampleScheduleService
         foreach ($milestones as $key => [$name, $daysAfter]) {
             $schedule[$key] = [
                 'name' => $name,
-                'date' => $anchor->copy()->addDays($daysAfter),
+                'date' => $anchor->copy()->addDays($daysAfter)->format('Y-m-d'),
                 'description' => "{$daysAfter} days after Factory PO Date",
                 'days_after_factory_po' => $daysAfter,
                 'type' => 'factory_po_anchored',

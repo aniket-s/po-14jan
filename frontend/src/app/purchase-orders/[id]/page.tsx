@@ -86,7 +86,8 @@ export default function PurchaseOrderDetailPage() {
   const fetchFactorySampleSchedules = async () => {
     try {
       const response = await api.get(`/purchase-orders/${poId}/sample-schedule`);
-      if (response.data?.mode === 'factory_ex_factory_anchored') {
+      const mode = response.data?.mode;
+      if (mode === 'factory_po_date_anchored' || mode === 'factory_ex_factory_anchored') {
         setFactorySampleSchedules(response.data.per_style_schedules || []);
       }
     } catch (error) {
@@ -893,7 +894,7 @@ export default function PurchaseOrderDetailPage() {
                 <CardTitle>Samples</CardTitle>
                 <CardDescription>
                   {isFactory
-                    ? 'Per-style schedule anchored to the ex-factory date given to you'
+                    ? 'Per-style schedule anchored to the Factory PO date (when the agency assigned the PO to you)'
                     : 'Track sample submissions and approvals'}
                 </CardDescription>
               </CardHeader>
@@ -948,7 +949,7 @@ export default function PurchaseOrderDetailPage() {
                             </Table>
                           ) : (
                             <p className="text-xs text-muted-foreground">
-                              Factory ex-factory date not set by agency — schedule unavailable.
+                              Factory PO date not set — schedule unavailable.
                             </p>
                           )}
                         </div>

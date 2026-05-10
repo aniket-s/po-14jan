@@ -10,7 +10,12 @@ const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 /**
  * Safely formats a date string as "DD MMM YYYY", handling null/undefined values.
- * @param dateString - ISO date string or null/undefined
+ *
+ * Bare ISO date inputs ("YYYY-MM-DD") are parsed as local midnight to avoid
+ * the UTC off-by-one that hits negative-UTC timezones; everything else
+ * (full ISO timestamps, Date instances) is parsed as-is.
+ *
+ * @param dateString - ISO date string, full ISO timestamp, Date, or null/undefined
  * @param fallback - Optional fallback text (default: "Not set")
  * @returns Formatted date string like "09 Apr 2026" or fallback
  */
@@ -21,7 +26,13 @@ export function formatDate(
   if (!dateString) return fallback;
 
   try {
-    const date = dateString instanceof Date ? dateString : new Date(dateString);
+    let date: Date;
+    if (dateString instanceof Date) {
+      date = dateString;
+    } else {
+      const isBareIsoDate = /^\d{4}-\d{2}-\d{2}$/.test(dateString);
+      date = new Date(isBareIsoDate ? `${dateString}T00:00:00` : dateString);
+    }
     if (isNaN(date.getTime())) return fallback;
 
     const day = String(date.getDate()).padStart(2, '0');
@@ -67,10 +78,16 @@ export function formatDaysRemaining(days: number | null): string {
   return `${days} days remaining`;
 }
 
+/** Parses a YYYY-MM-DD string as local midnight; full ISO timestamps as-is. */
+function parseLocal(dateString: string): Date {
+  const isBareIsoDate = /^\d{4}-\d{2}-\d{2}$/.test(dateString);
+  return new Date(isBareIsoDate ? `${dateString}T00:00:00` : dateString);
+}
+
 /** Returns true when the given ISO date falls on a Wednesday in local time. */
 export function isWednesday(dateString: string | null | undefined): boolean {
   if (!dateString) return false;
-  const d = new Date(dateString);
+  const d = parseLocal(dateString);
   if (isNaN(d.getTime())) return false;
   return d.getDay() === 3;
 }
@@ -87,7 +104,7 @@ export function nearestWednesdaysAround(
   dateString: string | null | undefined,
 ): { previous: string | null; next: string | null } {
   if (!dateString) return { previous: null, next: null };
-  const d = new Date(dateString);
+  const d = parseLocal(dateString);
   if (isNaN(d.getTime())) return { previous: null, next: null };
 
   const day = d.getDay(); // 0..6, Sun..Sat. Wed = 3.

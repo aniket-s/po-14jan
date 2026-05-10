@@ -150,7 +150,7 @@ export default function SpreadsheetGridInner({
           return {
             kind: GridCellKind.Text,
             data: str,
-            displayData: str ? formatDate(str + 'T00:00:00', '') : '',
+            displayData: formatDate(str, ''),
             allowOverlay: editable,
             readonly: !editable,
           };
