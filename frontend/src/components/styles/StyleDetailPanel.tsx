@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { X, Edit, Trash2, Package, Link2, ExternalLink, FileText } from 'lucide-react';
 import { Style } from '@/services/styles';
 import { SampleImageGallery } from '@/components/samples/SampleImageGallery';
+import { formatDate } from '@/lib/dateUtils';
 
 interface StyleDetailPanelProps {
   style: Style;
@@ -189,9 +190,9 @@ export function StyleDetailPanel({
             <>
               <Separator />
               <div className="space-y-1.5 text-[11px] text-muted-foreground">
-                <p>Created by <span className="font-medium text-foreground">{style.creator.name}</span> on {new Date(style.created_at).toLocaleDateString()}</p>
+                <p>Created by <span className="font-medium text-foreground">{style.creator.name}</span> on {formatDate(style.created_at)}</p>
                 {style.updatedBy && (
-                  <p>Updated by <span className="font-medium text-foreground">{style.updatedBy.name}</span> on {new Date(style.updated_at).toLocaleDateString()}</p>
+                  <p>Updated by <span className="font-medium text-foreground">{style.updatedBy.name}</span> on {formatDate(style.updated_at)}</p>
                 )}
               </div>
             </>

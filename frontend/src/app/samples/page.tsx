@@ -43,6 +43,7 @@ import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MultiFileUpload, UploadedFile } from '@/components/ui/multi-file-upload';
+import { formatDate } from '@/lib/dateUtils';
 
 // New redesigned components
 import { Sample, SampleType, Style, SampleFilters, ViewMode } from '@/components/samples/types';
@@ -80,6 +81,7 @@ export default function SamplesPage() {
     status: 'all',
     sampleType: 'all',
     dateRange: 'all',
+    sort: 'ex_factory_asc',
   });
 
   // Dialogs
@@ -94,6 +96,10 @@ export default function SamplesPage() {
   // File uploads
   const [imageFiles, setImageFiles] = useState<UploadedFile[]>([]);
   const [documentFiles, setDocumentFiles] = useState<UploadedFile[]>([]);
+
+  // Approval-dialog file uploads (optional supporting files for approve/reject)
+  const [approvalImageFiles, setApprovalImageFiles] = useState<UploadedFile[]>([]);
+  const [approvalDocumentFiles, setApprovalDocumentFiles] = useState<UploadedFile[]>([]);
 
   // Resubmit
   const [isResubmitDialogOpen, setIsResubmitDialogOpen] = useState(false);
@@ -147,7 +153,7 @@ export default function SamplesPage() {
   const fetchSamples = async () => {
     try {
       setLoading(true);
-      const params: any = {};
+      const params: any = { sort: filters.sort ?? 'ex_factory_asc' };
       if (filters.search) params.search = filters.search;
       if (filters.status !== 'all') params.final_status = filters.status;
 
@@ -181,13 +187,13 @@ export default function SamplesPage() {
     }
   };
 
-  // Re-fetch when search/status filters change (with debounce for search)
+  // Re-fetch when search/status/sort filters change (with debounce for search)
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchSamples();
     }, filters.search ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [filters.search, filters.status]);
+  }, [filters.search, filters.status, filters.sort]);
 
   // Base filtered samples (sampleType + dateRange but NOT kpiFilter) - used by KPI cards
   const baseFilteredSamples = useMemo(() => {
@@ -338,6 +344,8 @@ export default function SamplesPage() {
     setApprovalType(type);
     setApprovalAction(action);
     setApprovalComments('');
+    setApprovalImageFiles([]);
+    setApprovalDocumentFiles([]);
     setIsApprovalDialogOpen(true);
   };
 
@@ -345,6 +353,13 @@ export default function SamplesPage() {
     if (!approvalSample) return;
     setIsSubmitting(true);
     try {
+      const approvalImages = approvalImageFiles.length > 0
+        ? await uploadFiles(approvalImageFiles, 'image')
+        : [];
+      const approvalAttachments = approvalDocumentFiles.length > 0
+        ? await uploadFiles(approvalDocumentFiles, 'document')
+        : [];
+
       let endpoint: string;
       if (approvalType === 'agency') {
         endpoint = `/samples/${approvalSample.id}/agency-${approvalAction}`;
@@ -358,10 +373,14 @@ export default function SamplesPage() {
       await api.post(endpoint, {
         reason: approvalComments,
         comments: approvalComments,
+        ...(approvalImages.length > 0 ? { approval_images: approvalImages } : {}),
+        ...(approvalAttachments.length > 0 ? { approval_attachments: approvalAttachments } : {}),
       });
       setIsApprovalDialogOpen(false);
       setApprovalSample(null);
       setApprovalComments('');
+      setApprovalImageFiles([]);
+      setApprovalDocumentFiles([]);
       setSelectedSample(null);
       fetchSamples();
     } catch (error) {
@@ -874,7 +893,7 @@ export default function SamplesPage() {
                     <div><span className="text-muted-foreground">Type:</span> {approvalSample.sample_type?.display_name || approvalSample.sample_type?.name}</div>
                     <div><span className="text-muted-foreground">Style:</span> {approvalSample.style?.style_number}</div>
                     <div><span className="text-muted-foreground">By:</span> {approvalSample.submitted_by?.name || 'N/A'}</div>
-                    <div><span className="text-muted-foreground">Date:</span> {approvalSample.submission_date ? new Date(approvalSample.submission_date).toLocaleDateString() : 'N/A'}</div>
+                    <div><span className="text-muted-foreground">Date:</span> {formatDate(approvalSample.submission_date, 'N/A')}</div>
                   </div>
                 </div>
 
@@ -887,6 +906,30 @@ export default function SamplesPage() {
                     placeholder={approvalAction === 'reject' ? 'Provide reason for rejection...' : 'Add your comments...'}
                     value={approvalComments}
                     onChange={(e) => setApprovalComments(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Attach images (optional)</Label>
+                  <MultiFileUpload
+                    files={approvalImageFiles}
+                    onChange={setApprovalImageFiles}
+                    accept="image/*"
+                    maxFiles={5}
+                    label="Drop images here"
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Attach documents (optional)</Label>
+                  <MultiFileUpload
+                    files={approvalDocumentFiles}
+                    onChange={setApprovalDocumentFiles}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx"
+                    maxFiles={5}
+                    label="Drop documents here"
+                    disabled={isSubmitting}
                   />
                 </div>
               </div>

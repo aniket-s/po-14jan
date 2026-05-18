@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/dateUtils';
 import type { POReportItem } from './types';
 
 interface Props {
@@ -28,12 +29,7 @@ interface Props {
   onClose: () => void;
 }
 
-const dateFmt = (s: string | null | undefined) => {
-  if (!s) return '—';
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-};
+const dateFmt = (s: string | null | undefined) => formatDate(s, '—');
 
 const moneyFmt = (n: number, currency: string | null) => {
   try {

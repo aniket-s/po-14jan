@@ -24,6 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FileUp, Loader2, CheckCircle, XCircle, Download, AlertTriangle, Save, BookmarkPlus, Star, ImageIcon } from 'lucide-react';
 import api from '@/lib/api';
+import { formatDate } from '@/lib/dateUtils';
 import { StyleImageUpload } from '@/components/styles/StyleImageUpload';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -444,7 +445,7 @@ export function ExcelImportDialog({ isOpen, onClose, purchaseOrderId, onImportCo
                           <div>
                             <p className="font-medium">{mapping.name}</p>
                             <p className="text-xs text-muted-foreground">
-                              {new Date(mapping.created_at).toLocaleDateString()}
+                              {formatDate(mapping.created_at)}
                             </p>
                           </div>
                         </div>

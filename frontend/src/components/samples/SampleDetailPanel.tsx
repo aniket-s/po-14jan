@@ -22,6 +22,7 @@ import {
 import { Sample, TimelineEvent } from './types';
 import { SampleImageGallery } from './SampleImageGallery';
 import api from '@/lib/api';
+import { formatDate } from '@/lib/dateUtils';
 
 interface SampleDetailPanelProps {
   sample: Sample;
@@ -207,9 +208,7 @@ export function SampleDetailPanel({
                   <div>
                     <p className="text-[10px] text-muted-foreground">Date</p>
                     <p className="text-xs font-medium">
-                      {displaySample.submission_date
-                        ? new Date(displaySample.submission_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                        : 'N/A'}
+                      {formatDate(displaySample.submission_date, 'N/A')}
                     </p>
                   </div>
                 </div>
@@ -288,6 +287,32 @@ export function SampleDetailPanel({
                 </div>
               </>
             )}
+
+            {/* Approval-time attachments uploaded by reviewers */}
+            {(['agency_approval_files', 'importer_approval_files', 'importer_on_behalf_approval_files'] as const).map((bucket) => {
+              const files = (displaySample.metadata?.[bucket] as { url: string; type: 'image' | 'document' }[] | undefined) ?? [];
+              if (files.length === 0) return null;
+              const role = bucket === 'agency_approval_files'
+                ? 'Agency'
+                : bucket === 'importer_approval_files'
+                ? 'Importer'
+                : 'Importer (on behalf)';
+              return (
+                <div key={bucket}>
+                  <Separator />
+                  <div className="pt-3">
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                      {role} approval files
+                    </h4>
+                    <SampleImageGallery
+                      images={files.filter((f) => f.type === 'image').map((f) => f.url)}
+                      documents={files.filter((f) => f.type === 'document').map((f) => f.url)}
+                      title=""
+                    />
+                  </div>
+                </div>
+              );
+            })}
 
             {/* Timeline */}
             {timeline.length > 0 && (

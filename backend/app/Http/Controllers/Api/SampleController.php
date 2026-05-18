@@ -279,6 +279,11 @@ class SampleController extends Controller
         }
 
         $sample->agencyApprove($user->id);
+        $sample->recordApprovalAttachments(
+            'agency',
+            (array) $request->input('approval_images', []),
+            (array) $request->input('approval_attachments', [])
+        );
 
         $this->sendAgencyApprovedNotification($sample);
 
@@ -336,6 +341,11 @@ class SampleController extends Controller
         }
 
         $sample->agencyReject($user->id, $request->reason);
+        $sample->recordApprovalAttachments(
+            'agency',
+            (array) $request->input('approval_images', []),
+            (array) $request->input('approval_attachments', [])
+        );
 
         $this->sendAgencyRejectedNotification($sample);
 
@@ -388,6 +398,11 @@ class SampleController extends Controller
         }
 
         $sample->importerApprove($user->id);
+        $sample->recordApprovalAttachments(
+            'importer',
+            (array) $request->input('approval_images', []),
+            (array) $request->input('approval_attachments', [])
+        );
 
         $this->sendImporterApprovedNotification($sample);
 
@@ -451,6 +466,11 @@ class SampleController extends Controller
         }
 
         $sample->importerReject($user->id, $request->reason);
+        $sample->recordApprovalAttachments(
+            'importer',
+            (array) $request->input('approval_images', []),
+            (array) $request->input('approval_attachments', [])
+        );
 
         $this->sendImporterRejectedNotification($sample);
 
@@ -507,6 +527,11 @@ class SampleController extends Controller
         }
 
         $sample->importerApproveOnBehalf($user->id);
+        $sample->recordApprovalAttachments(
+            'importer_on_behalf',
+            (array) $request->input('approval_images', []),
+            (array) $request->input('approval_attachments', [])
+        );
 
         $this->sendImporterApprovedNotification($sample);
 
@@ -901,7 +926,27 @@ class SampleController extends Controller
             });
         }
 
-        return response()->json($query->orderBy('created_at', 'desc')->paginate($request->input('per_page', 20)));
+        // Sort: default is by buyer-PO ex-factory date (earliest first), so the
+        // most urgent samples surface first. Pass ?sort=created_desc for the
+        // legacy newest-first ordering.
+        $sort = $request->input('sort', 'ex_factory_asc');
+        if ($sort === 'created_desc') {
+            $query->orderBy('samples.created_at', 'desc');
+        } else {
+            $earliestEx = DB::table('purchase_order_style')
+                ->selectRaw('style_id, MIN(ex_factory_date) as earliest_ex_factory_date')
+                ->groupBy('style_id');
+
+            $query->select('samples.*')
+                ->leftJoinSub($earliestEx, 'pos_min', function ($join) {
+                    $join->on('pos_min.style_id', '=', 'samples.style_id');
+                })
+                ->orderByRaw('pos_min.earliest_ex_factory_date IS NULL')
+                ->orderBy('pos_min.earliest_ex_factory_date', 'asc')
+                ->orderBy('samples.created_at', 'desc');
+        }
+
+        return response()->json($query->paginate($request->input('per_page', 20)));
     }
 
     /**

@@ -39,6 +39,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import api from '@/lib/api';
+import { formatDate } from '@/lib/dateUtils';
 import { ExcelViewPurchaseOrder, ExcelViewFilters } from '@/types';
 import { SelectFilter } from './ExcelColumnFilter';
 import { ExcelExpandedRow } from './ExcelExpandedRow';
@@ -75,15 +76,6 @@ const statusColor = (status: string) => {
     case 'cancelled': return 'bg-red-100 text-red-700 border-red-200';
     default: return '';
   }
-};
-
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return '-';
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
 };
 
 const formatCurrency = (value: number, currencyCode?: string) => {
@@ -220,7 +212,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     {
       accessorKey: 'po_date',
       header: 'PO Date',
-      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.po_date)}</span>,
+      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.po_date, '-')}</span>,
       size: 110,
       enableSorting: true,
     },
@@ -309,7 +301,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     {
       accessorKey: 'etd_date',
       header: 'ETD',
-      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.etd_date)}</span>,
+      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.etd_date, '-')}</span>,
       size: 110,
       enableSorting: true,
     },
@@ -317,7 +309,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     {
       accessorKey: 'eta_date',
       header: 'ETA',
-      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.eta_date)}</span>,
+      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.eta_date, '-')}</span>,
       size: 110,
       enableSorting: true,
     },
@@ -325,7 +317,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     {
       accessorKey: 'ex_factory_date',
       header: 'Ex-Factory',
-      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.ex_factory_date)}</span>,
+      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.ex_factory_date, '-')}</span>,
       size: 110,
       enableSorting: true,
     },
@@ -333,7 +325,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     {
       accessorKey: 'in_warehouse_date',
       header: 'In-Warehouse',
-      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.in_warehouse_date)}</span>,
+      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.in_warehouse_date, '-')}</span>,
       size: 110,
       enableSorting: false,
     },
@@ -375,7 +367,7 @@ export function POExcelView({ searchTerm, retailers, seasons, countries }: POExc
     {
       accessorKey: 'created_at',
       header: 'Created',
-      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.created_at)}</span>,
+      cell: ({ row }) => <span className="whitespace-nowrap">{formatDate(row.original.created_at, '-')}</span>,
       size: 110,
       enableSorting: true,
     },

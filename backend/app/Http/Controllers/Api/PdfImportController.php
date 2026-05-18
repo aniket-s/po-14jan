@@ -148,6 +148,7 @@ class PdfImportController extends Controller
             'po_header.sample_schedule.fit_sample_submission' => 'nullable|date',
             'po_header.sample_schedule.trim_approvals' => 'nullable|date',
             'po_header.sample_schedule.first_proto_submission' => 'nullable|date',
+            'po_header.sample_schedule.second_proto_submission' => 'nullable|date',
             'po_header.sample_schedule.bulk_fabric_inhouse' => 'nullable|date',
             'po_header.sample_schedule.pp_sample_submission' => 'nullable|date',
             'po_header.sample_schedule.production_start' => 'nullable|date',
