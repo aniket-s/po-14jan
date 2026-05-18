@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle, Factory, UserPlus, Trash2, Clock, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Search, Copy, Check, Loader2, Mail, X, CheckCircle, XCircle, Factory, UserPlus, Trash2, Clock, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import api from '@/lib/api';
 import { TableSkeleton } from '@/components/skeletons';
 import { useForm } from 'react-hook-form';
@@ -186,6 +186,11 @@ export default function InvitationsPage() {
   const [faPagination, setFaPagination] = useState({ currentPage: 1, lastPage: 1, perPage: 15, total: 0 });
   const [faSearchQuery, setFaSearchQuery] = useState('');
   const [faStatusFilter, setFaStatusFilter] = useState<string>('all');
+  type FaSortKey = 'created_at' | 'factory_ex_factory_date' | 'factory_po_date';
+  // Defaults match the backend: factory users get earliest factory-agreed
+  // ex-factory first, everyone else gets newest assignment first.
+  const [faSortBy, setFaSortBy] = useState<FaSortKey | null>(null);
+  const [faSortDir, setFaSortDir] = useState<'asc' | 'desc'>('desc');
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectingAssignment, setRejectingAssignment] = useState<FactoryAssignment | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -358,6 +363,10 @@ export default function InvitationsPage() {
       };
       if (faSearchQuery) params.search = faSearchQuery;
       if (faStatusFilter !== 'all') params.status = faStatusFilter;
+      if (faSortBy) {
+        params.sort_by = faSortBy;
+        params.sort_dir = faSortDir;
+      }
 
       const response = await api.get('/factory-assignments', { params });
       setFactoryAssignments(response.data.data || []);
@@ -370,7 +379,19 @@ export default function InvitationsPage() {
     } catch (error) {
       console.error('Failed to fetch factory assignments:', error);
     }
-  }, [faPagination.currentPage, faPagination.perPage, faSearchQuery, faStatusFilter]);
+  }, [faPagination.currentPage, faPagination.perPage, faSearchQuery, faStatusFilter, faSortBy, faSortDir]);
+
+  // Toggle direction on the active column; switching columns picks a sensible
+  // default direction (asc for date columns, desc otherwise).
+  const handleFaSort = (key: FaSortKey) => {
+    if (faSortBy === key) {
+      setFaSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setFaSortBy(key);
+      setFaSortDir(key === 'created_at' ? 'desc' : 'asc');
+    }
+    setFaPagination((p) => ({ ...p, currentPage: 1 }));
+  };
 
   // Refresh factory assignments when filters change
   useEffect(() => {
@@ -1939,8 +1960,34 @@ export default function InvitationsPage() {
                   <TableHead>Style</TableHead>
                   <TableHead>PO Number</TableHead>
                   {!isFactory && <TableHead>Factory</TableHead>}
-                  <TableHead>{isFactory ? 'PO Date' : 'Assigned Date'}</TableHead>
-                  <TableHead>Ex-Factory</TableHead>
+                  <TableHead>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 hover:text-foreground transition-colors"
+                      onClick={() => handleFaSort('factory_po_date')}
+                    >
+                      {isFactory ? 'PO Date' : 'Assigned Date'}
+                      {faSortBy === 'factory_po_date' ? (
+                        faSortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3 opacity-40" />
+                      )}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 hover:text-foreground transition-colors"
+                      onClick={() => handleFaSort('factory_ex_factory_date')}
+                    >
+                      Ex-Factory
+                      {faSortBy === 'factory_ex_factory_date' ? (
+                        faSortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3 opacity-40" />
+                      )}
+                    </button>
+                  </TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Notes</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
