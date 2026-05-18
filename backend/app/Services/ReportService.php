@@ -494,6 +494,11 @@ class ReportService
             $shipments = $shipmentByPo[$po->id] ?? ['preparing' => 0, 'in_transit' => 0, 'delivered' => 0, 'overdue' => 0, 'total' => 0];
             $quality = $qualityByPo[$po->id] ?? ['passed' => 0, 'failed' => 0, 'pending' => 0, 'total' => 0];
 
+            // `currency` is both a string column (legacy 'USD') and a belongsTo relation
+            // on PurchaseOrder; the column wins attribute resolution, so go via the
+            // eager-loaded relation directly to avoid `?->code` hitting the string.
+            $currencyRel = $po->relationLoaded('currency') ? $po->getRelation('currency') : null;
+
             return [
                 'id' => $po->id,
                 'po_number' => $po->po_number,
@@ -508,8 +513,8 @@ class ReportService
                 'total_quantity' => (int) $po->total_quantity,
                 'total_value' => (float) $po->total_value,
                 'currency_id' => $po->currency_id,
-                'currency_code' => $po->currency?->code,
-                'currency_symbol' => $po->currency?->symbol,
+                'currency_code' => $currencyRel?->code,
+                'currency_symbol' => $currencyRel?->symbol,
                 'styles_count' => (int) $po->styles_count,
                 'importer_id' => $po->importer_id,
                 'importer_name' => $po->importer?->name,

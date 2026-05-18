@@ -402,21 +402,38 @@ class FactoryAssignmentController extends Controller
             });
         }
 
-        // Factories see the earliest factory-agreed ex-factory first (no
-        // fallback to the buyer's PO ex-factory). Others default to newest
-        // assignment first.
-        if ($isFactory) {
+        // Sort handling.
+        // - Explicit `sort_by` (allowlisted) takes precedence for any role.
+        // - Pivot-based sorts (`factory_ex_factory_date`, `factory_po_date`)
+        //   need a left-join to purchase_order_style keyed on the assigned
+        //   factory; NULLs are pushed to the bottom regardless of direction.
+        // - Defaults preserve existing behaviour: factories see earliest
+        //   factory-agreed ex-factory first, others see newest assignment first.
+        $allowedSorts = ['created_at', 'factory_ex_factory_date', 'factory_po_date'];
+        $sortBy = $request->input('sort_by');
+        if (!in_array($sortBy, $allowedSorts, true)) {
+            $sortBy = null;
+        }
+        $sortDir = strtolower((string) $request->input('sort_dir')) === 'desc' ? 'desc' : 'asc';
+
+        if ($sortBy === null) {
+            $sortBy = $isFactory ? 'factory_ex_factory_date' : 'created_at';
+            $sortDir = $isFactory ? 'asc' : 'desc';
+        }
+
+        if (in_array($sortBy, ['factory_ex_factory_date', 'factory_po_date'], true)) {
+            $pivotColumn = $sortBy === 'factory_ex_factory_date' ? 'factory_ex_factory_date' : 'assigned_at';
             $query->leftJoin('purchase_order_style as pos', function ($join) {
                 $join->on('pos.purchase_order_id', '=', 'factory_assignments.purchase_order_id')
                     ->on('pos.style_id', '=', 'factory_assignments.style_id')
                     ->on('pos.assigned_factory_id', '=', 'factory_assignments.factory_id');
             })
-            ->orderByRaw('pos.factory_ex_factory_date IS NULL')
-            ->orderByRaw('pos.factory_ex_factory_date ASC')
+            ->orderByRaw("pos.{$pivotColumn} IS NULL")
+            ->orderBy("pos.{$pivotColumn}", $sortDir)
             ->orderBy('factory_assignments.created_at', 'desc')
             ->select('factory_assignments.*');
         } else {
-            $query->orderBy('created_at', 'desc');
+            $query->orderBy('factory_assignments.created_at', $sortDir);
         }
 
         $paginated = $query->paginate($request->input('per_page', 15));
