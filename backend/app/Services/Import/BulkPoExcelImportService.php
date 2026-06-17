@@ -724,7 +724,12 @@ class BulkPoExcelImportService
                             'description' => $styleInput['description'] ?? null,
                             'color_name' => $styleInput['color_name'] ?? null,
                             'color' => $styleInput['color_name'] ?? null,
+                            // The style list / detail / PO grid all read fabric_type_name
+                            // for display, so populate it (and fabric_name) from the
+                            // sheet's fabric value - not just the plain `fabric` column.
                             'fabric' => $styleInput['fabric'] ?? null,
+                            'fabric_name' => $styleInput['fabric'] ?? null,
+                            'fabric_type_name' => $styleInput['fabric'] ?? null,
                             'fit' => $styleInput['fit'] ?? null,
                             'size_breakup' => $sizeBreakdown,
                             'packing_details' => $packingDetails ?: null,

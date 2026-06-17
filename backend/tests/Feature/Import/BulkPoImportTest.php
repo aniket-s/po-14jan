@@ -114,7 +114,7 @@ class BulkPoImportTest extends TestCase
                     'po_date' => '2025-10-24',
                     'retailer_id' => $retailer->id,
                     'styles' => [
-                        ['style_number' => 'RMT091', 'color_name' => 'BLACK', 'quantity' => 1800, 'unit_price' => 5.40,
+                        ['style_number' => 'RMT091', 'color_name' => 'BLACK', 'fabric' => '300 TERRY', 'quantity' => 1800, 'unit_price' => 5.40,
                          'size_breakdown' => ['S' => 600, 'M' => 600, 'L' => 600],
                          'metadata' => ['tp_status' => 'TP RECEIVED 10/31'],
                          // Only the import-dir path should persist; the traversal attempt is dropped.
@@ -152,6 +152,9 @@ class BulkPoImportTest extends TestCase
         $this->assertSame('TP RECEIVED 10/31', $style->pivot->metadata['tp_status'] ?? null);
         // Excel image carried onto the style; path-traversal entry sanitised out.
         $this->assertSame(['imports/images/cad1.png'], $style->images);
+        // Fabric populates the display column (fabric_type_name), not just `fabric`.
+        $this->assertSame('300 TERRY', $style->fabric);
+        $this->assertSame('300 TERRY', $style->fabric_type_name);
     }
 
     public function test_commit_skips_existing_po_numbers(): void
