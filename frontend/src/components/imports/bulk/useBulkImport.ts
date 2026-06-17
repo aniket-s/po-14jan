@@ -179,6 +179,15 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
           meta[key] = val;
         }
       }
+      // Any image anchored anywhere in the row belongs to this style (CAD etc.),
+      // regardless of how that column is mapped. Carry the storage path through.
+      const images: string[] = [];
+      if (row.images) {
+        for (const key of Object.keys(row.images)) {
+          const p = row.images[Number(key)]?.path;
+          if (p) images.push(p);
+        }
+      }
       const q = cleanNumeric(fieldValue(row, 'quantity'));
       const p = cleanNumeric(fieldValue(row, 'unit_price'));
       const orNull = (f: string) => {
@@ -186,6 +195,7 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
         return v === '' ? null : v;
       };
       return {
+        images: images.length ? images : undefined,
         style_number: fieldValue(row, 'style_number').trim(),
         color_name: orNull('color_name'),
         description: orNull('description'),

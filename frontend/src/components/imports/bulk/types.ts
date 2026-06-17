@@ -15,9 +15,16 @@ export interface BulkColumn {
   duplicate_of: number | null;
 }
 
+export interface CellImage {
+  url: string;
+  path: string;
+}
+
 export interface BulkRow {
   row_number: number;
   cells: string[];
+  /** Embedded images anchored in this row, keyed by column index. */
+  images?: Record<number, CellImage>;
 }
 
 export interface FieldCatalogItem {
@@ -38,6 +45,8 @@ export interface BulkAnalyzeResponse {
   field_catalog: FieldCatalogItem[];
   required_fields: string[];
   existing_po_numbers: string[];
+  image_columns: number[];
+  has_images: boolean;
 }
 
 export interface CommitStylePayload {
@@ -55,6 +64,7 @@ export interface CommitStylePayload {
   unit_price: number;
   size_breakdown?: Record<string, number> | null;
   metadata?: Record<string, string>;
+  images?: string[];
 }
 
 export interface CommitPoPayload {

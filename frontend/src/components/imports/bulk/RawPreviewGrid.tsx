@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { T_IGNORE, T_METADATA, type BulkColumn, type BulkRow, type FieldCatalogItem, type RowIssue } from './types';
+import { resolveImageUrl } from './utils';
 
 interface Props {
   columns: BulkColumn[];
@@ -114,9 +115,15 @@ export function RawPreviewGrid({ columns, rows, mapping, fieldCatalog, onChangeT
                   const tone = sev === 'error' ? 'bg-red-100 dark:bg-red-950/50'
                     : sev === 'warning' ? 'bg-amber-100 dark:bg-amber-950/50'
                     : '';
+                  const img = row.images?.[col.index];
                   return (
-                    <td key={col.index} className={`border-b border-r px-2 py-1 max-w-[240px] truncate ${tone}`} title={row.cells[col.index] ?? ''}>
-                      {row.cells[col.index] ?? ''}
+                    <td key={col.index} className={`border-b border-r px-2 py-1 max-w-[240px] ${tone}`} title={row.cells[col.index] ?? ''}>
+                      {img ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={resolveImageUrl(img.url)} alt="" loading="lazy" className="h-12 w-12 object-contain rounded border bg-white" />
+                      ) : (
+                        <span className="block max-w-[240px] truncate">{row.cells[col.index] ?? ''}</span>
+                      )}
                     </td>
                   );
                 })}

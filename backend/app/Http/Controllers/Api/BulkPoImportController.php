@@ -80,6 +80,8 @@ class BulkPoImportController extends Controller
             'pos.*.styles.*.color_name' => 'nullable|string',
             'pos.*.styles.*.size_breakdown' => 'nullable|array',
             'pos.*.styles.*.metadata' => 'nullable|array',
+            'pos.*.styles.*.images' => 'nullable|array',
+            'pos.*.styles.*.images.*' => 'string',
         ]);
         if ($v->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
