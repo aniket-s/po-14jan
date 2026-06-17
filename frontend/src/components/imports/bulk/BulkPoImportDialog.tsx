@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { FileUp, Loader2, Layers } from 'lucide-react';
+import { FileUp, Loader2, Layers, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { analyzeBulkExcel, commitBulkImport } from './api';
@@ -81,6 +81,10 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
   const handleCommit = async () => {
     if (bulk.payloadPos.length === 0) {
       toast.error('No purchase orders to import. Check the mapping and data.');
+      return;
+    }
+    if (!bulk.canSubmit) {
+      toast.error(`Fix ${bulk.validation.total} field error${bulk.validation.total === 1 ? '' : 's'} before importing.`);
       return;
     }
     setCommitting(true);
@@ -169,11 +173,29 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
                   {bulk.summary.excluded_rows} row(s) are missing a PO or style number and will be skipped. Fix them below or in the previous step to include them.
                 </div>
               )}
+              {bulk.validation.total > 0 ? (
+                <div className="rounded-md border border-red-300 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-xs text-red-800 dark:text-red-300 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>{bulk.validation.total}</strong> field{bulk.validation.total === 1 ? '' : 's'} need fixing across{' '}
+                    <strong>{Object.values(bulk.validation.byPo).filter((n) => n > 0).length}</strong> PO(s). The POs with errors are expanded below — every field is editable.
+                  </span>
+                </div>
+              ) : (
+                <div className="rounded-md border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> All fields valid — ready to import.
+                </div>
+              )}
               <PoGroupReview
                 groups={bulk.groups}
                 fieldValue={bulk.fieldValue}
                 setFieldValue={bulk.setFieldValue}
-                rowIssues={bulk.rowIssues}
+                fieldError={bulk.fieldError}
+                poFieldError={bulk.poFieldError}
+                sizeTokens={bulk.sizeTokens}
+                sizeValue={bulk.sizeValue}
+                setSizeValue={bulk.setSizeValue}
+                validationByPo={bulk.validation.byPo}
               />
             </div>
           )}
@@ -207,7 +229,10 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
           {step === 'review' && (
             <>
               <Button variant="outline" onClick={() => setStep('map')}>Back</Button>
-              <Button onClick={handleCommit} disabled={committing || bulk.payloadPos.length === 0}>
+              {bulk.validation.total > 0 && (
+                <span className="text-xs text-red-600 self-center mr-1">Fix {bulk.validation.total} error{bulk.validation.total === 1 ? '' : 's'} to import</span>
+              )}
+              <Button onClick={handleCommit} disabled={committing || !bulk.canSubmit || bulk.payloadPos.length === 0}>
                 {committing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Import {bulk.summary.po_count} PO{bulk.summary.po_count === 1 ? '' : 's'}
               </Button>

@@ -71,30 +71,10 @@ class BulkPoImportController extends Controller
     {
         $this->raiseResourceLimits();
 
-        $v = Validator::make($request->all(), [
-            'options' => 'nullable|array',
-            'options.duplicate_strategy' => 'nullable|in:skip,update',
-            'options.default_shipping_term' => 'nullable|in:FOB,DDP',
-            'options.buyer_id' => 'nullable|exists:buyers,id',
-            'options.filename' => 'nullable|string|max:255',
-            'pos' => 'required|array|min:1',
-            'pos.*.po_number' => 'required|string|max:50',
-            'pos.*.po_date' => 'nullable|date',
-            'pos.*.retailer_name' => 'nullable|string|max:255',
-            'pos.*.retailer_id' => 'nullable|exists:retailers,id',
-            'pos.*.shipping_term' => 'nullable|in:FOB,DDP',
-            'pos.*.metadata' => 'nullable|array',
-            'pos.*.styles' => 'required|array|min:1',
-            'pos.*.styles.*.style_number' => 'required|string|max:100',
-            'pos.*.styles.*.quantity' => 'nullable|integer|min:0',
-            'pos.*.styles.*.unit_price' => 'nullable|numeric|min:0',
-            'pos.*.styles.*.description' => 'nullable|string',
-            'pos.*.styles.*.color_name' => 'nullable|string',
-            'pos.*.styles.*.size_breakdown' => 'nullable|array',
-            'pos.*.styles.*.metadata' => 'nullable|array',
-            'pos.*.styles.*.images' => 'nullable|array',
-            'pos.*.styles.*.images.*' => 'string',
-        ]);
+        // Strict, authoritative validation built from the same field rules the
+        // frontend uses - the client blocks bad data before submit, and this is
+        // the server-side guard that never trusts it.
+        $v = Validator::make($request->all(), $this->service->commitValidationRules());
         if ($v->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
         }

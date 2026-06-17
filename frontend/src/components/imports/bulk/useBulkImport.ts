@@ -7,8 +7,10 @@ import {
   type CommitPoPayload,
   type CommitStylePayload,
   type FieldCatalogItem,
+  type FieldRule,
   type RowIssue,
 } from './types';
+import { validateSizeValue, validateValue, type FieldValidation } from './validation';
 
 const SCALAR_FIELDS = [
   'po_number', 'po_date', 'retailer_name', 'style_number', 'color_name',
@@ -22,6 +24,7 @@ const EMPTY_COLUMNS: BulkColumn[] = [];
 const EMPTY_ROWS: BulkRow[] = [];
 const EMPTY_STRINGS: string[] = [];
 const EMPTY_CATALOG: FieldCatalogItem[] = [];
+const EMPTY_RULES: FieldRule[] = [];
 
 const cleanNumeric = (raw: string): number =>
   parseFloat(String(raw ?? '').replace(/[^0-9.\-]/g, ''));
@@ -53,6 +56,17 @@ export interface UseBulkImport {
   payloadPos: CommitPoPayload[];
   requiredStatus: Array<{ field: string; label: string; mapped: boolean; letter: string | null }>;
   requiredOk: boolean;
+  // Field-level validation (mirrors the backend rules)
+  rulesByKey: Record<string, FieldRule>;
+  poRules: FieldRule[];
+  styleRules: FieldRule[];
+  sizeTokens: string[];
+  sizeValue: (row: BulkRow, token: string) => string;
+  setSizeValue: (rowNumber: number, token: string, value: string) => void;
+  fieldError: (row: BulkRow, field: string) => FieldValidation;
+  poFieldError: (group: BulkGroup, field: string) => FieldValidation;
+  validation: { total: number; byPo: Record<string, number> };
+  canSubmit: boolean;
   summary: {
     po_count: number;
     style_count: number;
@@ -69,6 +83,7 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
   const rows = analysis?.rows ?? EMPTY_ROWS;
   const requiredFields = analysis?.required_fields ?? EMPTY_STRINGS;
   const catalog = analysis?.field_catalog ?? EMPTY_CATALOG;
+  const rules = analysis?.field_rules ?? EMPTY_RULES;
 
   // Per-column mapping overrides on top of the server-detected targets, plus
   // per-cell value edits. Both reset when a new file is analysed - performed
@@ -93,6 +108,9 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
 
   const setFieldValue = (rowNumber: number, field: string, value: string) =>
     setEdits((prev) => ({ ...prev, [`${rowNumber}:${field}`]: value }));
+
+  const setSizeValue = (rowNumber: number, token: string, value: string) =>
+    setEdits((prev) => ({ ...prev, [`${rowNumber}:size:${token}`]: value }));
 
   // target -> first column mapped to it (single-cardinality fields)
   const fieldColumn = useMemo(() => {
@@ -119,6 +137,29 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
     () => columns.filter((c) => mapping[c.index] === T_METADATA).map((c) => c.index),
     [columns, mapping],
   );
+
+  // Distinct size tokens in column order (one editable cell per token).
+  const sizeTokens = useMemo(() => {
+    const seen: string[] = [];
+    for (const { token } of sizeColumns) if (!seen.includes(token)) seen.push(token);
+    return seen;
+  }, [sizeColumns]);
+
+  // Per-size value: an explicit edit wins, otherwise the sum of the raw columns
+  // feeding that token (a sheet can carry two size scales for the same letter).
+  const sizeValue = useMemo(() => {
+    return (row: BulkRow, token: string): string => {
+      const key = `${row.row_number}:size:${token}`;
+      if (key in edits) return edits[key];
+      let sum = 0;
+      for (const { index, token: t } of sizeColumns) {
+        if (t !== token) continue;
+        const v = cleanNumeric(row.cells[index] ?? '');
+        if (!isNaN(v) && v > 0) sum += Math.round(v);
+      }
+      return sum > 0 ? String(sum) : '';
+    };
+  }, [edits, sizeColumns]);
 
   const existingPoSet = useMemo(
     () => new Set((analysis?.existing_po_numbers ?? EMPTY_STRINGS).map((p) => String(p))),
@@ -166,9 +207,9 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
   const buildStyle = useMemo(() => {
     return (row: BulkRow): CommitStylePayload => {
       const sb: Record<string, number> = {};
-      for (const { index, token } of sizeColumns) {
-        const v = cleanNumeric(row.cells[index] ?? '');
-        if (!isNaN(v) && v > 0) sb[token] = (sb[token] ?? 0) + Math.round(v);
+      for (const token of sizeTokens) {
+        const v = cleanNumeric(sizeValue(row, token));
+        if (!isNaN(v) && v > 0) sb[token] = Math.round(v);
       }
       const meta: Record<string, string> = {};
       for (const ci of metadataColumns) {
@@ -212,7 +253,7 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
         metadata: meta,
       };
     };
-  }, [sizeColumns, metadataColumns, columns, fieldValue]);
+  }, [sizeTokens, sizeValue, metadataColumns, columns, fieldValue]);
 
   const groups = useMemo<BulkGroup[]>(() => {
     const map = new Map<string, BulkGroup & { retailers: Set<string> }>();
@@ -273,6 +314,61 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
 
   const requiredOk = requiredStatus.every((r) => r.mapped);
 
+  // --- Field-level validation (mirrors the backend's strict rules) ---
+  const rulesByKey = useMemo(() => {
+    const out: Record<string, FieldRule> = {};
+    for (const r of rules) out[r.key] = r;
+    return out;
+  }, [rules]);
+
+  const poRules = useMemo(() => rules.filter((r) => r.level === 'po'), [rules]);
+  const styleRules = useMemo(() => rules.filter((r) => r.level === 'style'), [rules]);
+
+  const fieldError = useMemo(() => {
+    return (row: BulkRow, field: string): FieldValidation => {
+      const rule = rulesByKey[field];
+      return rule ? validateValue(rule, fieldValue(row, field)) : {};
+    };
+  }, [rulesByKey, fieldValue]);
+
+  const poFieldValue = useMemo(() => {
+    return (group: BulkGroup, field: string): string => {
+      if (field === 'po_number') return group.po_number;
+      return group.rows.length ? fieldValue(group.rows[0], field) : '';
+    };
+  }, [fieldValue]);
+
+  const poFieldError = useMemo(() => {
+    return (group: BulkGroup, field: string): FieldValidation => {
+      const rule = rulesByKey[field];
+      return rule ? validateValue(rule, poFieldValue(group, field)) : {};
+    };
+  }, [rulesByKey, poFieldValue]);
+
+  const validation = useMemo(() => {
+    const byPo: Record<string, number> = {};
+    let total = 0;
+    for (const g of groups) {
+      let count = 0;
+      for (const r of poRules) {
+        if (validateValue(r, poFieldValue(g, r.key)).error) count++;
+      }
+      for (const row of g.rows) {
+        for (const r of styleRules) {
+          if (validateValue(r, fieldValue(row, r.key)).error) count++;
+        }
+        for (const token of sizeTokens) {
+          if (validateSizeValue(sizeValue(row, token)).error) count++;
+        }
+      }
+      byPo[g.po_number] = count;
+      total += count;
+    }
+    return { total, byPo };
+  }, [groups, poRules, styleRules, sizeTokens, fieldValue, sizeValue, poFieldValue]);
+
+  const canSubmit = requiredOk && validation.total === 0;
+
   const summary = useMemo(() => {
     let errorRows = 0;
     let warningRows = 0;
@@ -304,6 +400,16 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
     payloadPos,
     requiredStatus,
     requiredOk,
+    rulesByKey,
+    poRules,
+    styleRules,
+    sizeTokens,
+    sizeValue,
+    setSizeValue,
+    fieldError,
+    poFieldError,
+    validation,
+    canSubmit,
     summary,
   };
 }
