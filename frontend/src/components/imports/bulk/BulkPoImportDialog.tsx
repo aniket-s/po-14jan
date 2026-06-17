@@ -9,15 +9,16 @@ import {
 import { FileUp, Loader2, Layers, AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { analyzeBulkExcel, commitBulkImport } from './api';
+import { analyzeBulkExcel, commitBulkImport, createRetailer, listRetailers } from './api';
 import { useBulkImport, type BulkGroup } from './useBulkImport';
 import { MappingSummary } from './MappingSummary';
 import { RawPreviewGrid } from './RawPreviewGrid';
 import { PoGroupReview } from './PoGroupReview';
+import { RetailerResolveStep } from './RetailerResolveStep';
 import { BulkResults } from './BulkResults';
-import type { BulkAnalyzeResponse, BulkCommitReport } from './types';
+import type { BulkAnalyzeResponse, BulkCommitReport, RetailerOption } from './types';
 
-type Step = 'upload' | 'map' | 'review' | 'results';
+type Step = 'upload' | 'map' | 'retailers' | 'review' | 'results';
 
 const apiErrorMessage = (e: unknown, fallback: string): string => {
   const m = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -94,11 +95,12 @@ interface Props {
 const STEP_LABELS: Array<{ k: Step; label: string }> = [
   { k: 'upload', label: 'Upload' },
   { k: 'map', label: 'Map & Preview' },
+  { k: 'retailers', label: 'Retailers' },
   { k: 'review', label: 'Review & Fix' },
   { k: 'results', label: 'Results' },
 ];
 
-export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers = [] }: Props) {
+export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props) {
   const router = useRouter();
   const [step, setStep] = useState<Step>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -110,7 +112,7 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
 
   const [duplicateStrategy, setDuplicateStrategy] = useState<'skip' | 'update'>('skip');
   const [defaultShippingTerm, setDefaultShippingTerm] = useState<'DDP' | 'FOB'>('DDP');
-  const [buyerId, setBuyerId] = useState<number | null>(null);
+  const [retailerOptions, setRetailerOptions] = useState<RetailerOption[]>([]);
 
   const bulk = useBulkImport(analysis);
 
@@ -129,7 +131,7 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
     setServerErrors(null);
     setDuplicateStrategy('skip');
     setDefaultShippingTerm('DDP');
-    setBuyerId(null);
+    setRetailerOptions([]);
   };
   const handleClose = () => { reset(); onClose(); };
 
@@ -140,12 +142,33 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
       const res = await analyzeBulkExcel(file);
       setAnalysis(res);
       setStep('map');
+      try {
+        setRetailerOptions(await listRetailers());
+      } catch {
+        /* non-fatal: the resolution step can still create new retailers */
+      }
     } catch (e) {
       toast.error(apiErrorMessage(e, 'Could not analyze the file'));
     } finally {
       setAnalyzing(false);
     }
   };
+
+  const handleCreateRetailer = async (name: string): Promise<RetailerOption | null> => {
+    const created = await createRetailer(name);
+    setRetailerOptions((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+    return created;
+  };
+
+  // Resolved retailer display name for a sheet value (read-only in Review).
+  const resolveRetailerLabel = (sheetName: string): string | null => {
+    const id = bulk.retailerMap[sheetName];
+    if (id == null) return null;
+    return retailerOptions.find((o) => o.id === id)?.name ?? null;
+  };
+
+  // The Retailers step is skipped when the sheet has no retailer column/values.
+  const hasRetailerStep = bulk.retailers.length > 0;
 
   const handleCommit = async () => {
     if (bulk.payloadPos.length === 0) {
@@ -164,7 +187,6 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
         options: {
           duplicate_strategy: duplicateStrategy,
           default_shipping_term: defaultShippingTerm,
-          buyer_id: buyerId,
           filename: file?.name ?? null,
         },
       });
@@ -200,6 +222,7 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
           <DialogDescription>
             {step === 'upload' && 'Upload a tracking/WIP sheet that contains many POs. We will detect the PO and style columns and let you confirm everything before importing.'}
             {step === 'map' && 'Confirm how each column maps. Required fields must be mapped; unmapped columns are kept as notes. Nothing is imported yet.'}
+            {step === 'retailers' && 'Match each store name to a retailer (or create one). The chosen retailer is also set as the PO buyer.'}
             {step === 'review' && 'Review the POs we grouped, fix any flagged values, and choose how to handle POs that already exist.'}
             {step === 'results' && 'Import complete.'}
           </DialogDescription>
@@ -235,6 +258,16 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
             </div>
           )}
 
+          {step === 'retailers' && analysis && (
+            <RetailerResolveStep
+              retailers={bulk.retailers}
+              retailerMap={bulk.retailerMap}
+              setRetailerId={bulk.setRetailerId}
+              options={retailerOptions}
+              onCreate={handleCreateRetailer}
+            />
+          )}
+
           {step === 'review' && analysis && (
             <div className="space-y-3">
               {serverErrorInfo && (
@@ -265,9 +298,6 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
                 setDuplicateStrategy={setDuplicateStrategy}
                 defaultShippingTerm={defaultShippingTerm}
                 setDefaultShippingTerm={setDefaultShippingTerm}
-                buyers={buyers}
-                buyerId={buyerId}
-                setBuyerId={setBuyerId}
               />
               {bulk.summary.excluded_rows > 0 && (
                 <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
@@ -299,6 +329,7 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
                 validationByPo={bulk.validation.byPo}
                 serverErrors={serverErrorInfo?.fieldMap}
                 forceOpenPos={serverErrorInfo?.poNumbers}
+                resolveRetailerLabel={resolveRetailerLabel}
               />
             </div>
           )}
@@ -324,14 +355,25 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
           {step === 'map' && (
             <>
               <Button variant="outline" onClick={() => setStep('upload')}>Back</Button>
-              <Button onClick={() => setStep('review')} disabled={!bulk.requiredOk}>
-                Next: Review {bulk.summary.po_count > 0 ? `(${bulk.summary.po_count} POs)` : ''}
+              <Button onClick={() => setStep(hasRetailerStep ? 'retailers' : 'review')} disabled={!bulk.requiredOk}>
+                {hasRetailerStep ? 'Next: Retailers' : 'Next: Review'} {bulk.summary.po_count > 0 ? `(${bulk.summary.po_count} POs)` : ''}
+              </Button>
+            </>
+          )}
+          {step === 'retailers' && (
+            <>
+              <Button variant="outline" onClick={() => setStep('map')}>Back</Button>
+              {!bulk.allRetailersResolved && (
+                <span className="text-xs text-amber-600 self-center mr-1">Resolve {bulk.unresolvedRetailers.length} retailer{bulk.unresolvedRetailers.length === 1 ? '' : 's'}</span>
+              )}
+              <Button onClick={() => setStep('review')} disabled={!bulk.allRetailersResolved}>
+                Next: Review
               </Button>
             </>
           )}
           {step === 'review' && (
             <>
-              <Button variant="outline" onClick={() => setStep('map')}>Back</Button>
+              <Button variant="outline" onClick={() => setStep(hasRetailerStep ? 'retailers' : 'map')}>Back</Button>
               {bulk.validation.total > 0 && (
                 <span className="text-xs text-red-600 self-center mr-1">Fix {bulk.validation.total} error{bulk.validation.total === 1 ? '' : 's'} to import</span>
               )}
@@ -396,16 +438,13 @@ function UploadStep({ file, onFileChange }: { file: File | null; onFileChange: (
 
 function OptionsBar({
   existingCount, duplicateStrategy, setDuplicateStrategy,
-  defaultShippingTerm, setDefaultShippingTerm, buyers, buyerId, setBuyerId,
+  defaultShippingTerm, setDefaultShippingTerm,
 }: {
   existingCount: number;
   duplicateStrategy: 'skip' | 'update';
   setDuplicateStrategy: (v: 'skip' | 'update') => void;
   defaultShippingTerm: 'DDP' | 'FOB';
   setDefaultShippingTerm: (v: 'DDP' | 'FOB') => void;
-  buyers: Array<{ id: number; name: string; code?: string | null }>;
-  buyerId: number | null;
-  setBuyerId: (v: number | null) => void;
 }) {
   return (
     <div className="flex flex-wrap items-end gap-4 rounded-md border p-3">
@@ -441,21 +480,6 @@ function OptionsBar({
           <option value="FOB">FOB</option>
         </select>
       </div>
-      {buyers.length > 0 && (
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">Buyer (optional, applied to all)</label>
-          <select
-            value={buyerId ?? ''}
-            onChange={(e) => setBuyerId(e.target.value ? Number(e.target.value) : null)}
-            className="h-8 rounded-md border bg-background px-2 text-sm min-w-[180px]"
-          >
-            <option value="">— None —</option>
-            {buyers.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}{b.code ? ` (${b.code})` : ''}</option>
-            ))}
-          </select>
-        </div>
-      )}
       <div className="ml-auto text-xs text-muted-foreground self-center">
         New POs are created as <span className="font-medium text-foreground">drafts</span> — no notifications or schedules are triggered.
       </div>

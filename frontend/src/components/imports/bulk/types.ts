@@ -34,6 +34,21 @@ export interface FieldCatalogItem {
   required: boolean;
 }
 
+/** A distinct RETAILER/STORE NAME value from the sheet + its best existing match. */
+export interface RetailerResolution {
+  name: string;
+  po_count: number;
+  style_count: number;
+  matched_retailer_id: number | null;
+  matched_name: string | null;
+}
+
+export interface RetailerOption {
+  id: number;
+  name: string;
+  code?: string | null;
+}
+
 export type FieldType = 'string' | 'text' | 'number' | 'integer' | 'date' | 'enum';
 export type FieldLevel = 'po' | 'style';
 
@@ -67,6 +82,7 @@ export interface BulkAnalyzeResponse {
   existing_po_numbers: string[];
   image_columns: number[];
   has_images: boolean;
+  retailers: RetailerResolution[];
 }
 
 export interface CommitStylePayload {
@@ -91,6 +107,7 @@ export interface CommitPoPayload {
   po_number: string;
   po_date?: string | null;
   retailer_name?: string | null;
+  retailer_id?: number | null;
   shipping_term?: string | null;
   metadata?: Record<string, string>;
   styles: CommitStylePayload[];
