@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\Import\BulkPoExcelImportService;
 use Illuminate\Http\JsonResponse;
@@ -94,6 +95,44 @@ class BulkPoImportController extends Controller
         ]);
 
         return response()->json($report, $report['success'] ? 201 : 422);
+    }
+
+    /**
+     * GET /api/imports/bulk-po/factories
+     *
+     * Factories for the resolution picker. Unlike the general /factories list this
+     * includes inactive placeholders, so a factory created on a previous import
+     * can be re-selected rather than re-created.
+     */
+    public function factories(): JsonResponse
+    {
+        $factories = User::role('Factory')
+            ->orderBy('name')
+            ->get(['id', 'name', 'company'])
+            ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'company' => $u->company]);
+
+        return response()->json($factories);
+    }
+
+    /**
+     * POST /api/imports/bulk-po/factories
+     *
+     * Create a placeholder Factory user for a sheet name with no existing match
+     * (status inactive, no usable login) so a historical assignment can resolve.
+     */
+    public function createFactory(Request $request): JsonResponse
+    {
+        $v = Validator::make($request->all(), ['name' => 'required|string|max:255']);
+        if ($v->fails()) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
+        }
+
+        $factory = $this->service->createPlaceholderFactory(
+            (string) $request->input('name'),
+            $request->user()->id,
+        );
+
+        return response()->json(['id' => $factory->id, 'name' => $factory->name], 201);
     }
 
     /**

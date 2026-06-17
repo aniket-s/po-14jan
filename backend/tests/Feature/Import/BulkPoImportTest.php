@@ -51,14 +51,15 @@ class BulkPoImportTest extends TestCase
         $headers = [
             'S. NO #', 'PO', 'PO DATE', 'RETAILER / STORE NAME', 'LABEL',
             'STYLE # AS PER PO', 'COLOR', 'GRAPHIC DESCRIPTION', 'FINAL FABRIC',
-            'BUYER PO PRICE DDP', 'TOTAL UNITS', 'S', 'M', 'L', 'TP STATUS',
+            'BUYER PO PRICE DDP', 'TOTAL UNITS', 'S', 'M', 'L',
+            'FACTORY NAME', 'FACTORY PRICE', 'ORIGINAL FACTORY DATE', 'TP STATUS',
         ];
         $sheet->fromArray($headers, null, 'A1');
 
         $rows = [
-            [1, '5001', '2025-10-24', 'BURLINGTON', 'REBEL', 'RMT091', 'BLACK', 'FRENCH TERRY', 5.40, 1800, 600, 600, 600, 'TP RECEIVED 10/31'],
-            [2, '5001', '2025-10-24', 'BURLINGTON', 'REBEL', 'RMT093', 'CHARCOAL', 'TERRY', 5.20, 2400, 800, 800, 800, 'TP RECEIVED 11/01'],
-            [3, '5002', '2025-11-22', 'CITI TRENDS', 'SAINT', 'ST007X', 'RED', 'CVC TEE', 4.60, 1200, 400, 400, 400, 'SAMPLE SENT'],
+            [1, '5001', '2025-10-24', 'BURLINGTON', 'REBEL', 'RMT091', 'BLACK', 'FRENCH TERRY', 5.40, 1800, 600, 600, 600, 'ACME GARMENTS', 4.10, '2025-11-15', 'TP RECEIVED 10/31'],
+            [2, '5001', '2025-10-24', 'BURLINGTON', 'REBEL', 'RMT093', 'CHARCOAL', 'TERRY', 5.20, 2400, 800, 800, 800, 'ACME GARMENTS', 4.05, '2025-11-20', 'TP RECEIVED 11/01'],
+            [3, '5002', '2025-11-22', 'CITI TRENDS', 'SAINT', 'ST007X', 'RED', 'CVC TEE', 4.60, 1200, 400, 400, 400, 'PIONEER APPAREL', 3.80, '2025-12-10', 'SAMPLE SENT'],
         ];
         $sheet->fromArray($rows, null, 'A2');
 
@@ -71,6 +72,9 @@ class BulkPoImportTest extends TestCase
     public function test_analyze_detects_per_row_po_and_style_columns(): void
     {
         $this->actingAsAgency();
+        // A pre-existing factory so the resolution block reports a match.
+        $factory = User::factory()->create(['name' => 'ACME GARMENTS']);
+        $factory->assignRole('Factory');
 
         $response = $this->post('/api/imports/bulk-po/analyze', [
             'file' => $this->makeBulkSheet(),
@@ -90,6 +94,10 @@ class BulkPoImportTest extends TestCase
         $this->assertSame('quantity', $targetFor('TOTAL UNITS'));
         $this->assertSame('size:S', $targetFor('S'));
         $this->assertSame('size:M', $targetFor('M'));
+        // Factory columns are detected (not mis-mapped to unit_price / po_date / metadata).
+        $this->assertSame('factory_name', $targetFor('FACTORY NAME'));
+        $this->assertSame('factory_unit_price', $targetFor('FACTORY PRICE'));
+        $this->assertSame('factory_date', $targetFor('ORIGINAL FACTORY DATE'));
         // An unrecognised WIP column is parked in metadata, never dropped.
         $this->assertSame('__metadata__', $targetFor('TP STATUS'));
 
@@ -99,6 +107,15 @@ class BulkPoImportTest extends TestCase
         $burl = $retailers->firstWhere('name', 'BURLINGTON');
         $this->assertSame(2, $burl['style_count']);
         $this->assertSame(1, $burl['po_count']);
+
+        // Distinct factory names are collected, with the existing one matched.
+        $factories = collect($response->json('factories'));
+        $this->assertEqualsCanonicalizing(['ACME GARMENTS', 'PIONEER APPAREL'], $factories->pluck('name')->all());
+        $acme = $factories->firstWhere('name', 'ACME GARMENTS');
+        $this->assertSame($factory->id, $acme['matched_factory_id']);
+        $this->assertSame(2, $acme['style_count']);
+        // A factory not in the system yet has no match (resolved via create on the client).
+        $this->assertNull($factories->firstWhere('name', 'PIONEER APPAREL')['matched_factory_id']);
     }
 
     public function test_commit_creates_draft_pos_grouped_by_number(): void
@@ -256,6 +273,85 @@ class BulkPoImportTest extends TestCase
         $this->assertArrayHasKey('pos.0.styles.2.style_number', $errors);
         // Nothing is persisted when validation fails.
         $this->assertSame(0, PurchaseOrder::where('po_number', '6001')->count());
+    }
+
+    public function test_commit_assigns_factory_with_price_and_date(): void
+    {
+        $this->actingAsAgency();
+        $factory = User::factory()->create(['name' => 'ACME GARMENTS']);
+        $factory->assignRole('Factory');
+
+        $this->postJson('/api/imports/bulk-po/commit', [
+            'options' => ['duplicate_strategy' => 'skip'],
+            'pos' => [
+                ['po_number' => '7001', 'po_date' => '2025-10-24', 'styles' => [
+                    ['style_number' => 'F1', 'quantity' => 100, 'unit_price' => 5,
+                     'factory_id' => $factory->id, 'factory_unit_price' => 4.10, 'factory_date' => '2025-11-15'],
+                ]],
+            ],
+        ])->assertCreated();
+
+        $po = PurchaseOrder::where('po_number', '7001')->first();
+        $style = $po->styles()->where('style_number', 'F1')->first();
+
+        // Pivot is the single source of truth for the PO-style assignment.
+        $this->assertSame($factory->id, (int) $style->pivot->assigned_factory_id);
+        $this->assertSame('direct_to_factory', $style->pivot->assignment_type);
+        $this->assertSame('4.10', (string) $style->pivot->factory_unit_price);
+        $this->assertSame('2025-11-15', $style->pivot->factory_ex_factory_date->format('Y-m-d'));
+        // Style model mirrors the assignment, and a FactoryAssignment record is created.
+        $this->assertSame($factory->id, (int) $style->assigned_factory_id);
+        $this->assertDatabaseHas('factory_assignments', [
+            'purchase_order_id' => $po->id,
+            'style_id' => $style->id,
+            'factory_id' => $factory->id,
+            'status' => 'accepted',
+            'assignment_type' => 'direct_to_factory',
+        ]);
+    }
+
+    public function test_commit_ignores_factory_id_that_is_not_a_factory(): void
+    {
+        $user = $this->actingAsAgency(); // Agency role - not a Factory.
+
+        $this->postJson('/api/imports/bulk-po/commit', [
+            'options' => ['duplicate_strategy' => 'skip'],
+            'pos' => [
+                ['po_number' => '7002', 'po_date' => '2025-10-24', 'styles' => [
+                    ['style_number' => 'F2', 'quantity' => 10, 'unit_price' => 1,
+                     'factory_id' => $user->id, 'factory_unit_price' => 2.50],
+                ]],
+            ],
+        ])->assertCreated();
+
+        $po = PurchaseOrder::where('po_number', '7002')->first();
+        $style = $po->styles()->where('style_number', 'F2')->first();
+        // A non-factory id is never trusted as an assignment...
+        $this->assertNull($style->pivot->assigned_factory_id);
+        $this->assertDatabaseMissing('factory_assignments', ['purchase_order_id' => $po->id]);
+        // ...but the (column-independent) factory price is still preserved.
+        $this->assertSame('2.50', (string) $style->pivot->factory_unit_price);
+    }
+
+    public function test_create_placeholder_factory_creates_inactive_factory_user(): void
+    {
+        $this->actingAsAgency();
+
+        $response = $this->postJson('/api/imports/bulk-po/factories', ['name' => 'NEW FACTORY CO']);
+        $response->assertCreated()->assertJsonStructure(['id', 'name']);
+
+        $id = $response->json('id');
+        $created = User::find($id);
+        $this->assertNotNull($created);
+        $this->assertSame('NEW FACTORY CO', $created->name);
+        $this->assertSame('inactive', $created->status);
+        $this->assertTrue($created->hasRole('Factory'));
+
+        // Creating the same name again re-matches rather than duplicating.
+        $again = $this->postJson('/api/imports/bulk-po/factories', ['name' => 'NEW FACTORY CO']);
+        $again->assertCreated();
+        $this->assertSame($id, $again->json('id'));
+        $this->assertSame(1, User::where('name', 'NEW FACTORY CO')->count());
     }
 
     public function test_bulk_analyze_requires_permission(): void

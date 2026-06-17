@@ -513,6 +513,8 @@ Route::middleware('auth:sanctum')->group(function () {
             // Bulk multi-PO Excel import (historical back-fill)
             Route::post('/bulk-po/analyze', [\App\Http\Controllers\Api\BulkPoImportController::class, 'analyze']);
             Route::post('/bulk-po/commit', [\App\Http\Controllers\Api\BulkPoImportController::class, 'commit']);
+            Route::get('/bulk-po/factories', [\App\Http\Controllers\Api\BulkPoImportController::class, 'factories']);
+            Route::post('/bulk-po/factories', [\App\Http\Controllers\Api\BulkPoImportController::class, 'createFactory']);
         });
     });
 
