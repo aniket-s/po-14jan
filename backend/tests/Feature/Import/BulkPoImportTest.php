@@ -174,27 +174,57 @@ class BulkPoImportTest extends TestCase
         $this->assertTrue(PurchaseOrder::where('po_number', '5003')->exists());
     }
 
-    public function test_commit_update_strategy_appends_only_new_styles(): void
+    private function existingPoWithStyle(): PurchaseOrder
     {
         $user = $this->actingAsAgency();
-        $existing = PurchaseOrder::create(['po_number' => '5001', 'po_date' => '2025-01-01', 'status' => 'draft', 'creator_id' => $user->id]);
+        $po = PurchaseOrder::create(['po_number' => '5001', 'po_date' => '2025-01-01', 'status' => 'draft', 'creator_id' => $user->id]);
         $style = \App\Models\Style::create(['style_number' => 'KEEP1', 'total_quantity' => 5, 'unit_price' => 1, 'created_by' => $user->id, 'is_active' => true]);
-        $existing->styles()->attach($style->id, ['quantity_in_po' => 5, 'unit_price_in_po' => 1, 'status' => 'pending']);
+        $po->styles()->attach($style->id, ['quantity_in_po' => 5, 'unit_price_in_po' => 1, 'status' => 'pending']);
+        return $po;
+    }
 
-        $response = $this->postJson('/api/imports/bulk-po/commit', [
-            'options' => ['duplicate_strategy' => 'update'],
+    public function test_commit_append_adds_new_styles_and_leaves_existing_untouched(): void
+    {
+        $existing = $this->existingPoWithStyle();
+
+        $this->postJson('/api/imports/bulk-po/commit', [
+            'options' => ['duplicate_strategy' => 'append'],
             'pos' => [
                 ['po_number' => '5001', 'po_date' => '2025-12-01', 'styles' => [
-                    ['style_number' => 'KEEP1', 'quantity' => 999, 'unit_price' => 9], // already present -> skipped
+                    ['style_number' => 'KEEP1', 'quantity' => 999, 'unit_price' => 9], // already present -> left as-is
                     ['style_number' => 'NEW1', 'quantity' => 30, 'unit_price' => 3],   // appended
                 ]],
             ],
-        ]);
+        ])->assertCreated()->assertJson(['summary' => ['pos_updated' => 1, 'pos_created' => 0]]);
 
-        $response->assertCreated()->assertJson(['summary' => ['pos_updated' => 1, 'pos_created' => 0]]);
         $existing->refresh();
         $this->assertSame(2, (int) $existing->total_styles);
         $this->assertTrue($existing->styles()->where('style_number', 'NEW1')->exists());
+        // Existing style's PO quantity is unchanged on append.
+        $this->assertSame(5, (int) $existing->styles()->where('style_number', 'KEEP1')->first()->pivot->quantity_in_po);
+    }
+
+    public function test_commit_update_refreshes_existing_styles_and_appends_new(): void
+    {
+        $existing = $this->existingPoWithStyle();
+
+        $this->postJson('/api/imports/bulk-po/commit', [
+            'options' => ['duplicate_strategy' => 'update'],
+            'pos' => [
+                ['po_number' => '5001', 'po_date' => '2025-12-01', 'styles' => [
+                    ['style_number' => 'KEEP1', 'quantity' => 999, 'unit_price' => 9], // refreshed
+                    ['style_number' => 'NEW1', 'quantity' => 30, 'unit_price' => 3],   // appended
+                ]],
+            ],
+        ])->assertCreated()->assertJson(['summary' => ['pos_updated' => 1, 'pos_created' => 0, 'styles_refreshed' => 1]]);
+
+        $existing->refresh();
+        $this->assertSame(2, (int) $existing->total_styles);
+        $this->assertTrue($existing->styles()->where('style_number', 'NEW1')->exists());
+        // Existing style's PO quantity/price refreshed from the sheet.
+        $pivot = $existing->styles()->where('style_number', 'KEEP1')->first()->pivot;
+        $this->assertSame(999, (int) $pivot->quantity_in_po);
+        $this->assertSame('9.00', (string) $pivot->unit_price_in_po);
     }
 
     public function test_commit_rejects_invalid_fields(): void

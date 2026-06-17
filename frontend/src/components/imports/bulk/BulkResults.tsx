@@ -40,7 +40,13 @@ export function BulkResults({ report, onOpenPo }: Props) {
       {report.updated.length > 0 && (
         <Section icon={<RefreshCw className="h-4 w-4 text-blue-600" />} title={`Updated (${report.updated.length})`}>
           {report.updated.map((p) => (
-            <ResultRow key={p.id} label={`PO ${p.po_number}`} sub={`+${p.styles} new styles`} onClick={onOpenPo ? () => onOpenPo(p.id) : undefined} />
+            <ResultRow
+              key={p.id}
+              label={`PO ${p.po_number}`}
+              sub={[p.styles ? `+${p.styles} new` : '', p.refreshed ? `${p.refreshed} refreshed` : '']
+                .filter(Boolean).join(' · ') || 'no changes'}
+              onClick={onOpenPo ? () => onOpenPo(p.id) : undefined}
+            />
           ))}
         </Section>
       )}

@@ -16,7 +16,7 @@ import { RawPreviewGrid } from './RawPreviewGrid';
 import { PoGroupReview } from './PoGroupReview';
 import { RetailerResolveStep } from './RetailerResolveStep';
 import { BulkResults } from './BulkResults';
-import type { BulkAnalyzeResponse, BulkCommitReport, RetailerOption } from './types';
+import type { BulkAnalyzeResponse, BulkCommitReport, DuplicateStrategy, RetailerOption } from './types';
 
 type Step = 'upload' | 'map' | 'retailers' | 'review' | 'results';
 
@@ -110,7 +110,7 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
   const [report, setReport] = useState<BulkCommitReport | null>(null);
   const [serverErrors, setServerErrors] = useState<Record<string, string[]> | null>(null);
 
-  const [duplicateStrategy, setDuplicateStrategy] = useState<'skip' | 'update'>('skip');
+  const [duplicateStrategy, setDuplicateStrategy] = useState<DuplicateStrategy>('skip');
   const [defaultShippingTerm, setDefaultShippingTerm] = useState<'DDP' | 'FOB'>('DDP');
   const [retailerOptions, setRetailerOptions] = useState<RetailerOption[]>([]);
 
@@ -441,32 +441,34 @@ function OptionsBar({
   defaultShippingTerm, setDefaultShippingTerm,
 }: {
   existingCount: number;
-  duplicateStrategy: 'skip' | 'update';
-  setDuplicateStrategy: (v: 'skip' | 'update') => void;
+  duplicateStrategy: DuplicateStrategy;
+  setDuplicateStrategy: (v: DuplicateStrategy) => void;
   defaultShippingTerm: 'DDP' | 'FOB';
   setDefaultShippingTerm: (v: 'DDP' | 'FOB') => void;
 }) {
+  const dupHint: Record<DuplicateStrategy, string> = {
+    skip: 'Existing POs are left untouched.',
+    append: 'Add styles not already on the PO; existing styles stay as they are.',
+    update: 'Refresh existing styles’ quantity / price / sizes from the sheet, and add any new styles.',
+  };
   return (
     <div className="flex flex-wrap items-end gap-4 rounded-md border p-3">
       {existingCount > 0 && (
         <div>
           <div className="text-xs text-muted-foreground mb-1">{existingCount} PO(s) already exist</div>
           <div className="inline-flex rounded-md border overflow-hidden text-xs">
-            <button
-              type="button"
-              className={`px-3 py-1.5 ${duplicateStrategy === 'skip' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
-              onClick={() => setDuplicateStrategy('skip')}
-            >
-              Skip them
-            </button>
-            <button
-              type="button"
-              className={`px-3 py-1.5 border-l ${duplicateStrategy === 'update' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
-              onClick={() => setDuplicateStrategy('update')}
-            >
-              Add new styles
-            </button>
+            {([['skip', 'Skip them'], ['append', 'Add new styles'], ['update', 'Update existing']] as Array<[DuplicateStrategy, string]>).map(([key, label], i) => (
+              <button
+                key={key}
+                type="button"
+                className={`px-3 py-1.5 ${i > 0 ? 'border-l' : ''} ${duplicateStrategy === key ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
+                onClick={() => setDuplicateStrategy(key)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
+          <div className="text-[11px] text-muted-foreground mt-1 max-w-md">{dupHint[duplicateStrategy]}</div>
         </div>
       )}
       <div>

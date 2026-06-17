@@ -130,7 +130,7 @@ class BulkPoExcelImportService
     {
         $rules = [
             'options' => 'nullable|array',
-            'options.duplicate_strategy' => 'nullable|in:skip,update',
+            'options.duplicate_strategy' => 'nullable|in:skip,append,update',
             'options.default_shipping_term' => 'nullable|in:FOB,DDP',
             'options.buyer_id' => 'nullable|exists:buyers,id',
             'options.filename' => 'nullable|string|max:255',
@@ -594,7 +594,9 @@ class BulkPoExcelImportService
      */
     public function commit(array $pos, array $options, int $userId): array
     {
-        $duplicateStrategy = ($options['duplicate_strategy'] ?? 'skip') === 'update' ? 'update' : 'skip';
+        $duplicateStrategy = in_array($options['duplicate_strategy'] ?? 'skip', ['skip', 'append', 'update'], true)
+            ? ($options['duplicate_strategy'] ?? 'skip')
+            : 'skip';
         $defaultShippingTerm = in_array($options['default_shipping_term'] ?? 'DDP', ['FOB', 'DDP'], true)
             ? $options['default_shipping_term'] : 'DDP';
         $buyerId = $options['buyer_id'] ?? null;
@@ -663,27 +665,40 @@ class BulkPoExcelImportService
                         ]);
                     }
 
-                    $existingStyleNumbers = [];
-                    if ($existing && $duplicateStrategy === 'update') {
+                    $existingByNumber = [];
+                    if ($existing && in_array($duplicateStrategy, ['append', 'update'], true)) {
                         foreach ($po->styles as $s) {
-                            $existingStyleNumbers[strtoupper(trim($s->style_number))] = true;
+                            $existingByNumber[strtoupper(trim((string) $s->style_number))] = $s;
                         }
                     }
 
                     $stylesCreated = 0;
+                    $stylesUpdated = 0;
                     foreach (($poInput['styles'] ?? []) as $styleInput) {
                         $styleNumber = trim((string) ($styleInput['style_number'] ?? ''));
                         if ($styleNumber === '') {
-                            continue;
-                        }
-                        // On update, don't re-add a style already on the PO.
-                        if (isset($existingStyleNumbers[strtoupper($styleNumber)])) {
                             continue;
                         }
 
                         $quantity = (int) ($styleInput['quantity'] ?? 0);
                         $unitPrice = (float) ($styleInput['unit_price'] ?? 0);
                         $sizeBreakdown = $this->cleanSizeBreakdown($styleInput['size_breakdown'] ?? null);
+
+                        // Already on this PO? 'append' leaves it untouched; 'update'
+                        // refreshes its PO quantity / price / size from the sheet.
+                        $existingStyle = $existingByNumber[strtoupper($styleNumber)] ?? null;
+                        if ($existingStyle) {
+                            if ($duplicateStrategy === 'update') {
+                                $po->styles()->updateExistingPivot($existingStyle->id, [
+                                    'quantity_in_po' => $quantity,
+                                    'unit_price_in_po' => $unitPrice,
+                                    'size_breakdown' => $sizeBreakdown ? json_encode($sizeBreakdown) : null,
+                                ]);
+                                $stylesUpdated++;
+                            }
+                            continue;
+                        }
+
                         $rowMeta = is_array($styleInput['metadata'] ?? null) ? array_filter(
                             $styleInput['metadata'],
                             fn ($v) => $v !== null && $v !== ''
@@ -742,13 +757,19 @@ class BulkPoExcelImportService
 
                     $po->updateTotals();
 
-                    return ['po' => $po, 'styles_created' => $stylesCreated, 'was_update' => (bool) ($existing && $duplicateStrategy === 'update')];
+                    return [
+                        'po' => $po,
+                        'styles_created' => $stylesCreated,
+                        'styles_updated' => $stylesUpdated,
+                        'was_update' => (bool) ($existing && in_array($duplicateStrategy, ['append', 'update'], true)),
+                    ];
                 });
 
                 $entry = [
                     'po_number' => $poNumber,
                     'id' => $result['po']->id,
                     'styles' => $result['styles_created'],
+                    'refreshed' => $result['styles_updated'],
                 ];
                 if ($result['was_update']) {
                     $updated[] = $entry;
@@ -774,6 +795,7 @@ class BulkPoExcelImportService
                 'pos_skipped' => count($skipped),
                 'pos_failed' => count($errors),
                 'styles_created' => array_sum(array_column($created, 'styles')) + array_sum(array_column($updated, 'styles')),
+                'styles_refreshed' => array_sum(array_column($updated, 'refreshed')),
             ],
         ];
     }
