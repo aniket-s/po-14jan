@@ -6,6 +6,14 @@ import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronRight, AlertTriangle, Store, RefreshCw, Package } from 'lucide-react';
 import type { BulkGroup } from './useBulkImport';
 import type { BulkRow, RowIssue } from './types';
+import { resolveImageUrl } from './utils';
+
+const firstImageUrl = (row: BulkRow): string | null => {
+  if (!row.images) return null;
+  const keys = Object.keys(row.images);
+  if (!keys.length) return null;
+  return row.images[Number(keys[0])]?.url ?? null;
+};
 
 interface Props {
   groups: BulkGroup[];
@@ -108,6 +116,7 @@ export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: 
                     <thead>
                       <tr className="bg-muted/40 text-left">
                         <th className="px-2 py-1 w-8" />
+                        <th className="px-2 py-1 w-14">Img</th>
                         <th className="px-2 py-1 min-w-[140px]">Style #</th>
                         <th className="px-2 py-1 min-w-[110px]">Color</th>
                         <th className="px-2 py-1 min-w-[180px]">Description</th>
@@ -132,6 +141,14 @@ export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: 
                         return (
                           <tr key={row.row_number} className={`border-t align-top ${rowTone}`}>
                             <td className="px-2 py-1 text-muted-foreground font-mono">{row.row_number}</td>
+                            <td className="px-2 py-1">
+                              {firstImageUrl(row) ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={resolveImageUrl(firstImageUrl(row)!)} alt="" loading="lazy" className="h-10 w-10 object-contain rounded border bg-white" />
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
                             <td className="px-2 py-1">
                               <EditCell value={fieldValue(row, 'style_number')} onChange={(v) => setFieldValue(row.row_number, 'style_number', v)} issue={issueFor('style_number')} />
                             </td>

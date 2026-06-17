@@ -5,6 +5,7 @@ namespace App\Services\Import;
 use App\Models\PurchaseOrder;
 use App\Models\Retailer;
 use App\Models\Style;
+use App\Services\ExcelImageExtractionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -34,6 +35,8 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  */
 class BulkPoExcelImportService
 {
+    public function __construct(protected ExcelImageExtractionService $imageService) {}
+
     /** Hard cap on preview rows returned to the client (full files commit fine). */
     public const MAX_PREVIEW_ROWS = 1000;
 
@@ -121,6 +124,11 @@ class BulkPoExcelImportService
             $columns = $this->buildColumns($sheet, $headerRow, $lastNamedCol);
             $poTarget = $this->columnForTarget($columns, 'po_number');
 
+            // Embedded images (CAD previews etc.) — anchored either inside a cell
+            // or floating over it. The extraction service resolves both to a
+            // row/column anchor and stores each to a servable URL.
+            [$imagesByRowCol, $imageColumns] = $this->extractImages($filePath, $headerRow);
+
             // Raw grid (rows after the header), capped for payload size. PO numbers
             // are collected across ALL rows (not just the preview slice) so the
             // duplicate check stays accurate on large files.
@@ -138,7 +146,8 @@ class BulkPoExcelImportService
                     }
                     $cells[] = $val;
                 }
-                if (!$hasData) {
+                $rowImages = $imagesByRowCol[$r] ?? [];
+                if (!$hasData && empty($rowImages)) {
                     continue;
                 }
                 $totalDataRows++;
@@ -149,7 +158,7 @@ class BulkPoExcelImportService
                     }
                 }
                 if (count($rows) < self::MAX_PREVIEW_ROWS) {
-                    $rows[] = ['row_number' => $r, 'cells' => $cells];
+                    $rows[] = ['row_number' => $r, 'cells' => $cells, 'images' => (object) $rowImages];
                 }
             }
 
@@ -174,11 +183,46 @@ class BulkPoExcelImportService
                 'field_catalog' => $this->fieldCatalog(),
                 'required_fields' => $this->requiredFields(),
                 'existing_po_numbers' => array_values($existingPoNumbers),
+                'image_columns' => array_map('intval', array_keys($imageColumns)),
+                'has_images' => !empty($imageColumns),
             ];
         } catch (\Throwable $e) {
             Log::error('Bulk PO Excel analysis failed: ' . $e->getMessage());
             return ['success' => false, 'error' => 'Failed to analyze file: ' . $e->getMessage()];
         }
+    }
+
+    /**
+     * Extract embedded images and index them by Excel row -> column.
+     *
+     * @return array{0: array<int, array<int, array{url:string,path:string}>>, 1: array<int,bool>}
+     */
+    private function extractImages(string $filePath, int $headerRow): array
+    {
+        $byRowCol = [];
+        $columns = [];
+        if (!config('import.image_extraction.enabled', true)) {
+            return [$byRowCol, $columns];
+        }
+        try {
+            $extraction = $this->imageService->extractImagesForRowsAndColumns($filePath, $headerRow);
+            foreach (($extraction['images_by_cell'] ?? []) as $cell) {
+                $r = (int) ($cell['row_index'] ?? 0);
+                $c = (int) ($cell['column_index'] ?? -1);
+                if ($r <= 0 || $c < 0) {
+                    continue;
+                }
+                // First image wins per cell; keep both the servable URL (preview)
+                // and the storage path (persisted onto the style at commit).
+                if (!isset($byRowCol[$r][$c])) {
+                    $byRowCol[$r][$c] = ['url' => $cell['url'] ?? '', 'path' => $cell['path'] ?? ''];
+                }
+                $columns[$c] = true;
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Bulk PO image extraction failed: ' . $e->getMessage());
+        }
+        return [$byRowCol, $columns];
     }
 
     /**
@@ -460,6 +504,16 @@ class BulkPoExcelImportService
                             fn ($v) => $v !== null && $v !== ''
                         ) : [];
 
+                        // Image references come back from the client as the same
+                        // storage paths analyze() handed out; only accept paths
+                        // inside the import image directory.
+                        $images = [];
+                        foreach ((array) ($styleInput['images'] ?? []) as $img) {
+                            if (is_string($img) && str_starts_with($img, 'imports/images/')) {
+                                $images[] = $img;
+                            }
+                        }
+
                         $packingDetails = array_filter([
                             'method' => $styleInput['packing'] ?? null,
                             'pre_pack_inner' => $styleInput['pre_pack_inner'] ?? null,
@@ -474,6 +528,7 @@ class BulkPoExcelImportService
                             'fit' => $styleInput['fit'] ?? null,
                             'size_breakup' => $sizeBreakdown,
                             'packing_details' => $packingDetails ?: null,
+                            'images' => $images ?: null,
                             'total_quantity' => $quantity,
                             'unit_price' => $unitPrice,
                             'fob_price' => $unitPrice,

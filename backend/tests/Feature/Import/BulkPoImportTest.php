@@ -109,7 +109,9 @@ class BulkPoImportTest extends TestCase
                     'styles' => [
                         ['style_number' => 'RMT091', 'color_name' => 'BLACK', 'quantity' => 1800, 'unit_price' => 5.40,
                          'size_breakdown' => ['S' => 600, 'M' => 600, 'L' => 600],
-                         'metadata' => ['tp_status' => 'TP RECEIVED 10/31']],
+                         'metadata' => ['tp_status' => 'TP RECEIVED 10/31'],
+                         // Only the import-dir path should persist; the traversal attempt is dropped.
+                         'images' => ['imports/images/cad1.png', '../../etc/passwd']],
                         ['style_number' => 'RMT093', 'color_name' => 'CHARCOAL', 'quantity' => 2400, 'unit_price' => 5.20],
                     ],
                 ],
@@ -135,8 +137,10 @@ class BulkPoImportTest extends TestCase
         $this->assertSame(4200, (int) $po->total_quantity); // 1800 + 2400
         $this->assertSame(2, (int) $po->total_styles);
         // Per-row WIP columns preserved losslessly on the pivot.
-        $pivot = $po->styles()->where('style_number', 'RMT091')->first()->pivot;
-        $this->assertSame('TP RECEIVED 10/31', $pivot->metadata['tp_status'] ?? null);
+        $style = $po->styles()->where('style_number', 'RMT091')->first();
+        $this->assertSame('TP RECEIVED 10/31', $style->pivot->metadata['tp_status'] ?? null);
+        // Excel image carried onto the style; path-traversal entry sanitised out.
+        $this->assertSame(['imports/images/cad1.png'], $style->images);
     }
 
     public function test_commit_skips_existing_po_numbers(): void
