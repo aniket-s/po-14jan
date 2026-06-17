@@ -42,6 +42,7 @@ class PurchaseOrderStyle extends Pivot
         'suggested_ship_option_id',
         'status',
         'notes',
+        'metadata',
     ];
 
     protected $casts = [
@@ -50,6 +51,7 @@ class PurchaseOrderStyle extends Pivot
         'factory_unit_price' => 'decimal:2',
         'size_breakdown' => 'array',
         'ratio' => 'array',
+        'metadata' => 'array',
         'assigned_at' => 'datetime',
         'target_production_date' => 'date',
         'target_shipment_date' => 'date',

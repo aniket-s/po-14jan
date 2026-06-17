@@ -509,6 +509,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('permission:po.create')->group(function () {
             Route::post('/analyze', [\App\Http\Controllers\Api\ImportController::class, 'analyze']);
             Route::post('/commit', [\App\Http\Controllers\Api\ImportController::class, 'commit']);
+
+            // Bulk multi-PO Excel import (historical back-fill)
+            Route::post('/bulk-po/analyze', [\App\Http\Controllers\Api\BulkPoImportController::class, 'analyze']);
+            Route::post('/bulk-po/commit', [\App\Http\Controllers\Api\BulkPoImportController::class, 'commit']);
         });
     });
 

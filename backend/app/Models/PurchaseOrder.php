@@ -205,6 +205,7 @@ class PurchaseOrder extends Model
                 'factory_ex_factory_date',
                 'status',
                 'notes',
+                'metadata',
             ])
             ->withTimestamps();
     }
