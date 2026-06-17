@@ -52,46 +52,136 @@ class BulkPoExcelImportService
     ];
 
     /**
-     * Structured fields a column can be mapped to. `required` drives the
-     * pre-submit checklist; `cardinality=single` means only one column may feed
-     * the field (later duplicates fall back to metadata).
+     * Canonical rules for every structured field - the single source of truth
+     * shared by the commit validator (server-side guard) and the frontend
+     * (live, pre-submit validation). Limits mirror the actual DB columns.
+     *
+     * type:  string | text | number | integer | date | enum
+     * level: po | style
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function fieldRules(): array
+    {
+        return [
+            ['key' => 'po_number',      'label' => 'PO Number',        'group' => 'Purchase Order', 'level' => 'po',    'type' => 'string',  'required' => true,  'max_length' => 100],
+            ['key' => 'po_date',        'label' => 'PO Date',          'group' => 'Purchase Order', 'level' => 'po',    'type' => 'date',    'required' => true],
+            ['key' => 'retailer_name',  'label' => 'Retailer',         'group' => 'Purchase Order', 'level' => 'po',    'type' => 'string',  'required' => false, 'max_length' => 255],
+            ['key' => 'shipping_term',  'label' => 'Shipping Term',    'group' => 'Purchase Order', 'level' => 'po',    'type' => 'enum',    'required' => false, 'enum' => ['FOB', 'DDP']],
+            ['key' => 'style_number',   'label' => 'Style Number',     'group' => 'Style',          'level' => 'style', 'type' => 'string',  'required' => true,  'max_length' => 100],
+            ['key' => 'color_name',     'label' => 'Color',            'group' => 'Style',          'level' => 'style', 'type' => 'string',  'required' => false, 'max_length' => 100],
+            ['key' => 'description',    'label' => 'Description',       'group' => 'Style',          'level' => 'style', 'type' => 'text',    'required' => false, 'max_length' => 2000],
+            ['key' => 'fabric',         'label' => 'Fabric',           'group' => 'Style',          'level' => 'style', 'type' => 'string',  'required' => false, 'max_length' => 255],
+            ['key' => 'fit',            'label' => 'Fit',              'group' => 'Style',          'level' => 'style', 'type' => 'string',  'required' => false, 'max_length' => 100],
+            ['key' => 'label',          'label' => 'Label',            'group' => 'Style',          'level' => 'style', 'type' => 'string',  'required' => false, 'max_length' => 255],
+            ['key' => 'notes',          'label' => 'Notes',            'group' => 'Style',          'level' => 'style', 'type' => 'text',    'required' => false, 'max_length' => 2000],
+            ['key' => 'unit_price',     'label' => 'Unit Price',       'group' => 'Style',          'level' => 'style', 'type' => 'number',  'required' => true,  'min' => 0, 'max' => 99999999.99, 'decimals' => 2, 'warn_zero' => true],
+            ['key' => 'quantity',       'label' => 'Quantity',         'group' => 'Style',          'level' => 'style', 'type' => 'integer', 'required' => true,  'min' => 1, 'max' => 2147483647],
+            ['key' => 'pre_pack_inner', 'label' => 'Pre-pack / Inner', 'group' => 'Style',          'level' => 'style', 'type' => 'string',  'required' => false, 'max_length' => 100],
+            ['key' => 'packing',        'label' => 'Packing',          'group' => 'Style',          'level' => 'style', 'type' => 'text',    'required' => false, 'max_length' => 1000],
+            ['key' => 'ihd',            'label' => 'IHD',              'group' => 'Style',          'level' => 'style', 'type' => 'date',    'required' => false],
+        ];
+    }
+
+    /**
+     * Mapping-picker view of the rules: {key,label,group,required}. Size columns
+     * and the special targets are handled separately by the frontend.
      *
      * @return array<int, array{key:string,label:string,group:string,required:bool}>
      */
     public function fieldCatalog(): array
     {
-        return [
-            ['key' => 'po_number',      'label' => 'PO Number',      'group' => 'Purchase Order', 'required' => true],
-            ['key' => 'po_date',        'label' => 'PO Date',        'group' => 'Purchase Order', 'required' => false],
-            ['key' => 'retailer_name',  'label' => 'Retailer',       'group' => 'Purchase Order', 'required' => false],
-            ['key' => 'style_number',   'label' => 'Style Number',   'group' => 'Style',          'required' => true],
-            ['key' => 'color_name',     'label' => 'Color',          'group' => 'Style',          'required' => false],
-            ['key' => 'description',    'label' => 'Description',     'group' => 'Style',          'required' => false],
-            ['key' => 'fabric',         'label' => 'Fabric',         'group' => 'Style',          'required' => false],
-            ['key' => 'fit',            'label' => 'Fit',            'group' => 'Style',          'required' => false],
-            ['key' => 'label',          'label' => 'Label',          'group' => 'Style',          'required' => false],
-            ['key' => 'notes',          'label' => 'Notes',          'group' => 'Style',          'required' => false],
-            ['key' => 'unit_price',     'label' => 'Unit Price',     'group' => 'Style',          'required' => true],
-            ['key' => 'quantity',       'label' => 'Quantity',       'group' => 'Style',          'required' => true],
-            ['key' => 'pre_pack_inner', 'label' => 'Pre-pack / Inner', 'group' => 'Style',        'required' => false],
-            ['key' => 'packing',        'label' => 'Packing',        'group' => 'Style',          'required' => false],
-            ['key' => 'ihd',            'label' => 'IHD',            'group' => 'Style',          'required' => false],
-        ];
+        return array_map(fn ($r) => [
+            'key' => $r['key'],
+            'label' => $r['label'],
+            'group' => $r['group'],
+            'required' => (bool) $r['required'],
+        ], $this->fieldRules());
     }
 
     /** @return string[] keys of fields that are required to commit. */
     public function requiredFields(): array
     {
         return array_values(array_map(
-            fn ($f) => $f['key'],
-            array_filter($this->fieldCatalog(), fn ($f) => $f['required'])
+            fn ($r) => $r['key'],
+            array_filter($this->fieldRules(), fn ($r) => $r['required'])
         ));
     }
 
     /** Fields where only a single column may feed them (duplicates -> metadata). */
     private function singleCardinalityFields(): array
     {
-        return array_map(fn ($f) => $f['key'], $this->fieldCatalog());
+        return array_map(fn ($r) => $r['key'], $this->fieldRules());
+    }
+
+    /**
+     * Full Laravel validation ruleset for the commit payload, built from
+     * fieldRules() so the server guard can never drift from what the frontend
+     * shows. PO-level fields validate under pos.*, style fields under
+     * pos.*.styles.*.
+     *
+     * @return array<string, string>
+     */
+    public function commitValidationRules(): array
+    {
+        $rules = [
+            'options' => 'nullable|array',
+            'options.duplicate_strategy' => 'nullable|in:skip,update',
+            'options.default_shipping_term' => 'nullable|in:FOB,DDP',
+            'options.buyer_id' => 'nullable|exists:buyers,id',
+            'options.filename' => 'nullable|string|max:255',
+            'pos' => 'required|array|min:1',
+            'pos.*.retailer_id' => 'nullable|exists:retailers,id',
+            'pos.*.metadata' => 'nullable|array',
+            'pos.*.styles' => 'required|array|min:1',
+            'pos.*.styles.*.size_breakdown' => 'nullable|array',
+            'pos.*.styles.*.size_breakdown.*' => 'nullable|integer|min:0',
+            'pos.*.styles.*.metadata' => 'nullable|array',
+            'pos.*.styles.*.images' => 'nullable|array',
+            'pos.*.styles.*.images.*' => 'string',
+        ];
+
+        foreach ($this->fieldRules() as $r) {
+            $prefix = $r['level'] === 'po' ? 'pos.*.' : 'pos.*.styles.*.';
+            $rules[$prefix . $r['key']] = $this->laravelRuleFor($r);
+        }
+
+        return $rules;
+    }
+
+    /** Translate one field rule into a Laravel rule string. */
+    private function laravelRuleFor(array $r): string
+    {
+        $parts = [$r['required'] ? 'required' : 'nullable'];
+
+        switch ($r['type']) {
+            case 'integer':
+                $parts[] = 'integer';
+                break;
+            case 'number':
+                $parts[] = 'numeric';
+                break;
+            case 'date':
+                $parts[] = 'date';
+                break;
+            case 'enum':
+                $parts[] = 'in:' . implode(',', $r['enum'] ?? []);
+                break;
+            default: // string | text
+                $parts[] = 'string';
+        }
+
+        if (isset($r['min'])) {
+            $parts[] = 'min:' . $r['min'];
+        }
+        if (isset($r['max'])) {
+            $parts[] = 'max:' . $r['max'];
+        }
+        if (isset($r['max_length'])) {
+            $parts[] = 'max:' . $r['max_length'];
+        }
+
+        return implode('|', $parts);
     }
 
     /**
@@ -181,6 +271,7 @@ class BulkPoExcelImportService
                 'total_data_rows' => $totalDataRows,
                 'preview_truncated' => $totalDataRows > count($rows),
                 'field_catalog' => $this->fieldCatalog(),
+                'field_rules' => $this->fieldRules(),
                 'required_fields' => $this->requiredFields(),
                 'existing_po_numbers' => array_values($existingPoNumbers),
                 'image_columns' => array_map('intval', array_keys($imageColumns)),
@@ -450,17 +541,12 @@ class BulkPoExcelImportService
                     if ($existing && $duplicateStrategy === 'update') {
                         $po = $existing;
                     } else {
-                        // po_date may be free text ("MAIL RECD 12/21"); parse what
-                        // we can and keep the raw value when it isn't a real date.
-                        $rawPoDate = trim((string) ($poInput['po_date'] ?? ''));
-                        $parsedPoDate = $this->normalizeDate($rawPoDate !== '' ? $rawPoDate : null);
-
+                        // po_date is required + validated as a real date by
+                        // commitValidationRules(), so normalizeDate always yields a
+                        // value here - no silent fallback.
                         $po = PurchaseOrder::create([
                             'po_number' => $poNumber,
-                            // po_date is NOT NULL in the schema; historical sheets
-                            // usually carry it, but fall back to today when missing
-                            // or unparseable so a back-fill insert never blocks.
-                            'po_date' => $parsedPoDate ?? now()->format('Y-m-d'),
+                            'po_date' => $this->normalizeDate($poInput['po_date'] ?? null),
                             'status' => 'draft',
                             'creator_id' => $userId,
                             'buyer_id' => $buyerId,
@@ -478,8 +564,6 @@ class BulkPoExcelImportService
                                 'batch_id' => $batchId,
                                 'parser_version' => 1,
                                 'imported_at' => now()->toIso8601String(),
-                                // Preserve the original date text when it wasn't a real date.
-                                'po_date_raw' => ($parsedPoDate === null && $rawPoDate !== '') ? $rawPoDate : null,
                                 'po_metadata' => (is_array($poInput['metadata'] ?? null) && !empty($poInput['metadata']))
                                     ? $poInput['metadata'] : null,
                             ], fn ($v) => $v !== null),

@@ -34,6 +34,25 @@ export interface FieldCatalogItem {
   required: boolean;
 }
 
+export type FieldType = 'string' | 'text' | 'number' | 'integer' | 'date' | 'enum';
+export type FieldLevel = 'po' | 'style';
+
+/** Validation contract for a structured field, mirrored from the backend. */
+export interface FieldRule {
+  key: string;
+  label: string;
+  group: string;
+  level: FieldLevel;
+  type: FieldType;
+  required: boolean;
+  max_length?: number;
+  min?: number;
+  max?: number;
+  decimals?: number;
+  enum?: string[];
+  warn_zero?: boolean;
+}
+
 export interface BulkAnalyzeResponse {
   success: boolean;
   sheet_name: string;
@@ -43,6 +62,7 @@ export interface BulkAnalyzeResponse {
   total_data_rows: number;
   preview_truncated: boolean;
   field_catalog: FieldCatalogItem[];
+  field_rules: FieldRule[];
   required_fields: string[];
   existing_po_numbers: string[];
   image_columns: number[];

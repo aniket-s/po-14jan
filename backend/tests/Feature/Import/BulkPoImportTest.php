@@ -151,8 +151,8 @@ class BulkPoImportTest extends TestCase
         $response = $this->postJson('/api/imports/bulk-po/commit', [
             'options' => ['duplicate_strategy' => 'skip'],
             'pos' => [
-                ['po_number' => '5001', 'styles' => [['style_number' => 'X1', 'quantity' => 10, 'unit_price' => 1]]],
-                ['po_number' => '5003', 'styles' => [['style_number' => 'X2', 'quantity' => 20, 'unit_price' => 2]]],
+                ['po_number' => '5001', 'po_date' => '2025-12-01', 'styles' => [['style_number' => 'X1', 'quantity' => 10, 'unit_price' => 1]]],
+                ['po_number' => '5003', 'po_date' => '2025-12-01', 'styles' => [['style_number' => 'X2', 'quantity' => 20, 'unit_price' => 2]]],
             ],
         ]);
 
@@ -173,7 +173,7 @@ class BulkPoImportTest extends TestCase
         $response = $this->postJson('/api/imports/bulk-po/commit', [
             'options' => ['duplicate_strategy' => 'update'],
             'pos' => [
-                ['po_number' => '5001', 'styles' => [
+                ['po_number' => '5001', 'po_date' => '2025-12-01', 'styles' => [
                     ['style_number' => 'KEEP1', 'quantity' => 999, 'unit_price' => 9], // already present -> skipped
                     ['style_number' => 'NEW1', 'quantity' => 30, 'unit_price' => 3],   // appended
                 ]],
@@ -184,6 +184,34 @@ class BulkPoImportTest extends TestCase
         $existing->refresh();
         $this->assertSame(2, (int) $existing->total_styles);
         $this->assertTrue($existing->styles()->where('style_number', 'NEW1')->exists());
+    }
+
+    public function test_commit_rejects_invalid_fields(): void
+    {
+        $this->actingAsAgency();
+
+        $response = $this->postJson('/api/imports/bulk-po/commit', [
+            'pos' => [
+                [
+                    'po_number' => '6001',
+                    'po_date' => 'MAIL RECD 12/21', // not a real date
+                    'styles' => [
+                        ['style_number' => 'A1', 'quantity' => 0, 'unit_price' => 5],        // qty must be >= 1
+                        ['style_number' => 'A2', 'quantity' => 10, 'unit_price' => 'abc'],    // price not numeric
+                        ['style_number' => str_repeat('X', 150), 'quantity' => 5, 'unit_price' => 1], // style # > 100
+                    ],
+                ],
+            ],
+        ]);
+
+        $response->assertStatus(422);
+        $errors = $response->json('errors');
+        $this->assertArrayHasKey('pos.0.po_date', $errors);
+        $this->assertArrayHasKey('pos.0.styles.0.quantity', $errors);
+        $this->assertArrayHasKey('pos.0.styles.1.unit_price', $errors);
+        $this->assertArrayHasKey('pos.0.styles.2.style_number', $errors);
+        // Nothing is persisted when validation fails.
+        $this->assertSame(0, PurchaseOrder::where('po_number', '6001')->count());
     }
 
     public function test_bulk_analyze_requires_permission(): void

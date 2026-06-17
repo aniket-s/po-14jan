@@ -2,52 +2,66 @@
 
 import { useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronRight, AlertTriangle, Store, RefreshCw, Package } from 'lucide-react';
 import type { BulkGroup } from './useBulkImport';
-import type { BulkRow, RowIssue } from './types';
+import type { BulkRow } from './types';
+import type { FieldValidation } from './validation';
 import { resolveImageUrl } from './utils';
-
-const firstImageUrl = (row: BulkRow): string | null => {
-  if (!row.images) return null;
-  const keys = Object.keys(row.images);
-  if (!keys.length) return null;
-  return row.images[Number(keys[0])]?.url ?? null;
-};
-
-const isValidDateStr = (v: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 interface Props {
   groups: BulkGroup[];
   fieldValue: (row: BulkRow, field: string) => string;
   setFieldValue: (rowNumber: number, field: string, value: string) => void;
-  rowIssues: (row: BulkRow) => RowIssue[];
+  fieldError: (row: BulkRow, field: string) => FieldValidation;
+  poFieldError: (group: BulkGroup, field: string) => FieldValidation;
+  sizeTokens: string[];
+  sizeValue: (row: BulkRow, token: string) => string;
+  setSizeValue: (rowNumber: number, token: string, value: string) => void;
+  validationByPo: Record<string, number>;
 }
 
 const fmtUsd = (n: number) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+const isValidDateStr = (v: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(v);
 
-export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: Props) {
-  const groupIssueCounts = useMemo(() => {
-    const map: Record<string, { errors: number; warnings: number }> = {};
-    for (const g of groups) {
-      let errors = 0;
-      let warnings = 0;
-      for (const row of g.rows) {
-        const issues = rowIssues(row);
-        if (issues.some((i) => i.severity === 'error')) errors++;
-        else if (issues.some((i) => i.severity === 'warning')) warnings++;
-      }
-      map[g.po_number] = { errors, warnings };
-    }
-    return map;
-  }, [groups, rowIssues]);
+const firstImageUrl = (row: BulkRow): string | null => {
+  if (!row.images) return null;
+  const keys = Object.keys(row.images);
+  return keys.length ? row.images[Number(keys[0])]?.url ?? null : null;
+};
 
-  // Default-open any PO that needs attention.
+const prettyKey = (k: string) => k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+const borderFor = (v: FieldValidation) =>
+  v.error ? 'border-red-400 focus-visible:ring-red-400'
+    : v.warning ? 'border-amber-400 focus-visible:ring-amber-400'
+    : '';
+
+function ErrText({ v }: { v: FieldValidation }) {
+  if (v.error) return <p className="text-[10px] text-red-600 mt-0.5 leading-tight">{v.error}</p>;
+  if (v.warning) return <p className="text-[10px] text-amber-600 mt-0.5 leading-tight">{v.warning}</p>;
+  return null;
+}
+
+function Field({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={className}>
+      <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+export function PoGroupReview({
+  groups, fieldValue, setFieldValue, fieldError, poFieldError,
+  sizeTokens, sizeValue, setSizeValue, validationByPo,
+}: Props) {
+  // Default-open any PO that has validation errors so problems are visible.
   const [open, setOpen] = useState<Set<string>>(() => {
     const s = new Set<string>();
     for (const g of groups) {
-      const c = groupIssueCounts[g.po_number];
-      if (g.mixed_retailer || (c && (c.errors || c.warnings))) s.add(g.po_number);
+      if ((validationByPo[g.po_number] ?? 0) > 0 || g.mixed_retailer) s.add(g.po_number);
     }
     return s;
   });
@@ -72,12 +86,14 @@ export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: 
         </div>
       </div>
 
-      <div className="space-y-2 max-h-[48vh] overflow-auto pr-1">
+      <div className="space-y-2 max-h-[52vh] overflow-auto pr-1">
         {groups.map((g) => {
           const isOpen = open.has(g.po_number);
-          const counts = groupIssueCounts[g.po_number] ?? { errors: 0, warnings: 0 };
+          const errCount = validationByPo[g.po_number] ?? 0;
+          const dateErr = poFieldError(g, 'po_date');
+          const retErr = poFieldError(g, 'retailer_name');
           return (
-            <div key={g.po_number} className="rounded-md border">
+            <div key={g.po_number} className={`rounded-md border ${errCount > 0 ? 'border-red-300' : ''}`}>
               <button
                 type="button"
                 onClick={() => toggle(g.po_number)}
@@ -101,16 +117,8 @@ export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: 
                     <AlertTriangle className="h-3 w-3 mr-1" />Mixed retailer
                   </Badge>
                 )}
-                {g.po_date && !isValidDateStr(g.po_date) && (
-                  <Badge variant="outline" className="border-amber-300 text-amber-700 dark:text-amber-400">
-                    <AlertTriangle className="h-3 w-3 mr-1" />Check date
-                  </Badge>
-                )}
                 <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                  {counts.errors > 0 && <Badge variant="destructive">{counts.errors} error{counts.errors > 1 ? 's' : ''}</Badge>}
-                  {counts.warnings > 0 && (
-                    <Badge variant="outline" className="border-amber-300 text-amber-700 dark:text-amber-400">{counts.warnings} warning{counts.warnings > 1 ? 's' : ''}</Badge>
-                  )}
+                  {errCount > 0 && <Badge variant="destructive">{errCount} to fix</Badge>}
                   <span>{g.styles.length} styles</span>
                   <span>· {g.total_quantity.toLocaleString()} units</span>
                   <span>· {fmtUsd(g.total_value)}</span>
@@ -118,91 +126,46 @@ export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: 
               </button>
 
               {isOpen && (
-                <div className="border-t">
-                  {/* Editable PO-level fields (flow into the first row of the group). */}
-                  <div className="flex flex-wrap items-end gap-3 px-3 py-2 bg-muted/20">
-                    <div>
-                      <label className="block text-[11px] text-muted-foreground mb-0.5">PO Date</label>
-                      <input
+                <div className="border-t p-3 space-y-3">
+                  {/* PO-level editable fields */}
+                  <div className="flex flex-wrap items-start gap-3">
+                    <Field label="PO Date *">
+                      <Input
                         type="date"
                         value={isValidDateStr(g.po_date) ? g.po_date : ''}
                         onChange={(e) => setFieldValue(g.rows[0].row_number, 'po_date', e.target.value)}
-                        className="h-7 rounded-md border bg-background px-2 text-xs"
+                        className={`h-7 w-40 text-xs ${borderFor(dateErr)}`}
                       />
                       {g.po_date && !isValidDateStr(g.po_date) && (
-                        <div className="text-[10px] text-amber-600 mt-0.5 max-w-[220px]">
-                          From sheet: “{g.po_date}”. Pick a date (today is used if left blank).
-                        </div>
+                        <p className="text-[10px] text-amber-600 mt-0.5 max-w-[220px]">From sheet: “{g.po_date}”</p>
                       )}
-                    </div>
-                    <div className="min-w-[200px] flex-1 max-w-md">
-                      <label className="block text-[11px] text-muted-foreground mb-0.5">Retailer</label>
+                      <ErrText v={dateErr} />
+                    </Field>
+                    <Field label="Retailer" className="min-w-[220px] flex-1 max-w-md">
                       <Input
                         value={g.retailer_name}
                         onChange={(e) => setFieldValue(g.rows[0].row_number, 'retailer_name', e.target.value)}
-                        className="h-7 text-xs"
+                        className={`h-7 text-xs ${borderFor(retErr)}`}
                       />
-                    </div>
+                      <ErrText v={retErr} />
+                    </Field>
                   </div>
-                  <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-muted/40 text-left">
-                        <th className="px-2 py-1 w-8" />
-                        <th className="px-2 py-1 w-14">Img</th>
-                        <th className="px-2 py-1 min-w-[140px]">Style #</th>
-                        <th className="px-2 py-1 min-w-[110px]">Color</th>
-                        <th className="px-2 py-1 min-w-[180px]">Description</th>
-                        <th className="px-2 py-1 w-24">Qty</th>
-                        <th className="px-2 py-1 w-24">Unit Price</th>
-                        <th className="px-2 py-1 min-w-[120px]">Sizes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {g.rows.map((row, i) => {
-                        const issues = rowIssues(row);
-                        const issueFor = (field: string) => issues.find((x) => x.field === field);
-                        const style = g.styles[i];
-                        const sizeStr = style.size_breakdown
-                          ? Object.entries(style.size_breakdown).map(([k, v]) => `${k}:${v}`).join('  ')
-                          : '—';
-                        const rowTone = issues.some((x) => x.severity === 'error')
-                          ? 'bg-red-50 dark:bg-red-950/30'
-                          : issues.some((x) => x.severity === 'warning')
-                          ? 'bg-amber-50 dark:bg-amber-950/30'
-                          : '';
-                        return (
-                          <tr key={row.row_number} className={`border-t align-top ${rowTone}`}>
-                            <td className="px-2 py-1 text-muted-foreground font-mono">{row.row_number}</td>
-                            <td className="px-2 py-1">
-                              {firstImageUrl(row) ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={resolveImageUrl(firstImageUrl(row)!)} alt="" loading="lazy" className="h-10 w-10 object-contain rounded border bg-white" />
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-1">
-                              <EditCell value={fieldValue(row, 'style_number')} onChange={(v) => setFieldValue(row.row_number, 'style_number', v)} issue={issueFor('style_number')} />
-                            </td>
-                            <td className="px-2 py-1">
-                              <EditCell value={fieldValue(row, 'color_name')} onChange={(v) => setFieldValue(row.row_number, 'color_name', v)} />
-                            </td>
-                            <td className="px-2 py-1">
-                              <EditCell value={fieldValue(row, 'description')} onChange={(v) => setFieldValue(row.row_number, 'description', v)} />
-                            </td>
-                            <td className="px-2 py-1">
-                              <EditCell value={fieldValue(row, 'quantity')} onChange={(v) => setFieldValue(row.row_number, 'quantity', v)} issue={issueFor('quantity')} />
-                            </td>
-                            <td className="px-2 py-1">
-                              <EditCell value={fieldValue(row, 'unit_price')} onChange={(v) => setFieldValue(row.row_number, 'unit_price', v)} issue={issueFor('unit_price')} />
-                            </td>
-                            <td className="px-2 py-1 font-mono text-[11px] text-muted-foreground whitespace-nowrap">{sizeStr}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+
+                  {/* One editable card per style */}
+                  <div className="space-y-2">
+                    {g.rows.map((row, i) => (
+                      <StyleCard
+                        key={row.row_number}
+                        row={row}
+                        metadata={g.styles[i]?.metadata ?? {}}
+                        fieldValue={fieldValue}
+                        setFieldValue={setFieldValue}
+                        fieldError={fieldError}
+                        sizeTokens={sizeTokens}
+                        sizeValue={sizeValue}
+                        setSizeValue={setSizeValue}
+                      />
+                    ))}
                   </div>
                 </div>
               )}
@@ -214,19 +177,125 @@ export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: 
   );
 }
 
-function EditCell({ value, onChange, issue }: { value: string; onChange: (v: string) => void; issue?: RowIssue }) {
+function StyleCard({
+  row, metadata, fieldValue, setFieldValue, fieldError, sizeTokens, sizeValue, setSizeValue,
+}: {
+  row: BulkRow;
+  metadata: Record<string, string>;
+  fieldValue: (row: BulkRow, field: string) => string;
+  setFieldValue: (rowNumber: number, field: string, value: string) => void;
+  fieldError: (row: BulkRow, field: string) => FieldValidation;
+  sizeTokens: string[];
+  sizeValue: (row: BulkRow, token: string) => string;
+  setSizeValue: (rowNumber: number, token: string, value: string) => void;
+}) {
+  const v = (f: string) => fieldValue(row, f);
+  const e = (f: string) => fieldError(row, f);
+  const set = (f: string, val: string) => setFieldValue(row.row_number, f, val);
+  const img = firstImageUrl(row);
+  const metaEntries = useMemo(() => Object.entries(metadata), [metadata]);
+
+  const hasError = ['style_number', 'quantity', 'unit_price', 'color_name', 'description', 'fabric', 'fit', 'label', 'notes', 'packing', 'pre_pack_inner', 'ihd']
+    .some((f) => e(f).error)
+    || sizeTokens.some((t) => /\D/.test(sizeValue(row, t)));
+
+  const cell = (field: string, label: string, opts: { type?: string; wide?: boolean } = {}) => {
+    const ve = e(field);
+    return (
+      <Field label={label} className={opts.wide ? 'min-w-[180px] flex-1' : 'w-32'}>
+        <Input
+          type={opts.type ?? 'text'}
+          value={v(field)}
+          onChange={(ev) => set(field, ev.target.value)}
+          className={`h-7 text-xs ${borderFor(ve)}`}
+        />
+        <ErrText v={ve} />
+      </Field>
+    );
+  };
+
   return (
-    <div>
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`h-7 text-xs ${issue ? (issue.severity === 'error' ? 'border-red-400' : 'border-amber-400') : ''}`}
-      />
-      {issue && (
-        <div className={`mt-0.5 text-[10px] ${issue.severity === 'error' ? 'text-red-600' : 'text-amber-600'}`} title={issue.message}>
-          {issue.message}
+    <div className={`rounded-md border p-2 ${hasError ? 'border-red-300 bg-red-50/40 dark:bg-red-950/20' : 'bg-muted/10'}`}>
+      <div className="flex gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {img ? <img src={resolveImageUrl(img)} alt="" loading="lazy" className="h-16 w-16 object-contain rounded border bg-white shrink-0" />
+          : <div className="h-16 w-16 rounded border bg-muted/40 shrink-0 flex items-center justify-center text-[10px] text-muted-foreground">no img</div>}
+
+        <div className="flex-1 min-w-0 space-y-2">
+          {/* Primary fields */}
+          <div className="flex flex-wrap gap-2">
+            <span className="text-[10px] font-mono text-muted-foreground self-end pb-1.5">row {row.row_number}</span>
+            {cell('style_number', 'Style # *')}
+            {cell('color_name', 'Color')}
+            {cell('quantity', 'Qty *', { type: 'text' })}
+            {cell('unit_price', 'Unit Price *', { type: 'text' })}
+            {cell('ihd', 'IHD', { type: 'date' })}
+          </div>
+          {/* Secondary fields */}
+          <div className="flex flex-wrap gap-2">
+            {cell('fabric', 'Fabric', { wide: true })}
+            {cell('fit', 'Fit')}
+            {cell('label', 'Label')}
+            {cell('pre_pack_inner', 'Pre-pack')}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Field label="Description" className="min-w-[240px] flex-1">
+              <Textarea value={v('description')} onChange={(ev) => set('description', ev.target.value)} className={`min-h-[34px] text-xs ${borderFor(e('description'))}`} rows={1} />
+              <ErrText v={e('description')} />
+            </Field>
+            <Field label="Notes" className="min-w-[240px] flex-1">
+              <Textarea value={v('notes')} onChange={(ev) => set('notes', ev.target.value)} className={`min-h-[34px] text-xs ${borderFor(e('notes'))}`} rows={1} />
+              <ErrText v={e('notes')} />
+            </Field>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Field label="Packing" className="min-w-[240px] flex-1">
+              <Input value={v('packing')} onChange={(ev) => set('packing', ev.target.value)} className={`h-7 text-xs ${borderFor(e('packing'))}`} />
+              <ErrText v={e('packing')} />
+            </Field>
+          </div>
+
+          {/* Per-size editable cells */}
+          {sizeTokens.length > 0 && (
+            <div>
+              <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Sizes</label>
+              <div className="flex flex-wrap gap-1.5">
+                {sizeTokens.map((t) => {
+                  const sv = sizeValue(row, t);
+                  const bad = /\D/.test(sv);
+                  return (
+                    <div key={t} className="flex items-center gap-1">
+                      <span className="text-[10px] font-medium text-muted-foreground w-8 text-right">{t}</span>
+                      <Input
+                        value={sv}
+                        onChange={(ev) => setSizeValue(row.row_number, t, ev.target.value)}
+                        className={`h-7 w-16 text-xs ${bad ? 'border-red-400' : ''}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Read-only unmapped columns (stored as notes) */}
+          {metaEntries.length > 0 && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+                {metaEntries.length} other column{metaEntries.length > 1 ? 's' : ''} (stored as notes)
+              </summary>
+              <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 rounded bg-muted/30 p-2">
+                {metaEntries.map(([k, val]) => (
+                  <div key={k} className="flex gap-2 min-w-0">
+                    <span className="text-[10px] text-muted-foreground shrink-0">{prettyKey(k)}:</span>
+                    <span className="text-[10px] truncate" title={val}>{val}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
