@@ -20,6 +20,10 @@ interface Props {
   sizeValue: (row: BulkRow, token: string) => string;
   setSizeValue: (rowNumber: number, token: string, value: string) => void;
   validationByPo: Record<string, number>;
+  /** Server-rejected fields keyed by `${rowNumber}:${field}` / `po:${po}:${field}`. */
+  serverErrors?: Record<string, string>;
+  /** PO numbers to force-expand (e.g. ones the server flagged). */
+  forceOpenPos?: string[];
 }
 
 const fmtUsd = (n: number) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
@@ -55,7 +59,7 @@ function Field({ label, children, className = '' }: { label: string; children: R
 
 export function PoGroupReview({
   groups, fieldValue, setFieldValue, fieldError, poFieldError,
-  sizeTokens, sizeValue, setSizeValue, validationByPo,
+  sizeTokens, sizeValue, setSizeValue, validationByPo, serverErrors, forceOpenPos,
 }: Props) {
   // Default-open any PO that has validation errors so problems are visible.
   const [open, setOpen] = useState<Set<string>>(() => {
@@ -65,6 +69,14 @@ export function PoGroupReview({
     }
     return s;
   });
+
+  // Auto-expand POs the server just flagged (render-time adjust on change).
+  const forceKey = (forceOpenPos ?? []).join(',');
+  const [seenForce, setSeenForce] = useState('');
+  if (forceKey && forceKey !== seenForce) {
+    setSeenForce(forceKey);
+    setOpen((prev) => new Set([...prev, ...(forceOpenPos ?? [])]));
+  }
 
   const toggle = (po: string) =>
     setOpen((prev) => {
@@ -90,8 +102,10 @@ export function PoGroupReview({
         {groups.map((g) => {
           const isOpen = open.has(g.po_number);
           const errCount = validationByPo[g.po_number] ?? 0;
-          const dateErr = poFieldError(g, 'po_date');
-          const retErr = poFieldError(g, 'retailer_name');
+          const srvDate = serverErrors?.[`po:${g.po_number}:po_date`];
+          const srvRet = serverErrors?.[`po:${g.po_number}:retailer_name`];
+          const dateErr: FieldValidation = srvDate ? { error: srvDate } : poFieldError(g, 'po_date');
+          const retErr: FieldValidation = srvRet ? { error: srvRet } : poFieldError(g, 'retailer_name');
           return (
             <div key={g.po_number} className={`rounded-md border ${errCount > 0 ? 'border-red-300' : ''}`}>
               <button
@@ -164,6 +178,7 @@ export function PoGroupReview({
                         sizeTokens={sizeTokens}
                         sizeValue={sizeValue}
                         setSizeValue={setSizeValue}
+                        serverErrors={serverErrors}
                       />
                     ))}
                   </div>
@@ -178,7 +193,7 @@ export function PoGroupReview({
 }
 
 function StyleCard({
-  row, metadata, fieldValue, setFieldValue, fieldError, sizeTokens, sizeValue, setSizeValue,
+  row, metadata, fieldValue, setFieldValue, fieldError, sizeTokens, sizeValue, setSizeValue, serverErrors,
 }: {
   row: BulkRow;
   metadata: Record<string, string>;
@@ -188,9 +203,14 @@ function StyleCard({
   sizeTokens: string[];
   sizeValue: (row: BulkRow, token: string) => string;
   setSizeValue: (rowNumber: number, token: string, value: string) => void;
+  serverErrors?: Record<string, string>;
 }) {
   const v = (f: string) => fieldValue(row, f);
-  const e = (f: string) => fieldError(row, f);
+  // Server-rejected field wins over (and is shown like) a client error.
+  const e = (f: string): FieldValidation => {
+    const srv = serverErrors?.[`${row.row_number}:${f}`];
+    return srv ? { error: srv } : fieldError(row, f);
+  };
   const set = (f: string, val: string) => setFieldValue(row.row_number, f, val);
   const img = firstImageUrl(row);
   const metaEntries = useMemo(() => Object.entries(metadata), [metadata]);
