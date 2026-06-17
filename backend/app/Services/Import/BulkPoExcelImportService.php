@@ -450,12 +450,17 @@ class BulkPoExcelImportService
                     if ($existing && $duplicateStrategy === 'update') {
                         $po = $existing;
                     } else {
+                        // po_date may be free text ("MAIL RECD 12/21"); parse what
+                        // we can and keep the raw value when it isn't a real date.
+                        $rawPoDate = trim((string) ($poInput['po_date'] ?? ''));
+                        $parsedPoDate = $this->normalizeDate($rawPoDate !== '' ? $rawPoDate : null);
+
                         $po = PurchaseOrder::create([
                             'po_number' => $poNumber,
                             // po_date is NOT NULL in the schema; historical sheets
-                            // usually carry it, but fall back to today so a missing
-                            // date never blocks a back-fill insert.
-                            'po_date' => $this->normalizeDate($poInput['po_date'] ?? null) ?? now()->format('Y-m-d'),
+                            // usually carry it, but fall back to today when missing
+                            // or unparseable so a back-fill insert never blocks.
+                            'po_date' => $parsedPoDate ?? now()->format('Y-m-d'),
                             'status' => 'draft',
                             'creator_id' => $userId,
                             'buyer_id' => $buyerId,
@@ -473,6 +478,8 @@ class BulkPoExcelImportService
                                 'batch_id' => $batchId,
                                 'parser_version' => 1,
                                 'imported_at' => now()->toIso8601String(),
+                                // Preserve the original date text when it wasn't a real date.
+                                'po_date_raw' => ($parsedPoDate === null && $rawPoDate !== '') ? $rawPoDate : null,
                                 'po_metadata' => (is_array($poInput['metadata'] ?? null) && !empty($poInput['metadata']))
                                     ? $poInput['metadata'] : null,
                             ], fn ($v) => $v !== null),

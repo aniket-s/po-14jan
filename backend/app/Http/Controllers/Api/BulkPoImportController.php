@@ -79,8 +79,13 @@ class BulkPoImportController extends Controller
             'options.filename' => 'nullable|string|max:255',
             'pos' => 'required|array|min:1',
             'pos.*.po_number' => 'required|string|max:50',
-            'pos.*.po_date' => 'nullable|date',
-            'pos.*.retailer_name' => 'nullable|string|max:255',
+            // po_date and retailer come from free-text sheet cells - a tracking
+            // sheet often has "MAIL RECD 12/21" in the date column or a long note
+            // in the retailer column. Accept them as strings here (the service
+            // parses the date leniently and keeps the raw value) so one messy
+            // cell can't 422 the whole batch.
+            'pos.*.po_date' => 'nullable|string|max:100',
+            'pos.*.retailer_name' => 'nullable|string|max:1000',
             'pos.*.retailer_id' => 'nullable|exists:retailers,id',
             'pos.*.shipping_term' => 'nullable|in:FOB,DDP',
             'pos.*.metadata' => 'nullable|array',

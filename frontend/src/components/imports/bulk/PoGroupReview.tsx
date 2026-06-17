@@ -15,6 +15,8 @@ const firstImageUrl = (row: BulkRow): string | null => {
   return row.images[Number(keys[0])]?.url ?? null;
 };
 
+const isValidDateStr = (v: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(v);
+
 interface Props {
   groups: BulkGroup[];
   fieldValue: (row: BulkRow, field: string) => string;
@@ -99,6 +101,11 @@ export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: 
                     <AlertTriangle className="h-3 w-3 mr-1" />Mixed retailer
                   </Badge>
                 )}
+                {g.po_date && !isValidDateStr(g.po_date) && (
+                  <Badge variant="outline" className="border-amber-300 text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="h-3 w-3 mr-1" />Check date
+                  </Badge>
+                )}
                 <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
                   {counts.errors > 0 && <Badge variant="destructive">{counts.errors} error{counts.errors > 1 ? 's' : ''}</Badge>}
                   {counts.warnings > 0 && (
@@ -111,7 +118,33 @@ export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: 
               </button>
 
               {isOpen && (
-                <div className="border-t overflow-x-auto">
+                <div className="border-t">
+                  {/* Editable PO-level fields (flow into the first row of the group). */}
+                  <div className="flex flex-wrap items-end gap-3 px-3 py-2 bg-muted/20">
+                    <div>
+                      <label className="block text-[11px] text-muted-foreground mb-0.5">PO Date</label>
+                      <input
+                        type="date"
+                        value={isValidDateStr(g.po_date) ? g.po_date : ''}
+                        onChange={(e) => setFieldValue(g.rows[0].row_number, 'po_date', e.target.value)}
+                        className="h-7 rounded-md border bg-background px-2 text-xs"
+                      />
+                      {g.po_date && !isValidDateStr(g.po_date) && (
+                        <div className="text-[10px] text-amber-600 mt-0.5 max-w-[220px]">
+                          From sheet: “{g.po_date}”. Pick a date (today is used if left blank).
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-[200px] flex-1 max-w-md">
+                      <label className="block text-[11px] text-muted-foreground mb-0.5">Retailer</label>
+                      <Input
+                        value={g.retailer_name}
+                        onChange={(e) => setFieldValue(g.rows[0].row_number, 'retailer_name', e.target.value)}
+                        className="h-7 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-muted/40 text-left">
@@ -170,6 +203,7 @@ export function PoGroupReview({ groups, fieldValue, setFieldValue, rowIssues }: 
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
             </div>
