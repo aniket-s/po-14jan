@@ -777,6 +777,11 @@ class BulkPoExcelImportService
         // whose factory_id isn't a factory is left unassigned rather than trusted.
         $validFactoryIds = $this->validFactoryIds($pos);
 
+        // When an Agency uploads the back-fill, they own every PO they create and
+        // are the assigned agency on every style (mirrors picking yourself as the
+        // agency when creating a PO manually). Non-agency uploaders set nothing.
+        $uploaderAgencyId = User::find($userId)?->hasRole('Agency') ? $userId : null;
+
         $created = [];
         $skipped = [];
         $updated = [];
@@ -798,7 +803,7 @@ class BulkPoExcelImportService
             try {
                 $result = DB::transaction(function () use (
                     $poInput, $poNumber, $existing, $duplicateStrategy, $defaultShippingTerm,
-                    $buyerId, $sourceFilename, $batchId, $userId, $validFactoryIds
+                    $buyerId, $sourceFilename, $batchId, $userId, $validFactoryIds, $uploaderAgencyId
                 ) {
                     // Retailer was resolved on the client (match-or-create); use it
                     // directly. The store name drives both retailer AND buyer, so
@@ -809,6 +814,11 @@ class BulkPoExcelImportService
 
                     if ($existing && $duplicateStrategy === 'update') {
                         $po = $existing;
+                        // Adopt the uploading agency as the PO's agency only when the
+                        // PO doesn't already have one (never hijack another agency's PO).
+                        if ($uploaderAgencyId && !$po->agency_id) {
+                            $po->update(['agency_id' => $uploaderAgencyId]);
+                        }
                     } else {
                         // po_date is required + validated as a real date by
                         // commitValidationRules(), so normalizeDate always yields a
@@ -818,6 +828,7 @@ class BulkPoExcelImportService
                             'po_date' => $this->normalizeDate($poInput['po_date'] ?? null),
                             'status' => 'draft',
                             'creator_id' => $userId,
+                            'agency_id' => $uploaderAgencyId,
                             'buyer_id' => $poBuyerId,
                             'retailer_id' => $retailerId,
                             'shipping_term' => $this->cleanShippingTerm($poInput['shipping_term'] ?? null) ?? $defaultShippingTerm,
@@ -865,10 +876,13 @@ class BulkPoExcelImportService
                         $factoryPrice = (isset($styleInput['factory_unit_price']) && $styleInput['factory_unit_price'] !== '' && $styleInput['factory_unit_price'] !== null)
                             ? (float) $styleInput['factory_unit_price'] : null;
                         $factoryDate = $this->normalizeDate($styleInput['factory_date'] ?? null);
-                        $factoryPivot = $this->factoryPivotData($factoryId, $factoryPrice, $factoryDate);
+                        // An agency uploader is the assigned agency on every style, so the
+                        // style is routed via_agency; a bare factory is a direct assignment.
+                        $assignmentType = $uploaderAgencyId ? 'via_agency' : ($factoryId ? 'direct_to_factory' : null);
+                        $assignmentPivot = $this->assignmentPivotData($factoryId, $uploaderAgencyId, $assignmentType, $factoryPrice, $factoryDate);
 
                         // Already on this PO? 'append' leaves it untouched; 'update'
-                        // refreshes its PO quantity / price / size (and factory) from the sheet.
+                        // refreshes its PO quantity / price / size (and assignment) from the sheet.
                         $existingStyle = $existingByNumber[strtoupper($styleNumber)] ?? null;
                         if ($existingStyle) {
                             if ($duplicateStrategy === 'update') {
@@ -876,10 +890,16 @@ class BulkPoExcelImportService
                                     'quantity_in_po' => $quantity,
                                     'unit_price_in_po' => $unitPrice,
                                     'size_breakdown' => $sizeBreakdown ? json_encode($sizeBreakdown) : null,
-                                ], $factoryPivot));
+                                ], $assignmentPivot));
+                                if ($factoryId || $uploaderAgencyId) {
+                                    $existingStyle->update(array_filter([
+                                        'assigned_factory_id' => $factoryId,
+                                        'assigned_agency_id' => $uploaderAgencyId,
+                                        'assignment_type' => $assignmentType,
+                                    ], fn ($v) => $v !== null));
+                                }
                                 if ($factoryId) {
-                                    $existingStyle->update(['assigned_factory_id' => $factoryId, 'assignment_type' => 'direct_to_factory']);
-                                    $this->recordFactoryAssignment($po->id, $existingStyle->id, $factoryId, $userId, $factoryDate);
+                                    $this->recordFactoryAssignment($po->id, $existingStyle->id, $factoryId, $userId, $assignmentType, $factoryDate);
                                 }
                                 $stylesUpdated++;
                             }
@@ -926,7 +946,8 @@ class BulkPoExcelImportService
                             'fob_price' => $unitPrice,
                             'retailer_id' => $po->retailer_id,
                             'assigned_factory_id' => $factoryId,
-                            'assignment_type' => $factoryId ? 'direct_to_factory' : null,
+                            'assigned_agency_id' => $uploaderAgencyId,
+                            'assignment_type' => $assignmentType,
                             'metadata' => array_filter([
                                 'label' => $styleInput['label'] ?? null,
                             ], fn ($v) => $v !== null && $v !== ''),
@@ -944,10 +965,10 @@ class BulkPoExcelImportService
                                 'notes' => $styleInput['notes'] ?? null,
                                 'status' => 'pending',
                                 'metadata' => !empty($rowMeta) ? json_encode($rowMeta) : null,
-                            ], $factoryPivot),
+                            ], $assignmentPivot),
                         ]);
                         if ($factoryId) {
-                            $this->recordFactoryAssignment($po->id, $style->id, $factoryId, $userId, $factoryDate);
+                            $this->recordFactoryAssignment($po->id, $style->id, $factoryId, $userId, $assignmentType, $factoryDate);
                         }
                         $stylesCreated++;
                     }
@@ -1025,18 +1046,23 @@ class BulkPoExcelImportService
     }
 
     /**
-     * The factory portion of a pivot write. Only includes keys that are actually
-     * set, so refreshing a style never wipes an existing assignment/price/date
-     * with nulls when the sheet row doesn't carry that column.
+     * The assignment portion of a pivot write (factory and/or agency). Only
+     * includes keys that are actually set, so refreshing a style never wipes an
+     * existing assignment/price/date with nulls when the row doesn't carry it.
      *
      * @return array<string, mixed>
      */
-    private function factoryPivotData(?int $factoryId, ?float $price, ?string $date): array
+    private function assignmentPivotData(?int $factoryId, ?int $agencyId, ?string $assignmentType, ?float $price, ?string $date): array
     {
         $data = [];
         if ($factoryId) {
             $data['assigned_factory_id'] = $factoryId;
-            $data['assignment_type'] = 'direct_to_factory';
+        }
+        if ($agencyId) {
+            $data['assigned_agency_id'] = $agencyId;
+        }
+        if ($factoryId || $agencyId) {
+            $data['assignment_type'] = $assignmentType;
             $data['assigned_at'] = now();
         }
         if ($price !== null) {
@@ -1049,19 +1075,19 @@ class BulkPoExcelImportService
     }
 
     /**
-     * Mirror the assignment into the FactoryAssignment table (what reports and the
-     * Factory Assignments views read) as an already-`accepted` record - this is a
-     * back-fill, so no invitation/notification is sent. Idempotent per
+     * Mirror the factory assignment into the FactoryAssignment table (what reports
+     * and the Factory Assignments views read) as an already-`accepted` record -
+     * this is a back-fill, so no invitation/notification is sent. Idempotent per
      * (PO, style, factory) so re-running 'update' doesn't duplicate rows.
      */
-    private function recordFactoryAssignment(int $poId, int $styleId, int $factoryId, int $userId, ?string $date): void
+    private function recordFactoryAssignment(int $poId, int $styleId, int $factoryId, int $userId, ?string $assignmentType, ?string $date): void
     {
         FactoryAssignment::updateOrCreate(
             ['purchase_order_id' => $poId, 'style_id' => $styleId, 'factory_id' => $factoryId],
             [
                 'assigned_by' => $userId,
                 'assigned_at' => now(),
-                'assignment_type' => 'direct_to_factory',
+                'assignment_type' => $assignmentType ?: 'direct_to_factory',
                 'status' => 'accepted',
                 'accepted_at' => now(),
                 'expected_completion_date' => $date ?: null,

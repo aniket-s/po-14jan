@@ -42,6 +42,14 @@ class BulkPoImportTest extends TestCase
         return $user;
     }
 
+    private function actingAsImporter(): User
+    {
+        $user = User::factory()->create();
+        $user->assignRole('Importer');
+        Sanctum::actingAs($user);
+        return $user;
+    }
+
     /** Build a small multi-PO WIP-style sheet and return it as an upload. */
     private function makeBulkSheet(): UploadedFile
     {
@@ -277,7 +285,8 @@ class BulkPoImportTest extends TestCase
 
     public function test_commit_assigns_factory_with_price_and_date(): void
     {
-        $this->actingAsAgency();
+        // A non-agency uploader -> a direct factory assignment (no agency in the loop).
+        $this->actingAsImporter();
         $factory = User::factory()->create(['name' => 'ACME GARMENTS']);
         $factory->assignRole('Factory');
 
@@ -312,7 +321,7 @@ class BulkPoImportTest extends TestCase
 
     public function test_commit_ignores_factory_id_that_is_not_a_factory(): void
     {
-        $user = $this->actingAsAgency(); // Agency role - not a Factory.
+        $user = $this->actingAsImporter(); // Importer role - not a Factory.
 
         $this->postJson('/api/imports/bulk-po/commit', [
             'options' => ['duplicate_strategy' => 'skip'],
@@ -331,6 +340,47 @@ class BulkPoImportTest extends TestCase
         $this->assertDatabaseMissing('factory_assignments', ['purchase_order_id' => $po->id]);
         // ...but the (column-independent) factory price is still preserved.
         $this->assertSame('2.50', (string) $style->pivot->factory_unit_price);
+    }
+
+    public function test_commit_maps_uploading_agency_to_po_and_styles(): void
+    {
+        $agency = $this->actingAsAgency();
+        $factory = User::factory()->create(['name' => 'ACME GARMENTS']);
+        $factory->assignRole('Factory');
+
+        $this->postJson('/api/imports/bulk-po/commit', [
+            'options' => ['duplicate_strategy' => 'skip'],
+            'pos' => [
+                ['po_number' => '8001', 'po_date' => '2025-10-24', 'styles' => [
+                    ['style_number' => 'A1', 'quantity' => 100, 'unit_price' => 5, 'factory_id' => $factory->id], // with factory
+                    ['style_number' => 'A2', 'quantity' => 50, 'unit_price' => 3],                                 // no factory
+                ]],
+            ],
+        ])->assertCreated();
+
+        $po = PurchaseOrder::where('po_number', '8001')->first();
+        // The uploading agency owns the PO (shown in the Parties card).
+        $this->assertSame($agency->id, (int) $po->agency_id);
+
+        // Every style is assigned to that agency (via_agency), with or without a factory.
+        $a1 = $po->styles()->where('style_number', 'A1')->first();
+        $this->assertSame($agency->id, (int) $a1->pivot->assigned_agency_id);
+        $this->assertSame($factory->id, (int) $a1->pivot->assigned_factory_id);
+        $this->assertSame('via_agency', $a1->pivot->assignment_type);
+
+        $a2 = $po->styles()->where('style_number', 'A2')->first();
+        $this->assertSame($agency->id, (int) $a2->pivot->assigned_agency_id);
+        $this->assertNull($a2->pivot->assigned_factory_id);
+        $this->assertSame('via_agency', $a2->pivot->assignment_type);
+
+        // The factory record reflects the via_agency routing.
+        $this->assertDatabaseHas('factory_assignments', [
+            'purchase_order_id' => $po->id,
+            'style_id' => $a1->id,
+            'factory_id' => $factory->id,
+            'assignment_type' => 'via_agency',
+            'status' => 'accepted',
+        ]);
     }
 
     public function test_create_placeholder_factory_creates_inactive_factory_user(): void
