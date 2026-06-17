@@ -3,12 +3,16 @@
 namespace App\Services\Import;
 
 use App\Models\Buyer;
+use App\Models\FactoryAssignment;
 use App\Models\PurchaseOrder;
 use App\Models\Retailer;
 use App\Models\Style;
+use App\Models\User;
 use App\Services\ExcelImageExtractionService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
@@ -84,6 +88,12 @@ class BulkPoExcelImportService
             ['key' => 'pre_pack_inner', 'label' => 'Pre-pack / Inner', 'group' => 'Style',          'level' => 'style', 'type' => 'string',  'required' => false, 'max_length' => 100],
             ['key' => 'packing',        'label' => 'Packing',          'group' => 'Style',          'level' => 'style', 'type' => 'text',    'required' => false, 'max_length' => 1000],
             ['key' => 'ihd',            'label' => 'IHD',              'group' => 'Style',          'level' => 'style', 'type' => 'date',    'required' => false],
+            // Factory assignment is per-style. The factory name is resolved to a
+            // Factory user id on the client (match-or-create), like the retailer,
+            // so it isn't length-capped and isn't persisted as a raw string.
+            ['key' => 'factory_name',       'label' => 'Factory',       'group' => 'Factory',        'level' => 'style', 'type' => 'string',  'required' => false],
+            ['key' => 'factory_unit_price', 'label' => 'Factory Price', 'group' => 'Factory',        'level' => 'style', 'type' => 'number',  'required' => false, 'min' => 0, 'max' => 99999999.99, 'decimals' => 2],
+            ['key' => 'factory_date',       'label' => 'Factory Date',  'group' => 'Factory',        'level' => 'style', 'type' => 'date',    'required' => false],
         ];
     }
 
@@ -143,6 +153,9 @@ class BulkPoExcelImportService
             'pos.*.styles.*.metadata' => 'nullable|array',
             'pos.*.styles.*.images' => 'nullable|array',
             'pos.*.styles.*.images.*' => 'string',
+            // Factory name is resolved to a Factory user id on the client; the
+            // role is re-checked at commit so a non-factory id is ignored.
+            'pos.*.styles.*.factory_id' => 'nullable|integer|exists:users,id',
         ];
 
         foreach ($this->fieldRules() as $r) {
@@ -218,6 +231,7 @@ class BulkPoExcelImportService
             $columns = $this->buildColumns($sheet, $headerRow, $lastNamedCol);
             $poTarget = $this->columnForTarget($columns, 'po_number');
             $retailerTarget = $this->columnForTarget($columns, 'retailer_name');
+            $factoryTarget = $this->columnForTarget($columns, 'factory_name');
 
             // Embedded images (CAD previews etc.) — anchored either inside a cell
             // or floating over it. The extraction service resolves both to a
@@ -232,6 +246,7 @@ class BulkPoExcelImportService
             $totalDataRows = 0;
             $filePoNumbers = [];
             $retailerStats = []; // sheet retailer name => ['style_count'=>int, 'pos'=>set]
+            $factoryStats = [];  // sheet factory name  => ['style_count'=>int, 'pos'=>set]
             for ($r = $dataStart; $r <= $lastRow; $r++) {
                 $cells = [];
                 $hasData = false;
@@ -260,6 +275,18 @@ class BulkPoExcelImportService
                         $retailerStats[$rn]['style_count']++;
                         if ($po !== '') {
                             $retailerStats[$rn]['pos'][$po] = true;
+                        }
+                    }
+                }
+                if ($factoryTarget !== null) {
+                    $fn = trim((string) ($cells[$factoryTarget] ?? ''));
+                    if ($fn !== '') {
+                        if (!isset($factoryStats[$fn])) {
+                            $factoryStats[$fn] = ['style_count' => 0, 'pos' => []];
+                        }
+                        $factoryStats[$fn]['style_count']++;
+                        if ($po !== '') {
+                            $factoryStats[$fn]['pos'][$po] = true;
                         }
                     }
                 }
@@ -293,6 +320,7 @@ class BulkPoExcelImportService
                 'image_columns' => array_map('intval', array_keys($imageColumns)),
                 'has_images' => !empty($imageColumns),
                 'retailers' => $this->buildRetailerResolution($retailerStats),
+                'factories' => $this->buildFactoryResolution($factoryStats),
             ];
         } catch (\Throwable $e) {
             Log::error('Bulk PO Excel analysis failed: ' . $e->getMessage());
@@ -405,6 +433,141 @@ class BulkPoExcelImportService
     }
 
     /**
+     * For each distinct FACTORY NAME in the sheet, find the best existing Factory
+     * user (matched on name OR company, normalised). The frontend turns this into
+     * the same match-or-create panel used for retailers.
+     *
+     * @param  array<string, array{style_count:int, pos:array<string,bool>}>  $stats
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildFactoryResolution(array $stats): array
+    {
+        $names = array_keys($stats);
+        if (empty($names)) {
+            return [];
+        }
+
+        $all = User::role('Factory')->get(['id', 'name', 'company']);
+        [$byExact, $byNorm] = $this->indexFactories($all);
+
+        $out = [];
+        foreach ($names as $name) {
+            $match = $this->matchFactory($name, $all, $byExact, $byNorm);
+            $out[] = [
+                'name' => $name,
+                'po_count' => count($stats[$name]['pos'] ?? []),
+                'style_count' => $stats[$name]['style_count'] ?? 0,
+                'matched_factory_id' => $match?->id,
+                'matched_name' => $match?->name,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Index factory users by case-insensitive exact label and normalised label,
+     * considering both their display name and company. First writer wins.
+     *
+     * @return array{0: array<string, User>, 1: array<string, User>}
+     */
+    private function indexFactories($all): array
+    {
+        $byExact = [];
+        $byNorm = [];
+        foreach ($all as $f) {
+            foreach ([$f->name, $f->company] as $label) {
+                $label = trim((string) $label);
+                if ($label === '') {
+                    continue;
+                }
+                $byExact[mb_strtolower($label)] ??= $f;
+                $norm = $this->normalizeName($label);
+                if ($norm !== '' && !isset($byNorm[$norm])) {
+                    $byNorm[$norm] = $f;
+                }
+            }
+        }
+        return [$byExact, $byNorm];
+    }
+
+    /** Exact (ci) -> normalised exact -> normalised contains, over name + company. */
+    private function matchFactory(string $name, $all, array $byExact, array $byNorm): ?User
+    {
+        $lc = mb_strtolower(trim($name));
+        if (isset($byExact[$lc])) {
+            return $byExact[$lc];
+        }
+        $norm = $this->normalizeName($name);
+        if ($norm === '') {
+            return null;
+        }
+        if (isset($byNorm[$norm])) {
+            return $byNorm[$norm];
+        }
+        foreach ($all as $f) {
+            foreach ([$f->name, $f->company] as $label) {
+                $fn = $this->normalizeName((string) $label);
+                if ($fn === '') {
+                    continue;
+                }
+                if (str_contains($fn, $norm) || str_contains($norm, $fn)) {
+                    return $f;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Create (or re-match) a placeholder Factory user for a sheet name with no
+     * existing match. Status is `inactive` and no usable login is provisioned -
+     * it exists purely so historical assignments + factory prices can resolve to
+     * a real user id. Someone can activate/invite it later.
+     */
+    public function createPlaceholderFactory(string $name, int $userId): User
+    {
+        $name = trim($name);
+        if ($name === '') {
+            throw new \InvalidArgumentException('Factory name is required.');
+        }
+
+        // Re-match first so clicking "create" twice (or a name already imported
+        // on a previous run) doesn't spawn duplicate placeholder users.
+        $all = User::role('Factory')->get(['id', 'name', 'company']);
+        [$byExact, $byNorm] = $this->indexFactories($all);
+        if ($existing = $this->matchFactory($name, $all, $byExact, $byNorm)) {
+            return $existing;
+        }
+
+        $user = User::create([
+            'name' => mb_substr($name, 0, 255),
+            'email' => $this->uniquePlaceholderFactoryEmail($name),
+            'password' => Hash::make(Str::random(40)),
+            'company' => mb_substr($name, 0, 255),
+            'status' => 'inactive',
+            'internal_notes' => 'Placeholder factory auto-created during bulk PO import (historical back-fill). No login provisioned.',
+        ]);
+        $user->assignRole('Factory');
+        return $user;
+    }
+
+    /** A unique, clearly-marked placeholder email (users.email is unique, not null). */
+    private function uniquePlaceholderFactoryEmail(string $name): string
+    {
+        $slug = trim((string) preg_replace('/[^a-z0-9]+/', '-', mb_strtolower($name)), '-');
+        if ($slug === '') {
+            $slug = 'factory';
+        }
+        $base = 'imported-factory-' . mb_substr($slug, 0, 40);
+        $email = $base . '@placeholder.import';
+        $i = 1;
+        while (User::where('email', $email)->exists()) {
+            $email = $base . '-' . $i++ . '@placeholder.import';
+        }
+        return $email;
+    }
+
+    /**
      * Build per-column descriptors with a suggested target, applying first-wins
      * so a second "TOTAL UNITS" / "IHD" column doesn't steal a structured field.
      *
@@ -474,6 +637,13 @@ class BulkPoExcelImportService
         }
 
         if (str_contains($n, 'style')) return 'style_number';
+        // Factory columns (FACTORY NAME / FACTORY PRICE / ORIGINAL FACTORY DATE).
+        // Tested before the generic price/date rules so they aren't mis-mapped.
+        if (str_contains($n, 'factory')) {
+            if (str_contains($n, 'price') || str_contains($n, 'cost') || str_contains($n, 'fob')) return 'factory_unit_price';
+            if (str_contains($n, 'date')) return 'factory_date';
+            return 'factory_name';
+        }
         if (str_contains($n, 'po date')) return 'po_date';
         if ($n === 'po' || preg_match('/\bpo\s*(number|no|#)\b/', $n)) return 'po_number';
         if (str_contains($n, 'retailer') || str_contains($n, 'store name')) return 'retailer_name';
@@ -603,6 +773,10 @@ class BulkPoExcelImportService
         $sourceFilename = $options['filename'] ?? null;
         $batchId = (string) \Illuminate\Support\Str::uuid();
 
+        // Which referenced ids really are Factory users (resolved once). A style
+        // whose factory_id isn't a factory is left unassigned rather than trusted.
+        $validFactoryIds = $this->validFactoryIds($pos);
+
         $created = [];
         $skipped = [];
         $updated = [];
@@ -624,7 +798,7 @@ class BulkPoExcelImportService
             try {
                 $result = DB::transaction(function () use (
                     $poInput, $poNumber, $existing, $duplicateStrategy, $defaultShippingTerm,
-                    $buyerId, $sourceFilename, $batchId, $userId
+                    $buyerId, $sourceFilename, $batchId, $userId, $validFactoryIds
                 ) {
                     // Retailer was resolved on the client (match-or-create); use it
                     // directly. The store name drives both retailer AND buyer, so
@@ -684,16 +858,29 @@ class BulkPoExcelImportService
                         $unitPrice = (float) ($styleInput['unit_price'] ?? 0);
                         $sizeBreakdown = $this->cleanSizeBreakdown($styleInput['size_breakdown'] ?? null);
 
+                        // Per-style factory: name was resolved to an id on the client.
+                        // Ignore anything that isn't actually a Factory user.
+                        $factoryId = (!empty($styleInput['factory_id']) && isset($validFactoryIds[(int) $styleInput['factory_id']]))
+                            ? (int) $styleInput['factory_id'] : null;
+                        $factoryPrice = (isset($styleInput['factory_unit_price']) && $styleInput['factory_unit_price'] !== '' && $styleInput['factory_unit_price'] !== null)
+                            ? (float) $styleInput['factory_unit_price'] : null;
+                        $factoryDate = $this->normalizeDate($styleInput['factory_date'] ?? null);
+                        $factoryPivot = $this->factoryPivotData($factoryId, $factoryPrice, $factoryDate);
+
                         // Already on this PO? 'append' leaves it untouched; 'update'
-                        // refreshes its PO quantity / price / size from the sheet.
+                        // refreshes its PO quantity / price / size (and factory) from the sheet.
                         $existingStyle = $existingByNumber[strtoupper($styleNumber)] ?? null;
                         if ($existingStyle) {
                             if ($duplicateStrategy === 'update') {
-                                $po->styles()->updateExistingPivot($existingStyle->id, [
+                                $po->styles()->updateExistingPivot($existingStyle->id, array_merge([
                                     'quantity_in_po' => $quantity,
                                     'unit_price_in_po' => $unitPrice,
                                     'size_breakdown' => $sizeBreakdown ? json_encode($sizeBreakdown) : null,
-                                ]);
+                                ], $factoryPivot));
+                                if ($factoryId) {
+                                    $existingStyle->update(['assigned_factory_id' => $factoryId, 'assignment_type' => 'direct_to_factory']);
+                                    $this->recordFactoryAssignment($po->id, $existingStyle->id, $factoryId, $userId, $factoryDate);
+                                }
                                 $stylesUpdated++;
                             }
                             continue;
@@ -738,6 +925,8 @@ class BulkPoExcelImportService
                             'unit_price' => $unitPrice,
                             'fob_price' => $unitPrice,
                             'retailer_id' => $po->retailer_id,
+                            'assigned_factory_id' => $factoryId,
+                            'assignment_type' => $factoryId ? 'direct_to_factory' : null,
                             'metadata' => array_filter([
                                 'label' => $styleInput['label'] ?? null,
                             ], fn ($v) => $v !== null && $v !== ''),
@@ -747,7 +936,7 @@ class BulkPoExcelImportService
                         ]);
 
                         $po->styles()->syncWithoutDetaching([
-                            $style->id => [
+                            $style->id => array_merge([
                                 'quantity_in_po' => $quantity,
                                 'unit_price_in_po' => $unitPrice,
                                 'size_breakdown' => $sizeBreakdown ? json_encode($sizeBreakdown) : null,
@@ -755,8 +944,11 @@ class BulkPoExcelImportService
                                 'notes' => $styleInput['notes'] ?? null,
                                 'status' => 'pending',
                                 'metadata' => !empty($rowMeta) ? json_encode($rowMeta) : null,
-                            ],
+                            ], $factoryPivot),
                         ]);
+                        if ($factoryId) {
+                            $this->recordFactoryAssignment($po->id, $style->id, $factoryId, $userId, $factoryDate);
+                        }
                         $stylesCreated++;
                     }
 
@@ -803,6 +995,78 @@ class BulkPoExcelImportService
                 'styles_refreshed' => array_sum(array_column($updated, 'refreshed')),
             ],
         ];
+    }
+
+    /**
+     * Resolve, once per commit, which referenced factory_ids are genuinely
+     * Factory users. Keyed by id for O(1) lookup in the per-style loop.
+     *
+     * @param  array<int, array<string, mixed>>  $pos
+     * @return array<int, true>
+     */
+    private function validFactoryIds(array $pos): array
+    {
+        $ids = [];
+        foreach ($pos as $poInput) {
+            foreach (($poInput['styles'] ?? []) as $s) {
+                if (!empty($s['factory_id'])) {
+                    $ids[(int) $s['factory_id']] = true;
+                }
+            }
+        }
+        if (empty($ids)) {
+            return [];
+        }
+        return User::role('Factory')
+            ->whereIn('id', array_keys($ids))
+            ->pluck('id')
+            ->mapWithKeys(fn ($id) => [(int) $id => true])
+            ->all();
+    }
+
+    /**
+     * The factory portion of a pivot write. Only includes keys that are actually
+     * set, so refreshing a style never wipes an existing assignment/price/date
+     * with nulls when the sheet row doesn't carry that column.
+     *
+     * @return array<string, mixed>
+     */
+    private function factoryPivotData(?int $factoryId, ?float $price, ?string $date): array
+    {
+        $data = [];
+        if ($factoryId) {
+            $data['assigned_factory_id'] = $factoryId;
+            $data['assignment_type'] = 'direct_to_factory';
+            $data['assigned_at'] = now();
+        }
+        if ($price !== null) {
+            $data['factory_unit_price'] = $price;
+        }
+        if ($date !== null && $date !== '') {
+            $data['factory_ex_factory_date'] = $date;
+        }
+        return $data;
+    }
+
+    /**
+     * Mirror the assignment into the FactoryAssignment table (what reports and the
+     * Factory Assignments views read) as an already-`accepted` record - this is a
+     * back-fill, so no invitation/notification is sent. Idempotent per
+     * (PO, style, factory) so re-running 'update' doesn't duplicate rows.
+     */
+    private function recordFactoryAssignment(int $poId, int $styleId, int $factoryId, int $userId, ?string $date): void
+    {
+        FactoryAssignment::updateOrCreate(
+            ['purchase_order_id' => $poId, 'style_id' => $styleId, 'factory_id' => $factoryId],
+            [
+                'assigned_by' => $userId,
+                'assigned_at' => now(),
+                'assignment_type' => 'direct_to_factory',
+                'status' => 'accepted',
+                'accepted_at' => now(),
+                'expected_completion_date' => $date ?: null,
+            ],
+        );
     }
 
     /** Find (or create) a Buyer matching the resolved retailer's name. */

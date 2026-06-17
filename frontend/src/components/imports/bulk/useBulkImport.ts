@@ -6,6 +6,7 @@ import {
   type BulkRow,
   type CommitPoPayload,
   type CommitStylePayload,
+  type FactoryResolution,
   type FieldCatalogItem,
   type FieldRule,
   type RetailerResolution,
@@ -17,6 +18,7 @@ const SCALAR_FIELDS = [
   'po_number', 'po_date', 'retailer_name', 'style_number', 'color_name',
   'description', 'fabric', 'fit', 'label', 'notes', 'unit_price', 'quantity',
   'pre_pack_inner', 'packing', 'ihd',
+  'factory_name', 'factory_unit_price', 'factory_date',
 ];
 const SCALAR_SET = new Set<string>(SCALAR_FIELDS);
 
@@ -27,6 +29,7 @@ const EMPTY_STRINGS: string[] = [];
 const EMPTY_CATALOG: FieldCatalogItem[] = [];
 const EMPTY_RULES: FieldRule[] = [];
 const EMPTY_RETAILERS: RetailerResolution[] = [];
+const EMPTY_FACTORIES: FactoryResolution[] = [];
 
 const cleanNumeric = (raw: string): number =>
   parseFloat(String(raw ?? '').replace(/[^0-9.\-]/g, ''));
@@ -75,6 +78,12 @@ export interface UseBulkImport {
   setRetailerId: (name: string, id: number | null) => void;
   unresolvedRetailers: string[];
   allRetailersResolved: boolean;
+  // Factory resolution (optional — never blocks submit)
+  factories: FactoryResolution[];
+  factoryMap: Record<string, number | null>;
+  setFactoryId: (name: string, id: number | null) => void;
+  unresolvedFactories: string[];
+  hasFactoryFields: boolean;
   summary: {
     po_count: number;
     style_count: number;
@@ -101,6 +110,8 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
   // Sheet retailer name -> resolved retailer id (number) or null (left blank).
   // Absent = not yet resolved.
   const [retailerMap, setRetailerMap] = useState<Record<string, number | null>>({});
+  // Sheet factory name -> resolved Factory user id (or null when left blank).
+  const [factoryMap, setFactoryMap] = useState<Record<string, number | null>>({});
   const [seenAnalysis, setSeenAnalysis] = useState(analysis);
   if (analysis !== seenAnalysis) {
     setSeenAnalysis(analysis);
@@ -111,10 +122,18 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
       if (r.matched_retailer_id != null) seed[r.name] = r.matched_retailer_id;
     }
     setRetailerMap(seed);
+    const fseed: Record<string, number | null> = {};
+    for (const f of analysis?.factories ?? []) {
+      if (f.matched_factory_id != null) fseed[f.name] = f.matched_factory_id;
+    }
+    setFactoryMap(fseed);
   }
 
   const setRetailerId = (name: string, id: number | null) =>
     setRetailerMap((prev) => ({ ...prev, [name]: id }));
+
+  const setFactoryId = (name: string, id: number | null) =>
+    setFactoryMap((prev) => ({ ...prev, [name]: id }));
 
   const mapping = useMemo(() => {
     const out: Record<number, string> = {};
@@ -254,6 +273,11 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
         const v = fieldValue(row, f).trim();
         return v === '' ? null : v;
       };
+      // Factory: the per-row name is resolved to a Factory user id via factoryMap.
+      const factoryName = fieldValue(row, 'factory_name').trim();
+      const factoryId = factoryName ? (factoryMap[factoryName] ?? null) : null;
+      const fpRaw = fieldValue(row, 'factory_unit_price').trim();
+      const fp = fpRaw === '' ? null : cleanNumeric(fpRaw);
       return {
         images: images.length ? images : undefined,
         style_number: fieldValue(row, 'style_number').trim(),
@@ -270,9 +294,12 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
         unit_price: isNaN(p) ? 0 : p,
         size_breakdown: Object.keys(sb).length ? sb : null,
         metadata: meta,
+        factory_id: factoryId,
+        factory_unit_price: fp === null || isNaN(fp) ? null : fp,
+        factory_date: orNull('factory_date'),
       };
     };
-  }, [sizeTokens, sizeValue, metadataColumns, columns, fieldValue]);
+  }, [sizeTokens, sizeValue, metadataColumns, columns, fieldValue, factoryMap]);
 
   const groups = useMemo<BulkGroup[]>(() => {
     const map = new Map<string, BulkGroup & { retailers: Set<string> }>();
@@ -331,6 +358,20 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
     [retailers, retailerMap],
   );
   const allRetailersResolved = unresolvedRetailers.length === 0;
+
+  // Factory resolution status. Factory is optional, so this is informational and
+  // never gates submit — an unresolved name simply imports with no assignment.
+  const factories = analysis?.factories ?? EMPTY_FACTORIES;
+  const unresolvedFactories = useMemo(
+    () => factories.filter((f) => factoryMap[f.name] === undefined).map((f) => f.name),
+    [factories, factoryMap],
+  );
+  const hasFactoryFields = useMemo(
+    () => fieldColumn['factory_name'] !== undefined
+      || fieldColumn['factory_unit_price'] !== undefined
+      || fieldColumn['factory_date'] !== undefined,
+    [fieldColumn],
+  );
 
   const requiredStatus = useMemo(() => {
     return requiredFields.map((field) => {
@@ -444,6 +485,11 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
     setRetailerId,
     unresolvedRetailers,
     allRetailersResolved,
+    factories,
+    factoryMap,
+    setFactoryId,
+    unresolvedFactories,
+    hasFactoryFields,
     summary,
   };
 }

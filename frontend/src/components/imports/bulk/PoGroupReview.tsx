@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronRight, AlertTriangle, Store, RefreshCw, Package } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertTriangle, Store, RefreshCw, Package, Factory } from 'lucide-react';
 import type { BulkGroup } from './useBulkImport';
 import type { BulkRow } from './types';
 import type { FieldValidation } from './validation';
@@ -26,6 +26,10 @@ interface Props {
   forceOpenPos?: string[];
   /** Resolved retailer display name for a sheet retailer value (read-only). */
   resolveRetailerLabel?: (sheetName: string) => string | null;
+  /** Show the per-style factory row (only when a factory column is mapped). */
+  showFactory?: boolean;
+  /** Resolved factory display name for a sheet factory value (read-only). */
+  resolveFactoryLabel?: (sheetName: string) => string | null;
 }
 
 const fmtUsd = (n: number) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
@@ -62,7 +66,7 @@ function Field({ label, children, className = '' }: { label: string; children: R
 export function PoGroupReview({
   groups, fieldValue, setFieldValue, fieldError, poFieldError,
   sizeTokens, sizeValue, setSizeValue, validationByPo, serverErrors, forceOpenPos,
-  resolveRetailerLabel,
+  resolveRetailerLabel, showFactory, resolveFactoryLabel,
 }: Props) {
   // Default-open any PO that has validation errors so problems are visible.
   const [open, setOpen] = useState<Set<string>>(() => {
@@ -183,6 +187,8 @@ export function PoGroupReview({
                         sizeValue={sizeValue}
                         setSizeValue={setSizeValue}
                         serverErrors={serverErrors}
+                        showFactory={showFactory}
+                        resolveFactoryLabel={resolveFactoryLabel}
                       />
                     ))}
                   </div>
@@ -198,6 +204,7 @@ export function PoGroupReview({
 
 function StyleCard({
   row, metadata, fieldValue, setFieldValue, fieldError, sizeTokens, sizeValue, setSizeValue, serverErrors,
+  showFactory, resolveFactoryLabel,
 }: {
   row: BulkRow;
   metadata: Record<string, string>;
@@ -208,6 +215,8 @@ function StyleCard({
   sizeValue: (row: BulkRow, token: string) => string;
   setSizeValue: (rowNumber: number, token: string, value: string) => void;
   serverErrors?: Record<string, string>;
+  showFactory?: boolean;
+  resolveFactoryLabel?: (sheetName: string) => string | null;
 }) {
   const v = (f: string) => fieldValue(row, f);
   // Server-rejected field wins over (and is shown like) a client error.
@@ -219,9 +228,12 @@ function StyleCard({
   const img = firstImageUrl(row);
   const metaEntries = useMemo(() => Object.entries(metadata), [metadata]);
 
-  const hasError = ['style_number', 'quantity', 'unit_price', 'color_name', 'description', 'fabric', 'fit', 'label', 'notes', 'packing', 'pre_pack_inner', 'ihd']
+  const hasError = ['style_number', 'quantity', 'unit_price', 'color_name', 'description', 'fabric', 'fit', 'label', 'notes', 'packing', 'pre_pack_inner', 'ihd', 'factory_unit_price', 'factory_date']
     .some((f) => e(f).error)
     || sizeTokens.some((t) => /\D/.test(sizeValue(row, t)));
+
+  const factorySheetName = v('factory_name').trim();
+  const factoryLabel = resolveFactoryLabel ? resolveFactoryLabel(factorySheetName) : factorySheetName;
 
   const cell = (field: string, label: string, opts: { type?: string; wide?: boolean } = {}) => {
     const ve = e(field);
@@ -278,6 +290,24 @@ function StyleCard({
               <ErrText v={e('packing')} />
             </Field>
           </div>
+
+          {/* Factory assignment (only when a factory column is mapped) */}
+          {showFactory && (
+            <div className="flex flex-wrap gap-2">
+              <Field label="Factory (set in the Factories step)" className="min-w-[200px] flex-1">
+                <div className="h-7 flex items-center text-xs">
+                  {factoryLabel
+                    ? <span className="font-medium inline-flex items-center gap-1"><Factory className="h-3 w-3 text-muted-foreground" />{factoryLabel}</span>
+                    : <span className="text-muted-foreground">— blank —</span>}
+                </div>
+                {factorySheetName && factoryLabel !== factorySheetName && (
+                  <p className="text-[10px] text-muted-foreground truncate" title={factorySheetName}>from sheet: {factorySheetName}</p>
+                )}
+              </Field>
+              {cell('factory_unit_price', 'Factory Price', { type: 'text' })}
+              {cell('factory_date', 'Factory Date', { type: 'date' })}
+            </div>
+          )}
 
           {/* Per-size editable cells */}
           {sizeTokens.length > 0 && (

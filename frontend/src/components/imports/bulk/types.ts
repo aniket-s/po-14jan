@@ -49,6 +49,21 @@ export interface RetailerOption {
   code?: string | null;
 }
 
+/** A distinct FACTORY NAME value from the sheet + its best existing match. */
+export interface FactoryResolution {
+  name: string;
+  po_count: number;
+  style_count: number;
+  matched_factory_id: number | null;
+  matched_name: string | null;
+}
+
+export interface FactoryOption {
+  id: number;
+  name: string;
+  company?: string | null;
+}
+
 export type FieldType = 'string' | 'text' | 'number' | 'integer' | 'date' | 'enum';
 export type FieldLevel = 'po' | 'style';
 
@@ -83,6 +98,7 @@ export interface BulkAnalyzeResponse {
   image_columns: number[];
   has_images: boolean;
   retailers: RetailerResolution[];
+  factories: FactoryResolution[];
 }
 
 export interface CommitStylePayload {
@@ -101,6 +117,10 @@ export interface CommitStylePayload {
   size_breakdown?: Record<string, number> | null;
   metadata?: Record<string, string>;
   images?: string[];
+  // Per-style factory assignment (name resolved to a Factory user id client-side).
+  factory_id?: number | null;
+  factory_unit_price?: number | null;
+  factory_date?: string | null;
 }
 
 export interface CommitPoPayload {

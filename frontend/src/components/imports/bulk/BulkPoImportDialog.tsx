@@ -9,16 +9,17 @@ import {
 import { FileUp, Loader2, Layers, AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { analyzeBulkExcel, commitBulkImport, createRetailer, listRetailers } from './api';
+import { analyzeBulkExcel, commitBulkImport, createFactory, createRetailer, listFactories, listRetailers } from './api';
 import { useBulkImport, type BulkGroup } from './useBulkImport';
 import { MappingSummary } from './MappingSummary';
 import { RawPreviewGrid } from './RawPreviewGrid';
 import { PoGroupReview } from './PoGroupReview';
 import { RetailerResolveStep } from './RetailerResolveStep';
+import { FactoryResolveStep } from './FactoryResolveStep';
 import { BulkResults } from './BulkResults';
-import type { BulkAnalyzeResponse, BulkCommitReport, DuplicateStrategy, RetailerOption } from './types';
+import type { BulkAnalyzeResponse, BulkCommitReport, DuplicateStrategy, FactoryOption, RetailerOption } from './types';
 
-type Step = 'upload' | 'map' | 'retailers' | 'review' | 'results';
+type Step = 'upload' | 'map' | 'retailers' | 'factories' | 'review' | 'results';
 
 const apiErrorMessage = (e: unknown, fallback: string): string => {
   const m = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -96,6 +97,7 @@ const STEP_LABELS: Array<{ k: Step; label: string }> = [
   { k: 'upload', label: 'Upload' },
   { k: 'map', label: 'Map & Preview' },
   { k: 'retailers', label: 'Retailers' },
+  { k: 'factories', label: 'Factories' },
   { k: 'review', label: 'Review & Fix' },
   { k: 'results', label: 'Results' },
 ];
@@ -113,6 +115,7 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
   const [duplicateStrategy, setDuplicateStrategy] = useState<DuplicateStrategy>('skip');
   const [defaultShippingTerm, setDefaultShippingTerm] = useState<'DDP' | 'FOB'>('DDP');
   const [retailerOptions, setRetailerOptions] = useState<RetailerOption[]>([]);
+  const [factoryOptions, setFactoryOptions] = useState<FactoryOption[]>([]);
 
   const bulk = useBulkImport(analysis);
 
@@ -132,6 +135,7 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
     setDuplicateStrategy('skip');
     setDefaultShippingTerm('DDP');
     setRetailerOptions([]);
+    setFactoryOptions([]);
   };
   const handleClose = () => { reset(); onClose(); };
 
@@ -147,6 +151,13 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
       } catch {
         /* non-fatal: the resolution step can still create new retailers */
       }
+      if ((res.factories?.length ?? 0) > 0) {
+        try {
+          setFactoryOptions(await listFactories());
+        } catch {
+          /* non-fatal: the resolution step can still create new factories */
+        }
+      }
     } catch (e) {
       toast.error(apiErrorMessage(e, 'Could not analyze the file'));
     } finally {
@@ -160,6 +171,16 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
     return created;
   };
 
+  const handleCreateFactory = async (name: string): Promise<FactoryOption | null> => {
+    const created = await createFactory(name);
+    setFactoryOptions((prev) => {
+      // createPlaceholderFactory re-matches, so it can return an existing factory.
+      if (prev.some((o) => o.id === created.id)) return prev;
+      return [...prev, created].sort((a, b) => a.name.localeCompare(b.name));
+    });
+    return created;
+  };
+
   // Resolved retailer display name for a sheet value (read-only in Review).
   const resolveRetailerLabel = (sheetName: string): string | null => {
     const id = bulk.retailerMap[sheetName];
@@ -167,8 +188,18 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
     return retailerOptions.find((o) => o.id === id)?.name ?? null;
   };
 
+  // Resolved factory display name for a sheet value (read-only in Review).
+  const resolveFactoryLabel = (sheetName: string): string | null => {
+    if (!sheetName) return null;
+    const id = bulk.factoryMap[sheetName];
+    if (id == null) return null;
+    return factoryOptions.find((o) => o.id === id)?.name ?? null;
+  };
+
   // The Retailers step is skipped when the sheet has no retailer column/values.
   const hasRetailerStep = bulk.retailers.length > 0;
+  // The Factories step is skipped when the sheet has no factory names.
+  const hasFactoryStep = bulk.factories.length > 0;
 
   const handleCommit = async () => {
     if (bulk.payloadPos.length === 0) {
@@ -223,6 +254,7 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
             {step === 'upload' && 'Upload a tracking/WIP sheet that contains many POs. We will detect the PO and style columns and let you confirm everything before importing.'}
             {step === 'map' && 'Confirm how each column maps. Required fields must be mapped; unmapped columns are kept as notes. Nothing is imported yet.'}
             {step === 'retailers' && 'Match each store name to a retailer (or create one). The chosen retailer is also set as the PO buyer.'}
+            {step === 'factories' && 'Match each factory name to a factory (or create one). The factory and its price/date are assigned to each style. This step is optional.'}
             {step === 'review' && 'Review the POs we grouped, fix any flagged values, and choose how to handle POs that already exist.'}
             {step === 'results' && 'Import complete.'}
           </DialogDescription>
@@ -265,6 +297,16 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
               setRetailerId={bulk.setRetailerId}
               options={retailerOptions}
               onCreate={handleCreateRetailer}
+            />
+          )}
+
+          {step === 'factories' && analysis && (
+            <FactoryResolveStep
+              factories={bulk.factories}
+              factoryMap={bulk.factoryMap}
+              setFactoryId={bulk.setFactoryId}
+              options={factoryOptions}
+              onCreate={handleCreateFactory}
             />
           )}
 
@@ -330,6 +372,8 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
                 serverErrors={serverErrorInfo?.fieldMap}
                 forceOpenPos={serverErrorInfo?.poNumbers}
                 resolveRetailerLabel={resolveRetailerLabel}
+                showFactory={bulk.hasFactoryFields}
+                resolveFactoryLabel={resolveFactoryLabel}
               />
             </div>
           )}
@@ -355,8 +399,8 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
           {step === 'map' && (
             <>
               <Button variant="outline" onClick={() => setStep('upload')}>Back</Button>
-              <Button onClick={() => setStep(hasRetailerStep ? 'retailers' : 'review')} disabled={!bulk.requiredOk}>
-                {hasRetailerStep ? 'Next: Retailers' : 'Next: Review'} {bulk.summary.po_count > 0 ? `(${bulk.summary.po_count} POs)` : ''}
+              <Button onClick={() => setStep(hasRetailerStep ? 'retailers' : hasFactoryStep ? 'factories' : 'review')} disabled={!bulk.requiredOk}>
+                {hasRetailerStep ? 'Next: Retailers' : hasFactoryStep ? 'Next: Factories' : 'Next: Review'} {bulk.summary.po_count > 0 ? `(${bulk.summary.po_count} POs)` : ''}
               </Button>
             </>
           )}
@@ -366,14 +410,23 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete }: Props)
               {!bulk.allRetailersResolved && (
                 <span className="text-xs text-amber-600 self-center mr-1">Resolve {bulk.unresolvedRetailers.length} retailer{bulk.unresolvedRetailers.length === 1 ? '' : 's'}</span>
               )}
-              <Button onClick={() => setStep('review')} disabled={!bulk.allRetailersResolved}>
-                Next: Review
+              <Button onClick={() => setStep(hasFactoryStep ? 'factories' : 'review')} disabled={!bulk.allRetailersResolved}>
+                {hasFactoryStep ? 'Next: Factories' : 'Next: Review'}
               </Button>
+            </>
+          )}
+          {step === 'factories' && (
+            <>
+              <Button variant="outline" onClick={() => setStep(hasRetailerStep ? 'retailers' : 'map')}>Back</Button>
+              {bulk.unresolvedFactories.length > 0 && (
+                <span className="text-xs text-muted-foreground self-center mr-1">{bulk.unresolvedFactories.length} unmatched — these import unassigned</span>
+              )}
+              <Button onClick={() => setStep('review')}>Next: Review</Button>
             </>
           )}
           {step === 'review' && (
             <>
-              <Button variant="outline" onClick={() => setStep(hasRetailerStep ? 'retailers' : 'map')}>Back</Button>
+              <Button variant="outline" onClick={() => setStep(hasFactoryStep ? 'factories' : hasRetailerStep ? 'retailers' : 'map')}>Back</Button>
               {bulk.validation.total > 0 && (
                 <span className="text-xs text-red-600 self-center mr-1">Fix {bulk.validation.total} error{bulk.validation.total === 1 ? '' : 's'} to import</span>
               )}
