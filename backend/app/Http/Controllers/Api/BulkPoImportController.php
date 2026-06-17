@@ -21,6 +21,14 @@ use Illuminate\Support\Facades\Validator;
  */
 class BulkPoImportController extends Controller
 {
+    /**
+     * Upload cap (KB). Historical WIP sheets are large because of embedded CAD
+     * images, so this is well above the other importers' limits. PHP
+     * upload_max_filesize / post_max_size and the web server's body-size limit
+     * must be at least this high for the largest files to get through.
+     */
+    private const MAX_UPLOAD_KB = 102400; // 100 MB
+
     public function __construct(
         protected BulkPoExcelImportService $service,
         protected ActivityLogService $activityLog,
@@ -29,8 +37,10 @@ class BulkPoImportController extends Controller
     /** POST /api/imports/bulk-po/analyze */
     public function analyze(Request $request): JsonResponse
     {
+        $this->raiseResourceLimits();
+
         $v = Validator::make($request->all(), [
-            'file' => 'required|file|mimes:xlsx,xls,csv|max:20480',
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:' . self::MAX_UPLOAD_KB,
         ]);
         if ($v->fails()) {
             return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
@@ -59,6 +69,8 @@ class BulkPoImportController extends Controller
     /** POST /api/imports/bulk-po/commit */
     public function commit(Request $request): JsonResponse
     {
+        $this->raiseResourceLimits();
+
         $v = Validator::make($request->all(), [
             'options' => 'nullable|array',
             'options.duplicate_strategy' => 'nullable|in:skip,update',
@@ -102,5 +114,37 @@ class BulkPoImportController extends Controller
         ]);
 
         return response()->json($report, $report['success'] ? 201 : 422);
+    }
+
+    /**
+     * Loading a large workbook + extracting every embedded image is heavy.
+     * Give the request more time and headroom, but never lower an already
+     * higher (or unlimited) memory_limit.
+     */
+    private function raiseResourceLimits(): void
+    {
+        @set_time_limit(600);
+
+        $target = 2048 * 1024 * 1024; // 2 GB
+        $current = $this->iniBytes((string) ini_get('memory_limit'));
+        if ($current !== -1 && $current < $target) {
+            @ini_set('memory_limit', '2048M');
+        }
+    }
+
+    /** Convert a php.ini shorthand byte value ("512M", "1G", "-1") to bytes. */
+    private function iniBytes(string $value): int
+    {
+        $value = trim($value);
+        if ($value === '' || $value === '-1') {
+            return -1;
+        }
+        $num = (int) $value;
+        return match (strtolower(substr($value, -1))) {
+            'g' => $num * 1024 * 1024 * 1024,
+            'm' => $num * 1024 * 1024,
+            'k' => $num * 1024,
+            default => $num,
+        };
     }
 }
