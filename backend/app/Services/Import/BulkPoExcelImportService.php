@@ -464,17 +464,18 @@ class BulkPoExcelImportService
                             'total_styles' => 0,
                             'total_quantity' => 0,
                             'total_value' => 0,
-                            'metadata' => array_merge(
-                                is_array($poInput['metadata'] ?? null) ? $poInput['metadata'] : [],
-                                ['bulk_import_batch' => $batchId]
-                            ),
-                            'import_source' => [
+                            // purchase_orders has no dedicated metadata column, so
+                            // PO-level provenance (and any PO-level overflow) lives in
+                            // import_source, which is a json column on the table.
+                            'import_source' => array_filter([
                                 'strategy_key' => 'bulk_po_excel',
                                 'filename' => $sourceFilename,
                                 'batch_id' => $batchId,
                                 'parser_version' => 1,
                                 'imported_at' => now()->toIso8601String(),
-                            ],
+                                'po_metadata' => (is_array($poInput['metadata'] ?? null) && !empty($poInput['metadata']))
+                                    ? $poInput['metadata'] : null,
+                            ], fn ($v) => $v !== null),
                         ]);
                     }
 
