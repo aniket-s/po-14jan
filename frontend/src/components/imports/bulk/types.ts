@@ -113,8 +113,10 @@ export interface CommitPoPayload {
   styles: CommitStylePayload[];
 }
 
+export type DuplicateStrategy = 'skip' | 'append' | 'update';
+
 export interface BulkCommitOptions {
-  duplicate_strategy: 'skip' | 'update';
+  duplicate_strategy: DuplicateStrategy;
   default_shipping_term: 'FOB' | 'DDP';
   buyer_id?: number | null;
   filename?: string | null;
@@ -123,8 +125,8 @@ export interface BulkCommitOptions {
 export interface BulkCommitReport {
   success: boolean;
   batch_id: string;
-  created: Array<{ po_number: string; id: number; styles: number }>;
-  updated: Array<{ po_number: string; id: number; styles: number }>;
+  created: Array<{ po_number: string; id: number; styles: number; refreshed?: number }>;
+  updated: Array<{ po_number: string; id: number; styles: number; refreshed?: number }>;
   skipped: Array<{ po_number: string; reason: string; id?: number }>;
   errors: Array<{ po_number: string | null; message: string }>;
   summary: {
@@ -133,6 +135,7 @@ export interface BulkCommitReport {
     pos_skipped: number;
     pos_failed: number;
     styles_created: number;
+    styles_refreshed?: number;
   };
 }
 
