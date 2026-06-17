@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSystemSettings } from '@/hooks/useSystemSettings';
@@ -38,6 +38,8 @@ import {
   FileText,
   FileUp,
   ListCheck,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { DetailPageSkeleton } from '@/components/skeletons';
@@ -53,6 +55,76 @@ import {
 } from '@/components/ui/select';
 import { formatDate, calculateDaysRemaining, formatDaysRemaining } from '@/lib/dateUtils';
 
+/** Turn a snake/kebab/camel metadata key into a human label ("po_metadata" -> "Po Metadata"). */
+function prettifyMetaKey(key: string): string {
+  return key
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Render any metadata value (string/number/object) as a readable string. */
+function formatMetaValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+/**
+ * Collect every extra detail worth surfacing for a style that the main grid
+ * doesn't already show: known style attributes (fabric, colour code, etc.),
+ * the per-line lossless metadata (unmapped Excel columns, on the pivot) and any
+ * style-level metadata. Used to drive the expandable "details" row.
+ */
+function collectStyleDetails(style: Style): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  const seen = new Set<string>();
+  const push = (label: string, value: unknown) => {
+    const str = formatMetaValue(value).trim();
+    if (str === '') return;
+    const dedupeKey = label.toLowerCase();
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    out.push({ label, value: str });
+  };
+
+  // Known style columns that aren't already shown in the table.
+  push('Fabric', style.fabric_type_name || style.fabric_name || style.fabric);
+  push('Color Code', style.color_code);
+  push('Fit', style.fit);
+  push('Country of Origin', style.country_of_origin);
+  push('MSRP', style.msrp);
+  push('Wholesale Price', style.wholesale_price);
+
+  // Per-PO-line lossless metadata (the unmapped Excel columns) lives on the pivot.
+  const pivotMeta = style.pivot?.metadata;
+  if (pivotMeta && typeof pivotMeta === 'object' && !Array.isArray(pivotMeta)) {
+    for (const [k, v] of Object.entries(pivotMeta)) {
+      push(prettifyMetaKey(k), v);
+    }
+  }
+  const pivotNotes = style.pivot?.notes;
+  if (typeof pivotNotes === 'string') push('Line Notes', pivotNotes);
+
+  // Style-level metadata (e.g. retailer label captured at import time).
+  const styleMeta = style.metadata;
+  if (styleMeta && typeof styleMeta === 'object' && !Array.isArray(styleMeta)) {
+    for (const [k, v] of Object.entries(styleMeta)) {
+      push(prettifyMetaKey(k), v);
+    }
+  }
+
+  return out;
+}
+
 export default function PurchaseOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -64,6 +136,7 @@ export default function PurchaseOrderDetailPage() {
 
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null);
   const [styles, setStyles] = useState<Style[]>([]);
+  const [expandedStyleIds, setExpandedStyleIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [isStyleSelectorOpen, setIsStyleSelectorOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -211,6 +284,18 @@ export default function PurchaseOrderDetailPage() {
       currency: currency || 'USD',
       minimumFractionDigits: 2,
     }).format(value);
+  };
+
+  const toggleStyleExpanded = (styleId: number) => {
+    setExpandedStyleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(styleId)) {
+        next.delete(styleId);
+      } else {
+        next.add(styleId);
+      }
+      return next;
+    });
   };
 
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -735,16 +820,43 @@ export default function PurchaseOrderDetailPage() {
                         </TableRow>
                       ) : (
                         styles.map((style) => {
-                          const pivotQty = (style as any).pivot?.quantity_in_po ?? style.quantity ?? 0;
-                          const agencyUnitPrice = (style as any).pivot?.unit_price_in_po ?? style.unit_price;
-                          const factoryUnitPrice = (style as any).pivot?.factory_unit_price;
+                          const pivotQty = style.pivot?.quantity_in_po ?? style.quantity ?? 0;
+                          const agencyUnitPrice = style.pivot?.unit_price_in_po ?? style.unit_price;
+                          const factoryUnitPrice = style.pivot?.factory_unit_price;
                           const agencyTotalCost = pivotQty && agencyUnitPrice != null
                             ? pivotQty * Number(agencyUnitPrice)
                             : null;
+                          const colorLabel = style.color?.name || style.color_name || null;
+                          const details = collectStyleDetails(style);
+                          const hasDetails = details.length > 0;
+                          const isExpanded = expandedStyleIds.has(style.id);
+                          const detailColSpan = isFactory ? 7 : 8;
                           return (
-                            <TableRow key={style.id}>
-                              <TableCell className="font-medium">{style.style_number}</TableCell>
-                              <TableCell>{style.color?.name || '-'}</TableCell>
+                            <Fragment key={style.id}>
+                            <TableRow>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-1.5">
+                                  {hasDetails ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleStyleExpanded(style.id)}
+                                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-muted text-muted-foreground"
+                                      title={isExpanded ? 'Hide details' : 'Show all details'}
+                                      aria-label={isExpanded ? 'Hide details' : 'Show all details'}
+                                    >
+                                      {isExpanded ? (
+                                        <ChevronDown className="h-4 w-4" />
+                                      ) : (
+                                        <ChevronRight className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <span className="inline-block h-5 w-5 shrink-0" />
+                                  )}
+                                  <span>{style.style_number}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>{colorLabel || '-'}</TableCell>
                               <TableCell>{style.description || '-'}</TableCell>
                               <TableCell className="text-right">
                                 {pivotQty ? Number(pivotQty).toLocaleString() : '-'}
@@ -801,6 +913,28 @@ export default function PurchaseOrderDetailPage() {
                                 )}
                               </TableCell>
                             </TableRow>
+                            {hasDetails && isExpanded && (
+                              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                                <TableCell colSpan={detailColSpan} className="py-3">
+                                  <div className="px-2">
+                                    <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                                      Additional details
+                                    </div>
+                                    <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+                                      {details.map((d) => (
+                                        <div key={d.label} className="flex flex-col">
+                                          <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                            {d.label}
+                                          </dt>
+                                          <dd className="text-sm break-words">{d.value}</dd>
+                                        </div>
+                                      ))}
+                                    </dl>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            </Fragment>
                           );
                         })
                       )}

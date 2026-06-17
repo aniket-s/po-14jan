@@ -89,6 +89,18 @@ export interface Style {
   style_number: string;
   description: string | null;
   fabric?: string | null;
+  fabric_name?: string | null;
+  fabric_type_name?: string | null;
+  // Display label for colour; backend always appends this (falls back to the
+  // free-text `color` column when the Color relation isn't set).
+  color_name?: string | null;
+  color_code?: string | null;
+  fit?: string | null;
+  country_of_origin?: string | null;
+  msrp?: number | string | null;
+  wholesale_price?: number | string | null;
+  // Lossless metadata captured at import time for unmapped columns.
+  metadata?: Record<string, unknown> | null;
   quantity: number;
   total_quantity?: number;
   unit_price: number;
@@ -124,6 +136,8 @@ export interface Style {
     status?: string;
     notes?: string;
     factory_unit_price?: number | null;
+    // Per-PO-line lossless metadata (unmapped Excel columns from bulk import).
+    metadata?: Record<string, unknown> | null;
   };
 }
 
