@@ -80,9 +80,27 @@ class PurchaseOrderStyleController extends Controller
 
         $styles = $query->paginate($request->per_page ?? 50);
 
+        // Resolve the assigned factory / agency display names from the pivot (the
+        // authoritative per-PO assignment) so the UI shows real names instead of
+        // a "Factory #<id>" fallback. Batched to avoid an N+1.
+        $items = $styles->items();
+        $userIds = collect($items)
+            ->flatMap(fn ($s) => [$s->pivot->assigned_factory_id ?? null, $s->pivot->assigned_agency_id ?? null])
+            ->filter()
+            ->unique();
+        if ($userIds->isNotEmpty()) {
+            $names = User::whereIn('id', $userIds)->pluck('name', 'id');
+            foreach ($items as $s) {
+                $s->pivot->assigned_factory_name = $s->pivot->assigned_factory_id
+                    ? ($names[$s->pivot->assigned_factory_id] ?? null) : null;
+                $s->pivot->assigned_agency_name = $s->pivot->assigned_agency_id
+                    ? ($names[$s->pivot->assigned_agency_id] ?? null) : null;
+            }
+        }
+
         // Return consistent response format with 'styles' key
         return response()->json([
-            'styles' => $styles->items(),
+            'styles' => $items,
             'meta' => [
                 'current_page' => $styles->currentPage(),
                 'per_page' => $styles->perPage(),

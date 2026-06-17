@@ -985,11 +985,13 @@ export default function PurchaseOrderDetailPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {style.assignedFactory?.name ||
+                            {style.pivot?.assigned_factory_name ||
+                             style.assignedFactory?.name ||
                              (style.pivot?.assigned_factory_id ? `Factory #${style.pivot.assigned_factory_id}` : '-')}
                           </TableCell>
                           <TableCell>
-                            {style.assignedAgency?.name ||
+                            {style.pivot?.assigned_agency_name ||
+                             style.assignedAgency?.name ||
                              (style.pivot?.assigned_agency_id ? `Agency #${style.pivot.assigned_agency_id}` : '-')}
                           </TableCell>
                           <TableCell>
