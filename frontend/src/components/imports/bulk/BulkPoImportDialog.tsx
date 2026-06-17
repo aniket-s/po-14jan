@@ -108,8 +108,8 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
 
   return (
     <Dialog open={isOpen} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-[95vw] xl:max-w-7xl max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-[95vw] xl:max-w-7xl max-h-[92vh] flex flex-col overflow-hidden p-0 gap-0">
+        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Layers className="h-5 w-5" />
             Bulk Import — Multiple POs from one Excel
@@ -122,9 +122,11 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
           </DialogDescription>
         </DialogHeader>
 
-        <Stepper current={step} />
+        <div className="px-6 shrink-0">
+          <Stepper current={step} />
+        </div>
 
-        <div className="py-2 min-h-[300px]">
+        <div className="flex-1 overflow-y-auto px-6 py-3 min-h-[200px]">
           {step === 'upload' && (
             <UploadStep file={file} onFileChange={setFile} />
           )}
@@ -184,7 +186,7 @@ export function BulkPoImportDialog({ isOpen, onClose, onImportComplete, buyers =
           )}
         </div>
 
-        <DialogFooter className="gap-2">
+        <DialogFooter className="shrink-0 border-t px-6 py-3 gap-2 sm:justify-start bg-background">
           {step === 'upload' && (
             <>
               <Button variant="outline" onClick={handleClose}>Cancel</Button>
