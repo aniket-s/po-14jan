@@ -37,6 +37,7 @@ import { ListPageSkeleton } from '@/components/skeletons';
 import { PurchaseOrder, PaginatedResponse } from '@/types';
 import { PdfImportDialog } from '@/components/purchase-orders/PdfImportDialog';
 import { ImportWizardDialog } from '@/components/imports/ImportWizardDialog';
+import { BulkPoImportDialog } from '@/components/imports/bulk/BulkPoImportDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -98,6 +99,7 @@ export default function PurchaseOrdersPage() {
   const [isPdfImportDialogOpen, setIsPdfImportDialogOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardInitialStrategy, setWizardInitialStrategy] = useState<string | null>(null);
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteStylesDialogOpen, setDeleteStylesDialogOpen] = useState(false);
   const [deletePOTarget, setDeletePOTarget] = useState<{ id: number; po_number: string } | null>(null);
@@ -455,6 +457,11 @@ export default function PurchaseOrdersPage() {
                     Rebel Minds — PDF PO
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Bulk / historical</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => setBulkImportOpen(true)}>
+                    Bulk multi-PO Excel (old POs)…
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => { setWizardInitialStrategy(null); setWizardOpen(true); }}>
                     Choose import type…
                   </DropdownMenuItem>
@@ -681,6 +688,14 @@ export default function PurchaseOrdersPage() {
           initialStrategyKey={wizardInitialStrategy}
           masterData={{ currencies, paymentTerms, seasons, retailers, countries, warehouses, buyers, agents }}
           onRefreshMasterData={fetchMasterData}
+        />
+
+        {/* Bulk multi-PO Excel import (historical back-fill) */}
+        <BulkPoImportDialog
+          isOpen={bulkImportOpen}
+          onClose={() => setBulkImportOpen(false)}
+          onImportComplete={fetchPurchaseOrders}
+          buyers={buyers}
         />
 
         {/* Master Data Create Dialogs */}
