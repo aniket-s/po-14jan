@@ -24,6 +24,8 @@ interface Props {
   serverErrors?: Record<string, string>;
   /** PO numbers to force-expand (e.g. ones the server flagged). */
   forceOpenPos?: string[];
+  /** Resolved retailer display name for a sheet retailer value (read-only). */
+  resolveRetailerLabel?: (sheetName: string) => string | null;
 }
 
 const fmtUsd = (n: number) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
@@ -60,6 +62,7 @@ function Field({ label, children, className = '' }: { label: string; children: R
 export function PoGroupReview({
   groups, fieldValue, setFieldValue, fieldError, poFieldError,
   sizeTokens, sizeValue, setSizeValue, validationByPo, serverErrors, forceOpenPos,
+  resolveRetailerLabel,
 }: Props) {
   // Default-open any PO that has validation errors so problems are visible.
   const [open, setOpen] = useState<Set<string>>(() => {
@@ -103,9 +106,8 @@ export function PoGroupReview({
           const isOpen = open.has(g.po_number);
           const errCount = validationByPo[g.po_number] ?? 0;
           const srvDate = serverErrors?.[`po:${g.po_number}:po_date`];
-          const srvRet = serverErrors?.[`po:${g.po_number}:retailer_name`];
           const dateErr: FieldValidation = srvDate ? { error: srvDate } : poFieldError(g, 'po_date');
-          const retErr: FieldValidation = srvRet ? { error: srvRet } : poFieldError(g, 'retailer_name');
+          const retailerLabel = resolveRetailerLabel ? resolveRetailerLabel(g.retailer_name) : g.retailer_name;
           return (
             <div key={g.po_number} className={`rounded-md border ${errCount > 0 ? 'border-red-300' : ''}`}>
               <button
@@ -155,13 +157,15 @@ export function PoGroupReview({
                       )}
                       <ErrText v={dateErr} />
                     </Field>
-                    <Field label="Retailer" className="min-w-[220px] flex-1 max-w-md">
-                      <Input
-                        value={g.retailer_name}
-                        onChange={(e) => setFieldValue(g.rows[0].row_number, 'retailer_name', e.target.value)}
-                        className={`h-7 text-xs ${borderFor(retErr)}`}
-                      />
-                      <ErrText v={retErr} />
+                    <Field label="Retailer (set in the Retailers step)" className="min-w-[220px] flex-1 max-w-md">
+                      <div className="h-7 flex items-center text-xs">
+                        {retailerLabel
+                          ? <span className="font-medium inline-flex items-center gap-1"><Store className="h-3 w-3 text-muted-foreground" />{retailerLabel}</span>
+                          : <span className="text-muted-foreground">— blank —</span>}
+                      </div>
+                      {g.retailer_name && retailerLabel !== g.retailer_name && (
+                        <p className="text-[10px] text-muted-foreground truncate" title={g.retailer_name}>from sheet: {g.retailer_name}</p>
+                      )}
                     </Field>
                   </div>
 

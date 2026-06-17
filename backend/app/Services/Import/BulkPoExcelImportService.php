@@ -2,6 +2,7 @@
 
 namespace App\Services\Import;
 
+use App\Models\Buyer;
 use App\Models\PurchaseOrder;
 use App\Models\Retailer;
 use App\Models\Style;
@@ -66,7 +67,10 @@ class BulkPoExcelImportService
         return [
             ['key' => 'po_number',      'label' => 'PO Number',        'group' => 'Purchase Order', 'level' => 'po',    'type' => 'string',  'required' => true,  'max_length' => 100],
             ['key' => 'po_date',        'label' => 'PO Date',          'group' => 'Purchase Order', 'level' => 'po',    'type' => 'date',    'required' => true],
-            ['key' => 'retailer_name',  'label' => 'Retailer',         'group' => 'Purchase Order', 'level' => 'po',    'type' => 'string',  'required' => false, 'max_length' => 255],
+            // Retailer is resolved to an id on the client (match-or-create), so the
+            // raw sheet string is only used to collect/group distinct names - no
+            // length cap (some cells carry long notes) and it isn't sent on commit.
+            ['key' => 'retailer_name',  'label' => 'Retailer',         'group' => 'Purchase Order', 'level' => 'po',    'type' => 'string',  'required' => false],
             ['key' => 'shipping_term',  'label' => 'Shipping Term',    'group' => 'Purchase Order', 'level' => 'po',    'type' => 'enum',    'required' => false, 'enum' => ['FOB', 'DDP']],
             ['key' => 'style_number',   'label' => 'Style Number',     'group' => 'Style',          'level' => 'style', 'type' => 'string',  'required' => true,  'max_length' => 100],
             ['key' => 'color_name',     'label' => 'Color',            'group' => 'Style',          'level' => 'style', 'type' => 'string',  'required' => false, 'max_length' => 100],
@@ -213,6 +217,7 @@ class BulkPoExcelImportService
 
             $columns = $this->buildColumns($sheet, $headerRow, $lastNamedCol);
             $poTarget = $this->columnForTarget($columns, 'po_number');
+            $retailerTarget = $this->columnForTarget($columns, 'retailer_name');
 
             // Embedded images (CAD previews etc.) — anchored either inside a cell
             // or floating over it. The extraction service resolves both to a
@@ -226,6 +231,7 @@ class BulkPoExcelImportService
             $rows = [];
             $totalDataRows = 0;
             $filePoNumbers = [];
+            $retailerStats = []; // sheet retailer name => ['style_count'=>int, 'pos'=>set]
             for ($r = $dataStart; $r <= $lastRow; $r++) {
                 $cells = [];
                 $hasData = false;
@@ -241,10 +247,20 @@ class BulkPoExcelImportService
                     continue;
                 }
                 $totalDataRows++;
-                if ($poTarget !== null) {
-                    $po = trim((string) ($cells[$poTarget] ?? ''));
-                    if ($po !== '') {
-                        $filePoNumbers[$po] = true;
+                $po = $poTarget !== null ? trim((string) ($cells[$poTarget] ?? '')) : '';
+                if ($po !== '') {
+                    $filePoNumbers[$po] = true;
+                }
+                if ($retailerTarget !== null) {
+                    $rn = trim((string) ($cells[$retailerTarget] ?? ''));
+                    if ($rn !== '') {
+                        if (!isset($retailerStats[$rn])) {
+                            $retailerStats[$rn] = ['style_count' => 0, 'pos' => []];
+                        }
+                        $retailerStats[$rn]['style_count']++;
+                        if ($po !== '') {
+                            $retailerStats[$rn]['pos'][$po] = true;
+                        }
                     }
                 }
                 if (count($rows) < self::MAX_PREVIEW_ROWS) {
@@ -276,6 +292,7 @@ class BulkPoExcelImportService
                 'existing_po_numbers' => array_values($existingPoNumbers),
                 'image_columns' => array_map('intval', array_keys($imageColumns)),
                 'has_images' => !empty($imageColumns),
+                'retailers' => $this->buildRetailerResolution($retailerStats),
             ];
         } catch (\Throwable $e) {
             Log::error('Bulk PO Excel analysis failed: ' . $e->getMessage());
@@ -314,6 +331,77 @@ class BulkPoExcelImportService
             Log::warning('Bulk PO image extraction failed: ' . $e->getMessage());
         }
         return [$byRowCol, $columns];
+    }
+
+    /**
+     * For each distinct retailer name in the sheet, find the best existing
+     * Retailer match (normalised so "CITI TRENDS" matches "CITITRENDS"). The
+     * frontend turns this into a match-or-create panel.
+     *
+     * @param  array<string, array{style_count:int, pos:array<string,bool>}>  $stats
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildRetailerResolution(array $stats): array
+    {
+        $names = array_keys($stats);
+        if (empty($names)) {
+            return [];
+        }
+
+        $all = Retailer::get(['id', 'name']);
+        $byExact = [];
+        $byNorm = [];
+        foreach ($all as $r) {
+            $byExact[mb_strtolower(trim((string) $r->name))] = $r;
+            $norm = $this->normalizeName((string) $r->name);
+            if ($norm !== '' && !isset($byNorm[$norm])) {
+                $byNorm[$norm] = $r;
+            }
+        }
+
+        $out = [];
+        foreach ($names as $name) {
+            $match = $this->matchRetailer($name, $all, $byExact, $byNorm);
+            $out[] = [
+                'name' => $name,
+                'po_count' => count($stats[$name]['pos'] ?? []),
+                'style_count' => $stats[$name]['style_count'] ?? 0,
+                'matched_retailer_id' => $match?->id,
+                'matched_name' => $match?->name,
+            ];
+        }
+        return $out;
+    }
+
+    private function normalizeName(string $s): string
+    {
+        return preg_replace('/[^a-z0-9]/', '', mb_strtolower(trim($s)));
+    }
+
+    /** Exact (ci) -> normalised exact -> normalised contains. */
+    private function matchRetailer(string $name, $all, array $byExact, array $byNorm): ?Retailer
+    {
+        $lc = mb_strtolower(trim($name));
+        if (isset($byExact[$lc])) {
+            return $byExact[$lc];
+        }
+        $norm = $this->normalizeName($name);
+        if ($norm === '') {
+            return null;
+        }
+        if (isset($byNorm[$norm])) {
+            return $byNorm[$norm];
+        }
+        foreach ($all as $r) {
+            $rn = $this->normalizeName((string) $r->name);
+            if ($rn === '') {
+                continue;
+            }
+            if (str_contains($rn, $norm) || str_contains($norm, $rn)) {
+                return $r;
+            }
+        }
+        return null;
     }
 
     /**
@@ -536,7 +624,12 @@ class BulkPoExcelImportService
                     $poInput, $poNumber, $existing, $duplicateStrategy, $defaultShippingTerm,
                     $buyerId, $sourceFilename, $batchId, $userId
                 ) {
-                    $retailerId = $this->resolveRetailerId($poInput);
+                    // Retailer was resolved on the client (match-or-create); use it
+                    // directly. The store name drives both retailer AND buyer, so
+                    // derive the buyer from the resolved retailer unless a global
+                    // buyer override was chosen.
+                    $retailerId = isset($poInput['retailer_id']) ? (int) $poInput['retailer_id'] : null;
+                    $poBuyerId = $buyerId ?: ($retailerId ? $this->findOrCreateBuyerForRetailer($retailerId, $userId) : null);
 
                     if ($existing && $duplicateStrategy === 'update') {
                         $po = $existing;
@@ -549,7 +642,7 @@ class BulkPoExcelImportService
                             'po_date' => $this->normalizeDate($poInput['po_date'] ?? null),
                             'status' => 'draft',
                             'creator_id' => $userId,
-                            'buyer_id' => $buyerId,
+                            'buyer_id' => $poBuyerId,
                             'retailer_id' => $retailerId,
                             'shipping_term' => $this->cleanShippingTerm($poInput['shipping_term'] ?? null) ?? $defaultShippingTerm,
                             'total_styles' => 0,
@@ -685,23 +778,38 @@ class BulkPoExcelImportService
         ];
     }
 
-    /** Resolve a retailer id from an explicit id or a fuzzy name match. */
-    private function resolveRetailerId(array $poInput): ?int
+    /** Find (or create) a Buyer matching the resolved retailer's name. */
+    private function findOrCreateBuyerForRetailer(int $retailerId, int $userId): ?int
     {
-        $id = $poInput['retailer_id'] ?? null;
-        if ($id && Retailer::whereKey($id)->exists()) {
-            return (int) $id;
-        }
-        $name = trim((string) ($poInput['retailer_name'] ?? ''));
+        $retailer = Retailer::find($retailerId);
+        $name = trim((string) ($retailer?->name ?? ''));
         if ($name === '') {
             return null;
         }
-        $exact = Retailer::where('name', $name)->first();
-        if ($exact) {
-            return $exact->id;
+        $existing = Buyer::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first();
+        if ($existing) {
+            return $existing->id;
         }
-        $like = Retailer::where('name', 'LIKE', '%' . $name . '%')->first();
-        return $like?->id;
+        $buyer = Buyer::create([
+            'name' => $name,
+            'code' => $this->uniqueBuyerCode($name),
+            'is_active' => true,
+            'created_by' => $userId,
+        ]);
+        return $buyer->id;
+    }
+
+    /** A unique buyers.code derived from the name (column is unique, max 50). */
+    private function uniqueBuyerCode(string $name): string
+    {
+        $base = substr(strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $name)) ?: 'BUYER', 0, 40);
+        $code = $base;
+        $i = 1;
+        while (Buyer::where('code', $code)->exists()) {
+            $suffix = (string) $i++;
+            $code = substr($base, 0, 50 - strlen($suffix)) . $suffix;
+        }
+        return $code;
     }
 
     private function cleanShippingTerm(?string $term): ?string

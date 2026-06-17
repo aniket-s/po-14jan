@@ -92,12 +92,19 @@ class BulkPoImportTest extends TestCase
         $this->assertSame('size:M', $targetFor('M'));
         // An unrecognised WIP column is parked in metadata, never dropped.
         $this->assertSame('__metadata__', $targetFor('TP STATUS'));
+
+        // Distinct retailer names are collected for the match-or-create step.
+        $retailers = collect($response->json('retailers'));
+        $this->assertEqualsCanonicalizing(['BURLINGTON', 'CITI TRENDS'], $retailers->pluck('name')->all());
+        $burl = $retailers->firstWhere('name', 'BURLINGTON');
+        $this->assertSame(2, $burl['style_count']);
+        $this->assertSame(1, $burl['po_count']);
     }
 
     public function test_commit_creates_draft_pos_grouped_by_number(): void
     {
         $this->actingAsAgency();
-        Retailer::create(['name' => 'BURLINGTON', 'is_active' => true]);
+        $retailer = Retailer::create(['name' => 'BURLINGTON', 'is_active' => true]);
 
         $response = $this->postJson('/api/imports/bulk-po/commit', [
             'options' => ['duplicate_strategy' => 'skip', 'default_shipping_term' => 'DDP'],
@@ -105,7 +112,7 @@ class BulkPoImportTest extends TestCase
                 [
                     'po_number' => '5001',
                     'po_date' => '2025-10-24',
-                    'retailer_name' => 'BURLINGTON',
+                    'retailer_id' => $retailer->id,
                     'styles' => [
                         ['style_number' => 'RMT091', 'color_name' => 'BLACK', 'quantity' => 1800, 'unit_price' => 5.40,
                          'size_breakdown' => ['S' => 600, 'M' => 600, 'L' => 600],
@@ -118,7 +125,6 @@ class BulkPoImportTest extends TestCase
                 [
                     'po_number' => '5002',
                     'po_date' => '2025-11-22',
-                    'retailer_name' => 'CITI TRENDS',
                     'styles' => [
                         ['style_number' => 'ST007X', 'color_name' => 'RED', 'quantity' => 1200, 'unit_price' => 4.60],
                     ],
@@ -136,6 +142,11 @@ class BulkPoImportTest extends TestCase
         $this->assertSame('DDP', $po->shipping_term);
         $this->assertSame(4200, (int) $po->total_quantity); // 1800 + 2400
         $this->assertSame(2, (int) $po->total_styles);
+        // Retailer used as resolved; buyer derived (find-or-create) from its name.
+        $this->assertSame($retailer->id, (int) $po->retailer_id);
+        $this->assertNotNull($po->buyer_id);
+        $this->assertDatabaseHas('buyers', ['name' => 'BURLINGTON']);
+        $this->assertSame((int) $po->buyer_id, (int) \App\Models\Buyer::where('name', 'BURLINGTON')->value('id'));
         // Per-row WIP columns preserved losslessly on the pivot.
         $style = $po->styles()->where('style_number', 'RMT091')->first();
         $this->assertSame('TP RECEIVED 10/31', $style->pivot->metadata['tp_status'] ?? null);

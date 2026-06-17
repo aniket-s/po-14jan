@@ -8,6 +8,7 @@ import {
   type CommitStylePayload,
   type FieldCatalogItem,
   type FieldRule,
+  type RetailerResolution,
   type RowIssue,
 } from './types';
 import { validateSizeValue, validateValue, type FieldValidation } from './validation';
@@ -25,6 +26,7 @@ const EMPTY_ROWS: BulkRow[] = [];
 const EMPTY_STRINGS: string[] = [];
 const EMPTY_CATALOG: FieldCatalogItem[] = [];
 const EMPTY_RULES: FieldRule[] = [];
+const EMPTY_RETAILERS: RetailerResolution[] = [];
 
 const cleanNumeric = (raw: string): number =>
   parseFloat(String(raw ?? '').replace(/[^0-9.\-]/g, ''));
@@ -67,6 +69,12 @@ export interface UseBulkImport {
   poFieldError: (group: BulkGroup, field: string) => FieldValidation;
   validation: { total: number; byPo: Record<string, number> };
   canSubmit: boolean;
+  // Retailer resolution
+  retailers: RetailerResolution[];
+  retailerMap: Record<string, number | null>;
+  setRetailerId: (name: string, id: number | null) => void;
+  unresolvedRetailers: string[];
+  allRetailersResolved: boolean;
   summary: {
     po_count: number;
     style_count: number;
@@ -90,12 +98,23 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
   // during render (React's recommended pattern) rather than in an effect.
   const [overrides, setOverrides] = useState<Record<number, string>>({});
   const [edits, setEdits] = useState<Record<string, string>>({});
+  // Sheet retailer name -> resolved retailer id (number) or null (left blank).
+  // Absent = not yet resolved.
+  const [retailerMap, setRetailerMap] = useState<Record<string, number | null>>({});
   const [seenAnalysis, setSeenAnalysis] = useState(analysis);
   if (analysis !== seenAnalysis) {
     setSeenAnalysis(analysis);
     setOverrides({});
     setEdits({});
+    const seed: Record<string, number | null> = {};
+    for (const r of analysis?.retailers ?? []) {
+      if (r.matched_retailer_id != null) seed[r.name] = r.matched_retailer_id;
+    }
+    setRetailerMap(seed);
   }
+
+  const setRetailerId = (name: string, id: number | null) =>
+    setRetailerMap((prev) => ({ ...prev, [name]: id }));
 
   const mapping = useMemo(() => {
     const out: Record<number, string> = {};
@@ -297,11 +316,21 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
       groups.map((g) => ({
         po_number: g.po_number,
         po_date: g.po_date || null,
-        retailer_name: g.retailer_name || null,
+        // Retailer is resolved to an id; the raw name isn't sent (avoids validating
+        // long free-text cells). The backend derives the buyer from the retailer.
+        retailer_id: g.retailer_name ? (retailerMap[g.retailer_name] ?? null) : null,
         styles: g.styles,
       })),
-    [groups],
+    [groups, retailerMap],
   );
+
+  // Retailer resolution status (drives the "Retailers" step gate).
+  const retailers = analysis?.retailers ?? EMPTY_RETAILERS;
+  const unresolvedRetailers = useMemo(
+    () => retailers.filter((r) => retailerMap[r.name] === undefined).map((r) => r.name),
+    [retailers, retailerMap],
+  );
+  const allRetailersResolved = unresolvedRetailers.length === 0;
 
   const requiredStatus = useMemo(() => {
     return requiredFields.map((field) => {
@@ -367,7 +396,7 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
     return { total, byPo };
   }, [groups, poRules, styleRules, sizeTokens, fieldValue, sizeValue, poFieldValue]);
 
-  const canSubmit = requiredOk && validation.total === 0;
+  const canSubmit = requiredOk && validation.total === 0 && allRetailersResolved;
 
   const summary = useMemo(() => {
     let errorRows = 0;
@@ -410,6 +439,11 @@ export function useBulkImport(analysis: BulkAnalyzeResponse | null): UseBulkImpo
     poFieldError,
     validation,
     canSubmit,
+    retailers,
+    retailerMap,
+    setRetailerId,
+    unresolvedRetailers,
+    allRetailersResolved,
     summary,
   };
 }
