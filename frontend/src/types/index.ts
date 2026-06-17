@@ -124,6 +124,9 @@ export interface Style {
     size_breakdown?: Record<string, number>;
     assigned_factory_id?: number;
     assigned_agency_id?: number;
+    // Resolved display names for the assigned factory/agency (from the API).
+    assigned_factory_name?: string | null;
+    assigned_agency_name?: string | null;
     assignment_type?: 'direct_to_factory' | 'via_agency';
     assigned_at?: string;
     target_production_date?: string;
