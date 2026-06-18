@@ -127,10 +127,14 @@ class BulkPoImportController extends Controller
             return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
         }
 
-        $factory = $this->service->createPlaceholderFactory(
-            (string) $request->input('name'),
-            $request->user()->id,
-        );
+        try {
+            $factory = $this->service->createPlaceholderFactory(
+                (string) $request->input('name'),
+                $request->user()->id,
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json(['id' => $factory->id, 'name' => $factory->name], 201);
     }
