@@ -383,6 +383,88 @@ class BulkPoImportTest extends TestCase
         ]);
     }
 
+    public function test_analyze_skips_placeholder_factory_values(): void
+    {
+        $this->actingAsImporter();
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray(['PO', 'PO DATE', 'STYLE # AS PER PO', 'TOTAL UNITS', 'BUYER PO PRICE DDP', 'FACTORY NAME'], null, 'A1');
+        $sheet->fromArray([
+            ['9001', '2025-10-24', 'Z1', 10, 5, '??'],          // placeholder -> ignored
+            ['9001', '2025-10-24', 'Z2', 20, 6, 'TBD'],         // placeholder -> ignored
+            ['9002', '2025-10-24', 'Z3', 30, 7, 'RAINBOW MFG'], // a real factory
+        ], null, 'A2');
+        $tmp = tempnam(sys_get_temp_dir(), 'fac_') . '.xlsx';
+        (IOFactory::createWriter($spreadsheet, 'Xlsx'))->save($tmp);
+
+        $response = $this->post('/api/imports/bulk-po/analyze', [
+            'file' => new UploadedFile($tmp, 'fac.xlsx', null, null, true),
+        ]);
+
+        $response->assertOk();
+        $factories = collect($response->json('factories'));
+        $this->assertEqualsCanonicalizing(['RAINBOW MFG'], $factories->pluck('name')->all());
+    }
+
+    public function test_create_placeholder_factory_rejects_placeholder_names(): void
+    {
+        $this->actingAsImporter();
+
+        $this->postJson('/api/imports/bulk-po/factories', ['name' => '??'])->assertStatus(422);
+        $this->postJson('/api/imports/bulk-po/factories', ['name' => 'N/A'])->assertStatus(422);
+        $this->assertSame(0, User::role('Factory')->count());
+    }
+
+    public function test_update_clears_a_stale_placeholder_factory(): void
+    {
+        $user = $this->actingAsImporter();
+        // Simulate the earlier-bug state: a style pinned to a junk "??" factory.
+        $junk = User::factory()->create(['name' => '??', 'status' => 'inactive']);
+        $junk->assignRole('Factory');
+        $po = PurchaseOrder::create(['po_number' => '5001', 'po_date' => '2025-01-01', 'status' => 'draft', 'creator_id' => $user->id]);
+        $style = \App\Models\Style::create(['style_number' => 'KEEP1', 'total_quantity' => 5, 'unit_price' => 1, 'assigned_factory_id' => $junk->id, 'created_by' => $user->id, 'is_active' => true]);
+        $po->styles()->attach($style->id, ['quantity_in_po' => 5, 'unit_price_in_po' => 1, 'assigned_factory_id' => $junk->id, 'assignment_type' => 'direct_to_factory', 'status' => 'pending']);
+        \App\Models\FactoryAssignment::create(['purchase_order_id' => $po->id, 'style_id' => $style->id, 'factory_id' => $junk->id, 'assigned_by' => $user->id, 'assignment_type' => 'direct_to_factory', 'status' => 'accepted']);
+
+        // Re-import with update; the row no longer names a factory.
+        $this->postJson('/api/imports/bulk-po/commit', [
+            'options' => ['duplicate_strategy' => 'update'],
+            'pos' => [
+                ['po_number' => '5001', 'po_date' => '2025-12-01', 'styles' => [
+                    ['style_number' => 'KEEP1', 'quantity' => 5, 'unit_price' => 1],
+                ]],
+            ],
+        ])->assertCreated();
+
+        $pivot = $po->styles()->where('style_number', 'KEEP1')->first()->pivot;
+        $this->assertNull($pivot->assigned_factory_id);
+        $this->assertDatabaseMissing('factory_assignments', ['purchase_order_id' => $po->id, 'style_id' => $style->id]);
+    }
+
+    public function test_update_keeps_a_real_factory_when_the_row_has_none(): void
+    {
+        $user = $this->actingAsImporter();
+        $factory = User::factory()->create(['name' => 'REAL FACTORY']);
+        $factory->assignRole('Factory');
+        $po = PurchaseOrder::create(['po_number' => '5002', 'po_date' => '2025-01-01', 'status' => 'draft', 'creator_id' => $user->id]);
+        $style = \App\Models\Style::create(['style_number' => 'KEEP1', 'total_quantity' => 5, 'unit_price' => 1, 'created_by' => $user->id, 'is_active' => true]);
+        $po->styles()->attach($style->id, ['quantity_in_po' => 5, 'unit_price_in_po' => 1, 'assigned_factory_id' => $factory->id, 'assignment_type' => 'direct_to_factory', 'status' => 'pending']);
+
+        $this->postJson('/api/imports/bulk-po/commit', [
+            'options' => ['duplicate_strategy' => 'update'],
+            'pos' => [
+                ['po_number' => '5002', 'po_date' => '2025-12-01', 'styles' => [
+                    ['style_number' => 'KEEP1', 'quantity' => 5, 'unit_price' => 1],
+                ]],
+            ],
+        ])->assertCreated();
+
+        // A real factory must NOT be cleared just because the sheet row is blank.
+        $pivot = $po->styles()->where('style_number', 'KEEP1')->first()->pivot;
+        $this->assertSame($factory->id, (int) $pivot->assigned_factory_id);
+    }
+
     public function test_create_placeholder_factory_creates_inactive_factory_user(): void
     {
         $this->actingAsAgency();

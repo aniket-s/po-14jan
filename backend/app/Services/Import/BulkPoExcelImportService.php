@@ -268,7 +268,7 @@ class BulkPoExcelImportService
                 }
                 if ($retailerTarget !== null) {
                     $rn = trim((string) ($cells[$retailerTarget] ?? ''));
-                    if ($rn !== '') {
+                    if ($rn !== '' && !$this->isPlaceholderValue($rn)) {
                         if (!isset($retailerStats[$rn])) {
                             $retailerStats[$rn] = ['style_count' => 0, 'pos' => []];
                         }
@@ -280,7 +280,7 @@ class BulkPoExcelImportService
                 }
                 if ($factoryTarget !== null) {
                     $fn = trim((string) ($cells[$factoryTarget] ?? ''));
-                    if ($fn !== '') {
+                    if ($fn !== '' && !$this->isPlaceholderValue($fn)) {
                         if (!isset($factoryStats[$fn])) {
                             $factoryStats[$fn] = ['style_count' => 0, 'pos' => []];
                         }
@@ -406,6 +406,30 @@ class BulkPoExcelImportService
         return preg_replace('/[^a-z0-9]/', '', mb_strtolower(trim($s)));
     }
 
+    /**
+     * Non-meaningful cell values that must NOT be treated as a real party name
+     * (factory / retailer). WIP tracking sheets routinely use "??", "TBD", "N/A",
+     * "-" etc. as "to be decided" placeholders - importing them would create junk
+     * entities (e.g. a factory literally named "??").
+     */
+    private function isPlaceholderValue(string $value): bool
+    {
+        $n = mb_strtolower(trim($value));
+        if ($n === '') {
+            return true;
+        }
+        // Only punctuation / symbols / spaces ("??", "--", "—", "...", "//").
+        if (preg_replace('/[\p{P}\p{S}\s]+/u', '', $n) === '') {
+            return true;
+        }
+        // Strip surrounding punctuation, then compare to known placeholder words.
+        $core = preg_replace('/^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$/u', '', $n);
+        return in_array($core, [
+            'na', 'n/a', 'tbd', 'tba', 'tbc', 'none', 'nil', 'null',
+            'pending', 'unknown', 'unassigned', 'no factory', 'not assigned',
+        ], true);
+    }
+
     /** Exact (ci) -> normalised exact -> normalised contains. */
     private function matchRetailer(string $name, $all, array $byExact, array $byNorm): ?Retailer
     {
@@ -527,8 +551,8 @@ class BulkPoExcelImportService
     public function createPlaceholderFactory(string $name, int $userId): User
     {
         $name = trim($name);
-        if ($name === '') {
-            throw new \InvalidArgumentException('Factory name is required.');
+        if ($name === '' || $this->isPlaceholderValue($name)) {
+            throw new \InvalidArgumentException('A real factory name is required.');
         }
 
         // Re-match first so clicking "create" twice (or a name already imported
@@ -900,6 +924,11 @@ class BulkPoExcelImportService
                                 }
                                 if ($factoryId) {
                                     $this->recordFactoryAssignment($po->id, $existingStyle->id, $factoryId, $userId, $assignmentType, $factoryDate);
+                                } else {
+                                    // Self-heal: drop a stale junk factory (e.g. a "??"
+                                    // placeholder from an earlier import). Real factory
+                                    // assignments are left untouched.
+                                    $this->clearPlaceholderFactoryAssignment($po, $existingStyle, $uploaderAgencyId);
                                 }
                                 $stylesUpdated++;
                             }
@@ -1093,6 +1122,40 @@ class BulkPoExcelImportService
                 'expected_completion_date' => $date ?: null,
             ],
         );
+    }
+
+    /**
+     * Self-heal during 'update': if a style is currently pinned to a junk
+     * placeholder factory (one whose name is a placeholder like "??", left by an
+     * earlier import before this guard existed), unassign it. A style assigned to
+     * a real factory is never touched.
+     */
+    private function clearPlaceholderFactoryAssignment(PurchaseOrder $po, Style $existingStyle, ?int $agencyId): void
+    {
+        $currentFactoryId = $existingStyle->pivot->assigned_factory_id ?? null;
+        if (!$currentFactoryId) {
+            return;
+        }
+        $currentName = User::whereKey($currentFactoryId)->value('name');
+        if ($currentName === null || !$this->isPlaceholderValue((string) $currentName)) {
+            return; // a real factory - leave it alone
+        }
+
+        $po->styles()->updateExistingPivot($existingStyle->id, [
+            'assigned_factory_id' => null,
+            'factory_unit_price' => null,
+            'factory_ex_factory_date' => null,
+            'assignment_type' => $agencyId ? 'via_agency' : null,
+            'assigned_at' => $agencyId ? now() : null,
+        ]);
+        $existingStyle->update([
+            'assigned_factory_id' => null,
+            'assignment_type' => $agencyId ? 'via_agency' : null,
+        ]);
+        FactoryAssignment::where('purchase_order_id', $po->id)
+            ->where('style_id', $existingStyle->id)
+            ->where('factory_id', $currentFactoryId)
+            ->delete();
     }
 
     /** Find (or create) a Buyer matching the resolved retailer's name. */
