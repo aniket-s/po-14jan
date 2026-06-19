@@ -34,7 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, FileDown, FileUp, Loader2, List, Sheet, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { ListPageSkeleton } from '@/components/skeletons';
-import { PurchaseOrder, PaginatedResponse } from '@/types';
+import { PurchaseOrder, PaginatedResponse, POAggregates } from '@/types';
 import { PdfImportDialog } from '@/components/purchase-orders/PdfImportDialog';
 import { ImportWizardDialog } from '@/components/imports/ImportWizardDialog';
 import { BulkPoImportDialog } from '@/components/imports/bulk/BulkPoImportDialog';
@@ -74,6 +74,7 @@ export default function PurchaseOrdersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [aggregates, setAggregates] = useState<POAggregates | null>(null);
   const perPage = 15;
 
   // View mode
@@ -246,14 +247,16 @@ export default function PurchaseOrdersPage() {
       if (filters.revisedOnly) params.revised = 1;
       if (filters.overdueEtd) params.overdue_etd = 1;
 
-      const response = await api.get<PaginatedResponse<PurchaseOrder>>('/purchase-orders', { params });
+      const response = await api.get<PaginatedResponse<PurchaseOrder> & { aggregates?: POAggregates }>('/purchase-orders', { params });
       setPurchaseOrders(response.data.data || []);
       setTotalPages(response.data.last_page || 1);
       setTotalCount(response.data.total || response.data.data?.length || 0);
+      setAggregates(response.data.aggregates || null);
     } catch (error) {
       console.error('Failed to fetch purchase orders:', error);
       setPurchaseOrders([]);
       setTotalPages(1);
+      setAggregates(null);
     } finally {
       setLoading(false);
     }
@@ -484,6 +487,7 @@ export default function PurchaseOrdersPage() {
         <POKPICards
           purchaseOrders={purchaseOrders}
           totalFromServer={totalCount}
+          aggregates={aggregates}
           activeFilter={kpiFilter}
           onFilterClick={setKpiFilter}
         />
