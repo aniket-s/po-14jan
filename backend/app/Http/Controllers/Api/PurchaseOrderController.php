@@ -193,6 +193,38 @@ class PurchaseOrderController extends Controller
                   ->whereNotIn('status', ['completed', 'cancelled']);
         }
 
+        // ---- KPI aggregates across the ENTIRE filtered set (all pages) ----
+        // Cloned here, before sorting/pagination, so the dashboard cards
+        // reflect every matching record rather than just the current page.
+        $aggregateBase = clone $query;
+        $matchingIds = (clone $aggregateBase)->pluck('id');
+
+        $stylesCountQuery = DB::table('purchase_order_style')
+            ->whereIn('purchase_order_id', $matchingIds);
+        if ($isFactory) {
+            $stylesCountQuery->where('assigned_factory_id', $factoryUserId);
+        }
+
+        $aggregates = [
+            'total_quantity' => (int) (clone $aggregateBase)->sum('total_quantity'),
+            'total_styles' => (int) $stylesCountQuery->count(),
+            'upcoming_etd' => (int) (clone $aggregateBase)
+                ->whereNotNull('etd_date')
+                ->whereDate('etd_date', '>=', now()->toDateString())
+                ->whereDate('etd_date', '<=', now()->addDays(30)->toDateString())
+                ->count(),
+            'currency_breakdown' => (clone $aggregateBase)
+                ->select('currency', DB::raw('count(*) as count'))
+                ->groupBy('currency')
+                ->pluck('count', 'currency'),
+        ];
+
+        // PO value is hidden from factory users at the row level, so keep it
+        // out of the aggregate total for them too.
+        if (!$isFactory) {
+            $aggregates['total_value'] = (float) (clone $aggregateBase)->sum('total_value');
+        }
+
         // Sorting — handle join-based sorting for related fields
         $sortBy = $request->get('sort_by', 'created_at');
         $sortOrder = $request->get('sort_order', 'desc');
@@ -316,6 +348,7 @@ class PurchaseOrderController extends Controller
                 'last_page' => $pos->lastPage(),
                 'per_page' => $pos->perPage(),
                 'total' => $pos->total(),
+                'aggregates' => $aggregates,
             ]);
         }
 
@@ -364,6 +397,7 @@ class PurchaseOrderController extends Controller
             'last_page' => $pos->lastPage(),
             'per_page' => $pos->perPage(),
             'total' => $pos->total(),
+            'aggregates' => $aggregates,
         ]);
     }
 

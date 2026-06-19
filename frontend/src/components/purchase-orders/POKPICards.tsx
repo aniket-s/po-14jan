@@ -9,11 +9,13 @@ import {
   Layers,
   TrendingUp,
 } from 'lucide-react';
-import { PurchaseOrder } from '@/types';
+import { PurchaseOrder, POAggregates } from '@/types';
 
 interface POKPICardsProps {
   purchaseOrders: PurchaseOrder[];
   totalFromServer?: number;
+  /** Server-computed totals across the whole filtered set (all pages). */
+  aggregates?: POAggregates | null;
   activeFilter: string | null;
   onFilterClick: (filter: string) => void;
 }
@@ -28,29 +30,39 @@ interface KPICard {
   bgColor: string;
 }
 
-export function POKPICards({ purchaseOrders, totalFromServer, activeFilter, onFilterClick }: POKPICardsProps) {
+export function POKPICards({ purchaseOrders, totalFromServer, aggregates, activeFilter, onFilterClick }: POKPICardsProps) {
   const cards = useMemo((): KPICard[] => {
     const total = totalFromServer || purchaseOrders.length;
-    const totalValue = purchaseOrders.reduce((sum, po) => sum + (parseFloat(String(po.total_value)) || 0), 0);
-    const totalStyles = purchaseOrders.reduce((sum, po) => sum + (Number(po.styles_count) || 0), 0);
-    const totalQty = purchaseOrders.reduce((sum, po) => sum + (Number(po.total_quantity) || 0), 0);
+
+    // Prefer server-computed aggregates (the entire filtered set across all
+    // pages); fall back to current-page math only while they're unavailable.
+    const totalValue = aggregates?.total_value
+      ?? purchaseOrders.reduce((sum, po) => sum + (parseFloat(String(po.total_value)) || 0), 0);
+    const totalStyles = aggregates?.total_styles
+      ?? purchaseOrders.reduce((sum, po) => sum + (Number(po.styles_count) || 0), 0);
+    const totalQty = aggregates?.total_quantity
+      ?? purchaseOrders.reduce((sum, po) => sum + (Number(po.total_quantity) || 0), 0);
 
     // ETD within next 30 days
-    const now = new Date();
-    const thirtyDaysFromNow = new Date();
-    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-    const upcomingETD = purchaseOrders.filter(po => {
-      if (!po.etd_date) return false;
-      const etd = new Date(po.etd_date);
-      return etd >= now && etd <= thirtyDaysFromNow;
-    }).length;
+    const upcomingETD = aggregates?.upcoming_etd ?? (() => {
+      const now = new Date();
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+      return purchaseOrders.filter(po => {
+        if (!po.etd_date) return false;
+        const etd = new Date(po.etd_date);
+        return etd >= now && etd <= thirtyDaysFromNow;
+      }).length;
+    })();
 
     // Determine primary currency for display
-    const currencyCounts: Record<string, number> = {};
-    purchaseOrders.forEach(po => {
-      const c = po.currency || 'USD';
-      currencyCounts[c] = (currencyCounts[c] || 0) + 1;
-    });
+    const currencyCounts: Record<string, number> = aggregates?.currency_breakdown
+      ? { ...aggregates.currency_breakdown }
+      : purchaseOrders.reduce((acc, po) => {
+          const c = po.currency || 'USD';
+          acc[c] = (acc[c] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
     const primaryCurrency = Object.entries(currencyCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'USD';
 
     const formatValue = (val: number) => {
@@ -95,7 +107,7 @@ export function POKPICards({ purchaseOrders, totalFromServer, activeFilter, onFi
         bgColor: 'bg-purple-50 dark:bg-purple-950',
       },
     ];
-  }, [purchaseOrders, totalFromServer]);
+  }, [purchaseOrders, totalFromServer, aggregates]);
 
   return (
     <div className="grid gap-4 md:grid-cols-4">

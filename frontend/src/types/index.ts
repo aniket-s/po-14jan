@@ -249,6 +249,16 @@ export interface PaginatedResponse<T> {
   to: number;
 }
 
+// Server-computed KPI aggregates spanning the entire filtered set (all pages),
+// returned alongside the paginated purchase-orders list.
+export interface POAggregates {
+  total_value?: number;
+  total_quantity: number;
+  total_styles: number;
+  upcoming_etd: number;
+  currency_breakdown: Record<string, number>;
+}
+
 export interface CreatePurchaseOrderData {
   po_number: string;
   headline?: string | null;
